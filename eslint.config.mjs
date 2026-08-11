@@ -11,6 +11,12 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    ".vinext/**",
+    ".openai/**",
+    "examples/**",
+    "worker/**",
+    "outputs/**",
+    "work/**",
     "next-env.d.ts",
   ]),
 ]);

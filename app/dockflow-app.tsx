@@ -4,7 +4,6 @@
 import {
   Activity,
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   BarChart3,
   Boxes,
@@ -15,7 +14,6 @@ import {
   ClipboardList,
   Clock3,
   Download,
-  FileText,
   Gauge,
   History,
   LayoutDashboard,
@@ -44,15 +42,28 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, getBootstrap, login as apiLogin } from "./api-client";
-import { demoData, localDate } from "./demo-data";
+import { localDate } from "./date-utils";
+import { FlexibleBacklogPage, FlexibleSchedulePage, MonitoringPage } from "./dockflow-features";
+import { ExcelImportModal, type ImportResult } from "./excel-import-modal";
 import type { AppData, RdsRequest, Role, SessionUser, Shipment, ShipmentStatus } from "./types";
 
-type View = "overview" | "schedule" | "operations" | "backlog" | "reports" | "admin";
+type View = "overview" | "monitoring" | "schedule" | "operations" | "backlog" | "reports" | "admin";
 type Icon = typeof LayoutDashboard;
+
+const EMPTY_DATA: AppData = {
+  shipments: [],
+  rdsRequests: [],
+  materials: [],
+  users: [],
+  audit: [],
+  importBatches: [],
+  settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 30, siteName: "Cavite Foods Receiving" },
+};
 
 const NAV_ITEMS: { id: View; label: string; description: string; icon: Icon; roles?: Role[] }[] = [
   { id: "overview", label: "Overview", description: "Live receiving picture", icon: LayoutDashboard },
-  { id: "schedule", label: "Schedule", description: "Slots and RDS requests", icon: CalendarDays },
+  { id: "monitoring", label: "Monitoring", description: "Every delivery status", icon: Activity },
+  { id: "schedule", label: "Schedule", description: "Exact times and Excel", icon: CalendarDays },
   { id: "operations", label: "Gate & dock", description: "Arrival to receiving", icon: ScanLine },
   { id: "backlog", label: "Backlog", description: "Move late deliveries", icon: History, roles: ["admin", "planner", "security", "warehouse"] },
   { id: "reports", label: "Reports", description: "OTIF and on-time", icon: BarChart3, roles: ["admin", "planner", "warehouse"] },
@@ -89,25 +100,6 @@ const ROLE_ICONS: Record<Role, Icon> = {
   warehouse: Warehouse,
 };
 
-const TIME_SLOTS = [
-  "06:00 - 07:30",
-  "07:30 - 09:00",
-  "09:00 - 10:30",
-  "10:30 - 12:00",
-  "12:00 - 13:30",
-  "13:30 - 15:00",
-  "15:00 - 16:30",
-  "16:30 - 18:00",
-  "18:00 - 19:30",
-  "19:30 - 21:00",
-  "21:00 - 22:30",
-  "22:30 - 00:00",
-  "00:00 - 01:30",
-  "01:30 - 03:00",
-  "03:00 - 04:30",
-  "04:30 - 06:00",
-];
-
 const formatDate = (date: string, style: "short" | "long" = "long") =>
   new Intl.DateTimeFormat("en-PH", style === "long" ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 
@@ -135,9 +127,9 @@ function Modal({ title, subtitle, children, onClose, wide = false }: { title: st
   );
 }
 
-function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string, demo: boolean) => void }) {
-  const [username, setUsername] = useState("planner");
-  const [password, setPassword] = useState("planner123");
+function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -147,17 +139,12 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string, 
     setError("");
     try {
       const result = await apiLogin(username, password);
-      onLogin(result.user, result.token, false);
+      onLogin(result.user, result.token);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to sign in");
     } finally {
       setLoading(false);
     }
-  };
-
-  const demoAs = (role: Role) => {
-    const user = demoData.users.find((candidate) => candidate.role === role)!;
-    onLogin(user, `demo-${role}`, true);
   };
 
   return (
@@ -183,19 +170,12 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string, 
           <h2>Sign in to your workspace</h2>
           <p>Use the account assigned to your role.</p>
           <form onSubmit={submit}>
-            <label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" /></label>
-            <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
+            <label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Enter your username" required /></label>
+            <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Enter your password" required /></label>
             {error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}
             <button className="button primary full" disabled={loading}>{loading ? <><Loader2 className="spin" size={17} /> Signing in</> : <>Sign in <ArrowRight size={17} /></>}</button>
           </form>
-          <div className="divider"><span>or explore the demo</span></div>
-          <div className="role-grid">
-            {(Object.keys(ROLE_LABELS) as Role[]).map((role) => {
-              const RoleIcon = ROLE_ICONS[role];
-              return <button key={role} onClick={() => demoAs(role)}><RoleIcon size={18} /><span>{ROLE_LABELS[role]}</span></button>;
-            })}
-          </div>
-          <p className="demo-hint">Docker demo credentials follow <code>role / role123</code> (for example, <code>planner / planner123</code>).</p>
+          <p className="login-guidance">This is the live database workspace. No sample deliveries are loaded.</p>
         </div>
       </section>
     </main>
@@ -211,7 +191,7 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
   const todayShipments = data.shipments.filter((shipment) => shipment.scheduledDate === today);
   const received = todayShipments.filter((shipment) => shipment.status === "RECEIVED").length;
   const atSite = todayShipments.filter((shipment) => ["ARRIVED", "VERIFIED", "PARKING", "AT_DOCK", "UNLOADING"].includes(shipment.status)).length;
-  const late = todayShipments.filter((shipment) => shipment.status === "PLANNED" && shipment.timeSlot.slice(0, 5) < new Date().toTimeString().slice(0, 5)).length;
+  const late = todayShipments.filter((shipment) => shipment.status === "PLANNED" && shipment.scheduledTime < new Date().toTimeString().slice(0, 5)).length;
   const docks = Array.from({ length: data.settings.dockCount }, (_, i) => `Dock ${i + 1}`);
   const nextAction = data.shipments.find((shipment) => {
     if (user.role === "driver") return shipment.driverName === user.name && ["PLANNED", "IN_TRANSIT"].includes(shipment.status);
@@ -253,34 +233,13 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
     </section>
     <section className="panel arrivals-panel">
       <div className="panel-head"><div><span className="eyebrow">Arrival board</span><h2>Today’s delivery sequence</h2></div><span className="count-chip">{todayShipments.length} bookings</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Time slot</th><th>Shipment</th><th>Supplier</th><th>Truck & driver</th><th>Status</th><th>Dock</th><th /></tr></thead><tbody>{todayShipments.sort((a, b) => a.timeSlot.localeCompare(b.timeSlot)).map((shipment) => <tr key={shipment.id}><td><b>{shipment.timeSlot}</b></td><td><button className="table-link" onClick={() => onOpenShipment(shipment)}>{shipment.shipmentNumber}</button><small>{shipment.items[0]?.materialName}</small></td><td>{shipment.supplier}</td><td>{shipment.truckPlate}<small>{shipment.driverName}</small></td><td><StatusPill status={shipment.status} /></td><td>{shipment.dock || "—"}</td><td><button className="icon-button" onClick={() => onOpenShipment(shipment)}><ArrowRight size={17} /></button></td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>Scheduled</th><th>Shipment</th><th>Supplier</th><th>Truck & driver</th><th>Status</th><th>Dock</th><th /></tr></thead><tbody>{todayShipments.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime)).map((shipment) => <tr key={shipment.id}><td><b>{shipment.scheduledTime}</b><small>{shipment.scheduledEndTime ? `to ${shipment.scheduledEndTime}` : "exact arrival"}</small></td><td><button className="table-link" onClick={() => onOpenShipment(shipment)}>{shipment.shipmentNumber}</button><small>{shipment.items[0]?.materialName}</small></td><td>{shipment.supplier}</td><td>{shipment.truckPlate}<small>{shipment.driverName}</small></td><td><StatusPill status={shipment.status} /></td><td>{shipment.dock || "—"}</td><td><button className="icon-button" onClick={() => onOpenShipment(shipment)}><ArrowRight size={17} /></button></td></tr>)}</tbody></table></div>
     </section>
   </div>;
 }
 
-function SchedulePage({ data, user, onConfirmRds, onScheduleRds, onOpenShipment }: { data: AppData; user: SessionUser; onConfirmRds: (rds: RdsRequest) => void; onScheduleRds: (rds: RdsRequest) => void; onOpenShipment: (shipment: Shipment) => void }) {
-  const [date, setDate] = useState(localDate());
-  const [shift, setShift] = useState("Morning");
-  const shiftSlots = TIME_SLOTS.filter((slot) => shift === "Morning" ? Number(slot.slice(0, 2)) >= 6 && Number(slot.slice(0, 2)) < 14 : shift === "Afternoon" ? Number(slot.slice(0, 2)) >= 14 && Number(slot.slice(0, 2)) < 22 : Number(slot.slice(0, 2)) >= 22 || Number(slot.slice(0, 2)) < 6);
-  const shipments = data.shipments.filter((shipment) => shipment.scheduledDate === date);
-  const moveDay = (days: number) => { const next = new Date(`${date}T12:00:00`); next.setDate(next.getDate() + days); setDate(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`); };
-
-  return <div className="page-stack">
-    <section className="hero-row"><div><span className="eyebrow">Scheduling center</span><h1>Dock schedule</h1><p>Book only within the supplier’s approved arrival shift.</p></div><div className="date-stepper"><button onClick={() => moveDay(-1)}><ArrowLeft size={17} /></button><label><CalendarDays size={17} /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><button onClick={() => moveDay(1)}><ArrowRight size={17} /></button></div></section>
-    <section className="schedule-layout">
-      <article className="panel schedule-board">
-        <div className="panel-head schedule-head"><div><span className="eyebrow">{formatDate(date)}</span><h2>{shipments.length} booked trucks</h2></div><div className="segment-control">{["Morning", "Afternoon", "Night"].map((name) => <button className={shift === name ? "active" : ""} onClick={() => setShift(name)} key={name}>{name}</button>)}</div></div>
-        <div className="slot-grid">
-          <div className="slot-grid-head"><span>Time slot</span>{Array.from({ length: data.settings.dockCount }, (_, i) => <span key={i}>Dock {i + 1}</span>)}</div>
-          {shiftSlots.map((slot) => <div className="slot-row" key={slot}><div className="slot-time"><Clock3 size={15} /><b>{slot}</b></div>{Array.from({ length: data.settings.dockCount }, (_, i) => { const dock = `Dock ${i + 1}`; const booked = shipments.find((shipment) => shipment.timeSlot === slot && shipment.dock === dock) || shipments.filter((shipment) => shipment.timeSlot === slot)[i]; return <div className="slot-cell" key={dock}>{booked ? <button className="slot-booking" onClick={() => onOpenShipment(booked)}><Truck size={17} /><span><b>{booked.truckPlate}</b><small>{booked.supplier}</small></span><StatusPill status={booked.status} /></button> : <span className="available-slot">Available</span>}</div>; })}</div>)}
-        </div>
-      </article>
-      <aside className="panel request-queue">
-        <div className="panel-head"><div><span className="eyebrow">RDS queue</span><h2>Needs action</h2></div><span className="count-chip">{data.rdsRequests.filter(r => r.status !== "SCHEDULED").length}</span></div>
-        <div className="rds-list">{data.rdsRequests.filter(r => r.status !== "SCHEDULED").map((rds) => <article className="rds-card" key={rds.id}><div><span className={`request-status ${rds.status.toLowerCase()}`}>{rds.status}</span><small>{rds.rdsNumber}</small></div><h3>{rds.supplier}</h3><p>{rds.dppNumber} · {formatDate(rds.requestedDate, "short")}</p><div className="rds-meta"><span><Clock3 size={14} /> {rds.arrivalShift}</span>{rds.notes && <span><FileText size={14} /> Note</span>}</div>{rds.status === "PENDING" && ["supplier", "admin"].includes(user.role) && <button className="button primary compact" onClick={() => onConfirmRds(rds)}><Check size={15} /> Confirm RDS</button>}{rds.status === "CONFIRMED" && ["supplier", "admin", "planner"].includes(user.role) && <button className="button primary compact" onClick={() => onScheduleRds(rds)}><CalendarDays size={15} /> Book time slot</button>}</article>)}</div>
-      </aside>
-    </section>
-  </div>;
+function SchedulePage({ data, user, onConfirmRds, onScheduleRds, onOpenShipment, onImportExcel }: { data: AppData; user: SessionUser; onConfirmRds: (rds: RdsRequest) => void; onScheduleRds: (rds: RdsRequest) => void; onOpenShipment: (shipment: Shipment) => void; onImportExcel: () => void }) {
+  return <FlexibleSchedulePage data={data} user={user} onConfirmRds={onConfirmRds} onScheduleRds={onScheduleRds} onOpenShipment={onOpenShipment} onImportExcel={onImportExcel} />;
 }
 
 function BarcodeScanner({ onRead }: { onRead: (value: string) => void }) {
@@ -345,7 +304,7 @@ function OperationsPage({ data, user, onAction, onOpenShipment }: { data: AppDat
         {!selected ? <EmptyState icon={QrCode} title="Ready for a shipment" body="Scan a QR code or enter a shipment number to see the booking." /> : <>
           <div className="verification-head"><div><span className="eyebrow">Booking found</span><h2>{selected.shipmentNumber}</h2></div><StatusPill status={selected.status} /></div>
           <div className="identity-strip"><div className="truck-tile large"><Truck size={26} /></div><div><strong>{selected.truckPlate}</strong><span>{selected.supplier}</span></div><button className="text-button" onClick={() => onOpenShipment(selected)}>View all details</button></div>
-          <dl className="verification-data"><div><dt>Driver</dt><dd>{selected.driverName}</dd></div><div><dt>Time slot</dt><dd>{selected.timeSlot}</dd></div><div><dt>Delivery date</dt><dd>{formatDate(selected.scheduledDate, "short")}</dd></div><div><dt>Load</dt><dd>{selected.materialWeightKg.toLocaleString()} kg</dd></div></dl>
+          <dl className="verification-data"><div><dt>Driver</dt><dd>{selected.driverName}</dd></div><div><dt>Scheduled time</dt><dd>{selected.scheduledTime}{selected.scheduledEndTime ? ` – ${selected.scheduledEndTime}` : ""}</dd></div><div><dt>Delivery date</dt><dd>{formatDate(selected.scheduledDate, "short")}</dd></div><div><dt>Load</dt><dd>{selected.materialWeightKg.toLocaleString()} kg</dd></div></dl>
           <div className="flow-progress">{["Plan", "Trip", "Gate", "Dock", "Unload", "Received"].map((label, index) => <div className={next && next >= index + 1 ? "done" : ""} key={label}><span>{next && next > index + 1 ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div>
           <div className="operation-actions">
             {user.role === "driver" && selected.status === "PLANNED" && <button className="button primary full" onClick={() => withLocation(selected, "IN_TRANSIT")}><Route size={17} /> Start shipment & capture GPS</button>}
@@ -363,14 +322,8 @@ function OperationsPage({ data, user, onAction, onOpenShipment }: { data: AppDat
   </div>;
 }
 
-function BacklogPage({ data, onReschedule, onOpenShipment }: { data: AppData; onReschedule: (id: number, date: string, slot: string) => void; onOpenShipment: (shipment: Shipment) => void }) {
-  const [dragged, setDragged] = useState<number | null>(null);
-  const days = [0, 1, 2].map((offset) => localDate(offset));
-  const backlog = data.shipments.filter((shipment) => shipment.status === "PLANNED" || (shipment.scheduledDate < localDate() && shipment.status !== "RECEIVED"));
-  return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">Recovery planning</span><h1>Backlog manager</h1><p>Drag an unserved delivery into a valid slot over the next three days.</p></div><span className="count-chip warning">{backlog.length} needs rescheduling</span></section>
-    <section className="backlog-layout"><aside className="panel backlog-tray"><div className="panel-head"><div><span className="eyebrow">Unserved</span><h2>Backlog queue</h2></div></div><div className="backlog-list">{backlog.length ? backlog.map((shipment) => <article draggable onDragStart={() => setDragged(shipment.id)} onDragEnd={() => setDragged(null)} className={`backlog-card ${dragged === shipment.id ? "dragging" : ""}`} key={shipment.id}><div><span className="drag-handle">⋮⋮</span><StatusPill status={shipment.status} /></div><button onClick={() => onOpenShipment(shipment)}>{shipment.shipmentNumber}</button><strong>{shipment.supplier}</strong><span>{shipment.truckPlate} · was {formatDate(shipment.scheduledDate, "short")}</span></article>) : <EmptyState title="Backlog cleared" body="There are no deliveries waiting to be moved." />}</div></aside>
-      <div className="reschedule-days">{days.map((date) => <article className="panel day-column" key={date}><div className="day-column-head"><span>{date === localDate() ? "Today" : formatDate(date).split(",")[0]}</span><strong>{formatDate(date, "short")}</strong></div>{TIME_SLOTS.slice(0, 8).map((slot) => { const booked = data.shipments.filter(s => s.scheduledDate === date && s.timeSlot === slot).length; return <div className={`drop-slot ${dragged ? "ready" : ""}`} key={slot} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragged) onReschedule(dragged, date, slot); setDragged(null); }}><span>{slot}</span><small>{booked}/{data.settings.dockCount} booked</small>{booked < data.settings.dockCount && <i>Drop here</i>}</div>; })}</article>)}</div>
-    </section></div>;
+function BacklogPage({ data, onReschedule, onOpenShipment }: { data: AppData; onReschedule: (id: number, date: string, start: string, end: string) => void; onOpenShipment: (shipment: Shipment) => void }) {
+  return <FlexibleBacklogPage data={data} onReschedule={onReschedule} onOpenShipment={onOpenShipment} />;
 }
 
 function ReportsPage({ data }: { data: AppData }) {
@@ -381,7 +334,7 @@ function ReportsPage({ data }: { data: AppData }) {
   const supplierRows = Array.from(new Set(data.shipments.map(s => s.supplier))).map((supplier) => { const rows = data.shipments.filter(s => s.supplier === supplier); return { supplier, deliveries: rows.length, onTime: Math.round(rows.filter(s => s.status !== "REJECTED").length / rows.length * 100), complete: Math.round(rows.filter(s => s.status === "RECEIVED").length / rows.length * 100) }; });
   const chart = [72, 84, 91, 88, 96, onTime, Math.max(68, onTime - 4)];
   return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">Performance</span><h1>Delivery reports</h1><p>On-time, in-full, and receiving throughput in one view.</p></div><button className="button secondary" onClick={() => window.print()}><Download size={17} /> Export report</button></section>
-    <section className="metrics-grid report-metrics"><MetricCard label="On-time arrival" value={`${onTime}%`} helper="Within slot + grace period" icon={Clock3} tone="blue" trend="+3.2%" /><MetricCard label="In-full receiving" value={`${complete}%`} helper="All pallets received" icon={PackageCheck} tone="green" /><MetricCard label="Average unload" value="42 min" helper="Gate-to-dock excluded" icon={Gauge} tone="orange" /><MetricCard label="Rejected at gate" value={data.shipments.filter(s => s.status === "REJECTED").length} helper="Booking/data mismatch" icon={ShieldCheck} tone="red" /></section>
+    <section className="metrics-grid report-metrics"><MetricCard label="On-time arrival" value={`${onTime}%`} helper="Exact time + grace period" icon={Clock3} tone="blue" trend="+3.2%" /><MetricCard label="In-full receiving" value={`${complete}%`} helper="All pallets received" icon={PackageCheck} tone="green" /><MetricCard label="Average unload" value="42 min" helper="Gate-to-dock excluded" icon={Gauge} tone="orange" /><MetricCard label="Rejected at gate" value={data.shipments.filter(s => s.status === "REJECTED").length} helper="Booking/data mismatch" icon={ShieldCheck} tone="red" /></section>
     <section className="reports-grid"><article className="panel trend-panel"><div className="panel-head"><div><span className="eyebrow">Last seven days</span><h2>On-time arrival trend</h2></div><span className="legend"><i /> On-time %</span></div><div className="bar-chart">{chart.map((value, index) => <div key={index}><span style={{ height: `${value}%` }}><b>{value}%</b></span><small>{["Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"][index]}</small></div>)}</div></article><article className="panel loss-panel"><div className="panel-head"><div><span className="eyebrow">Time losses</span><h2>Where delays happen</h2></div></div>{[{ label: "Late supplier departure", value: 38, tone: "orange" }, { label: "Gate data mismatch", value: 24, tone: "red" }, { label: "Dock unavailable", value: 21, tone: "blue" }, { label: "Unloading overrun", value: 17, tone: "violet" }].map(row => <div className="loss-row" key={row.label}><div><span>{row.label}</span><b>{row.value}%</b></div><div><span className={`loss-${row.tone}`} style={{ width: `${row.value}%` }} /></div></div>)}</article></section>
     <section className="panel"><div className="panel-head"><div><span className="eyebrow">Supplier scorecard</span><h2>OTIF performance</h2></div></div><div className="table-wrap"><table><thead><tr><th>Supplier</th><th>Deliveries</th><th>On-time</th><th>In-full</th><th>Score</th></tr></thead><tbody>{supplierRows.map(row => <tr key={row.supplier}><td><b>{row.supplier}</b></td><td>{row.deliveries}</td><td>{row.onTime}%</td><td>{row.complete}%</td><td><span className={`score-chip ${row.onTime >= 90 ? "good" : "watch"}`}>{row.onTime >= 90 ? "Good" : "Watch"}</span></td></tr>)}</tbody></table></div></section>
   </div>;
@@ -410,36 +363,41 @@ function AdminPage({ data, onSaveSettings, onAddMaterial, onAddUser }: { data: A
     <section className="panel admin-panel">{tab !== "settings" && <div className="toolbar"><label className="search-box"><Search size={17} /><input placeholder={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="button secondary" onClick={exportCsv}><Download size={16} /> Export CSV</button></div>}
       {tab === "materials" && <div className="table-wrap"><table><thead><tr><th>Material code</th><th>Material name</th><th>Type</th><th>UOM</th><th>Shelf life</th><th>Units / pallet</th><th>Storage</th><th /></tr></thead><tbody>{data.materials.filter(material => `${material.code} ${material.name}`.toLowerCase().includes(search.toLowerCase())).map(material => <tr key={material.id}><td><b>{material.code}</b></td><td>{material.name}</td><td><span className="type-chip">{material.type}</span></td><td>{material.uom}</td><td>{material.shelfLifeDays ? `${material.shelfLifeDays} days` : "N/A"}</td><td>{material.unitsPerPallet.toLocaleString()}</td><td>{material.storageZone}</td><td><button className="icon-button"><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>}
       {tab === "users" && <div className="user-cards">{data.users.filter(user => `${user.name} ${user.username}`.toLowerCase().includes(search.toLowerCase())).map(user => { const RoleIcon = ROLE_ICONS[user.role]; return <article className="user-card" key={user.id}><span className="user-avatar">{initials(user.name)}</span><div><strong>{user.name}</strong><small>@{user.username}</small></div><span className="role-chip"><RoleIcon size={14} /> {ROLE_LABELS[user.role]}</span><button className="icon-button"><MoreHorizontal size={18} /></button></article>; })}</div>}
-      {tab === "settings" && <form className="settings-form" onSubmit={(event) => { event.preventDefault(); onSaveSettings(settings); }}><div className="settings-intro"><span className="settings-icon"><Clock3 size={22} /></span><div><h2>Arrival slot policy</h2><p>These rules apply to every new supplier booking.</p></div></div><div className="form-grid"><label>Site name<input value={settings.siteName} onChange={event => setSettings({ ...settings, siteName: event.target.value })} /></label><label>Slot duration<select value={settings.slotMinutes} onChange={event => setSettings({ ...settings, slotMinutes: Number(event.target.value) })}><option value={60}>60 minutes</option><option value={90}>90 minutes</option><option value={120}>120 minutes</option></select></label><label>Number of docks<input type="number" min="1" max="12" value={settings.dockCount} onChange={event => setSettings({ ...settings, dockCount: Number(event.target.value) })} /></label><label>Late grace period<select value={settings.graceMinutes} onChange={event => setSettings({ ...settings, graceMinutes: Number(event.target.value) })}><option value={0}>No grace period</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div><div className="shift-policy"><h3>Arrival shifts</h3>{[{ name: "Morning", time: "06:00 – 14:00" }, { name: "Afternoon", time: "14:00 – 22:00" }, { name: "Night", time: "22:00 – 06:00" }].map(shift => <div key={shift.name}><span className="live-dot" /><b>{shift.name}</b><span>{shift.time}</span><em>Active</em></div>)}</div><button className="button primary" type="submit"><Check size={17} /> Save scheduling rules</button></form>}
+      {tab === "settings" && <form className="settings-form" onSubmit={(event) => { event.preventDefault(); onSaveSettings(settings); }}><div className="settings-intro"><span className="settings-icon"><Clock3 size={22} /></span><div><h2>Flexible arrival policy</h2><p>Bookings and Excel imports can use any exact time; an end time is optional.</p></div></div><div className="form-grid"><label>Site name<input value={settings.siteName} onChange={event => setSettings({ ...settings, siteName: event.target.value })} /></label><label>Number of docks<input type="number" min="1" max="12" value={settings.dockCount} onChange={event => setSettings({ ...settings, dockCount: Number(event.target.value) })} /></label><label>Late grace period<select value={settings.graceMinutes} onChange={event => setSettings({ ...settings, graceMinutes: Number(event.target.value) })}><option value={0}>No grace period</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div><div className="shift-policy"><h3>Shift labels (informational)</h3>{[{ name: "Morning", time: "06:00 – 14:00" }, { name: "Afternoon", time: "14:00 – 22:00" }, { name: "Night", time: "22:00 – 06:00" }].map(shift => <div key={shift.name}><span className="live-dot" /><b>{shift.name}</b><span>{shift.time}</span><em>Auto</em></div>)}</div><button className="button primary" type="submit"><Check size={17} /> Save scheduling rules</button></form>}
     </section>{creating && <AdminCreateModal kind={creating} onClose={() => setCreating(null)} onSubmit={finishCreate} />}
   </div>;
 }
 
 function NewRdsModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (form: Record<string, string | number>) => void }) {
-  const [form, setForm] = useState<Record<string, string | number>>({ dppNumber: `DPP-${localDate().slice(2).replaceAll("-", "")}-105`, supplier: "Pacific Oils Inc.", requestedDate: localDate(1), arrivalShift: "Morning", poNumber: "4516017364", materialCode: "6271711", materialName: "Refined soybean oil", quantity: 12000, uom: "KG", palletCount: 12, notes: "" });
+  const [form, setForm] = useState<Record<string, string | number>>({ dppNumber: `DPP-${localDate().slice(2).replaceAll("-", "")}-001`, supplier: "", requestedDate: localDate(1), arrivalShift: "Morning", poNumber: "", materialCode: "", materialName: "", quantity: 0, uom: "KG", palletCount: 0, notes: "" });
   const set = (name: string, value: string | number) => setForm({ ...form, [name]: value });
-  return <Modal title="Create delivery request" subtitle="Create the DPP record and send an RDS to the supplier." onClose={onClose} wide><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form); }}><div className="form-section"><span>01</span><div><h3>Delivery plan</h3><div className="form-grid"><label>DPP number<input value={form.dppNumber} onChange={e => set("dppNumber", e.target.value)} required /></label><label>Supplier<select value={form.supplier} onChange={e => set("supplier", e.target.value)}><option>Pacific Oils Inc.</option><option>Cavite Packaging</option><option>Luzon Ingredients</option><option>Prime Cartons Corp.</option></select></label><label>Requested date<input type="date" value={form.requestedDate} onChange={e => set("requestedDate", e.target.value)} required /></label><label>Arrival shift<select value={form.arrivalShift} onChange={e => set("arrivalShift", e.target.value)}><option>Morning</option><option>Afternoon</option><option>Night</option></select></label></div></div></div><div className="form-section"><span>02</span><div><h3>Material line</h3><div className="form-grid three"><label>PO number<input value={form.poNumber} onChange={e => set("poNumber", e.target.value)} /></label><label>Material code<input value={form.materialCode} onChange={e => set("materialCode", e.target.value)} /></label><label>Material name<input value={form.materialName} onChange={e => set("materialName", e.target.value)} /></label><label>Quantity<input type="number" value={form.quantity} onChange={e => set("quantity", Number(e.target.value))} /></label><label>UOM<select value={form.uom} onChange={e => set("uom", e.target.value)}><option>KG</option><option>PC</option><option>L</option></select></label><label>Pallet count<input type="number" value={form.palletCount} onChange={e => set("palletCount", Number(e.target.value))} /></label></div><label>Planner note<textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional instruction to supplier" /></label></div></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><ArrowRight size={17} /> Create & send RDS</button></div></form></Modal>;
+  return <Modal title="Create delivery request" subtitle="Create the DPP record and send an RDS to the supplier." onClose={onClose} wide><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form); }}><div className="form-section"><span>01</span><div><h3>Delivery plan</h3><div className="form-grid"><label>DPP number<input value={form.dppNumber} onChange={e => set("dppNumber", e.target.value)} required /></label><label>Supplier<input value={form.supplier} onChange={e => set("supplier", e.target.value)} placeholder="Exact registered supplier name" required /></label><label>Requested date<input type="date" value={form.requestedDate} onChange={e => set("requestedDate", e.target.value)} required /></label><label>Arrival shift<select value={form.arrivalShift} onChange={e => set("arrivalShift", e.target.value)}><option>Morning</option><option>Afternoon</option><option>Night</option></select></label></div></div></div><div className="form-section"><span>02</span><div><h3>Material line</h3><div className="form-grid three"><label>PO number<input value={form.poNumber} onChange={e => set("poNumber", e.target.value)} /></label><label>Material code<input value={form.materialCode} onChange={e => set("materialCode", e.target.value)} required /></label><label>Material name<input value={form.materialName} onChange={e => set("materialName", e.target.value)} required /></label><label>Quantity<input type="number" min="0.001" step="any" value={form.quantity} onChange={e => set("quantity", Number(e.target.value))} required /></label><label>UOM<select value={form.uom} onChange={e => set("uom", e.target.value)}><option>KG</option><option>PC</option><option>L</option></select></label><label>Pallet count<input type="number" min="0" value={form.palletCount} onChange={e => set("palletCount", Number(e.target.value))} /></label></div><label>Planner note<textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional instruction to supplier" /></label></div></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><ArrowRight size={17} /> Create & send RDS</button></div></form></Modal>;
 }
 
 type DeliveryFiles = { dn: File | null; coa: File | null };
 
-function BookSlotModal({ rds, data, onClose, onSubmit }: { rds: RdsRequest; data: AppData; onClose: () => void; onSubmit: (form: Record<string, string | number>, files: DeliveryFiles) => void }) {
-  const allowedSlots = TIME_SLOTS.filter(slot => rds.arrivalShift === "Morning" ? Number(slot.slice(0, 2)) >= 6 && Number(slot.slice(0, 2)) < 14 : rds.arrivalShift === "Afternoon" ? Number(slot.slice(0, 2)) >= 14 && Number(slot.slice(0, 2)) < 22 : Number(slot.slice(0, 2)) >= 22 || Number(slot.slice(0, 2)) < 6);
-  const [form, setForm] = useState<Record<string, string | number>>({ rdsId: rds.id, scheduledDate: rds.requestedDate, timeSlot: allowedSlots[0], truckPlate: "", driverName: "", driverPhone: "", materialWeightKg: 12000, dnNumber: "", batchNumber: "" });
+function BookSlotModal({ rds, onClose, onSubmit }: { rds: RdsRequest; onClose: () => void; onSubmit: (form: Record<string, string | number>, files: DeliveryFiles) => void }) {
+  const suggestedTime = rds.arrivalShift === "Afternoon" ? "14:00" : rds.arrivalShift === "Night" ? "22:00" : "08:00";
+  const [form, setForm] = useState<Record<string, string | number>>({ rdsId: rds.id, scheduledDate: rds.requestedDate, scheduledTime: suggestedTime, scheduledEndTime: "", truckPlate: "", driverName: "", driverPhone: "", materialWeightKg: 12000, dnNumber: "", batchNumber: "" });
   const [files, setFiles] = useState<DeliveryFiles>({ dn: null, coa: null });
   const set = (name: string, value: string | number) => setForm({ ...form, [name]: value });
-  return <Modal title="Book delivery time" subtitle={`${rds.rdsNumber} · ${rds.supplier} · ${rds.arrivalShift} shift`} onClose={onClose}><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form, files); }}><div className="notice"><Clock3 size={17} /><span>Only slots within the confirmed <b>{rds.arrivalShift}</b> shift are available.</span></div><div className="form-grid"><label>Delivery date<input type="date" value={form.scheduledDate} onChange={e => set("scheduledDate", e.target.value)} /></label><label>Available slot<select value={form.timeSlot} onChange={e => set("timeSlot", e.target.value)}>{allowedSlots.map(slot => { const used = data.shipments.filter(s => s.scheduledDate === form.scheduledDate && s.timeSlot === slot).length; return <option value={slot} disabled={used >= data.settings.dockCount} key={slot}>{slot} · {data.settings.dockCount - used} open</option>; })}</select></label><label>Truck plate<input value={form.truckPlate} onChange={e => set("truckPlate", e.target.value.toUpperCase())} placeholder="NAB 1234" required /></label><label>Driver name<input value={form.driverName} onChange={e => set("driverName", e.target.value)} required /></label><label>Driver phone<input value={form.driverPhone} onChange={e => set("driverPhone", e.target.value)} placeholder="09xxxxxxxxx" required /></label><label>Load weight (kg)<input type="number" value={form.materialWeightKg} onChange={e => set("materialWeightKg", Number(e.target.value))} /></label><label>DN number<input value={form.dnNumber} onChange={e => set("dnNumber", e.target.value)} /></label><label>Vendor batch<input value={form.batchNumber} onChange={e => set("batchNumber", e.target.value)} /></label></div><div className="upload-pair"><label><Upload size={17} /><span><b>{files.dn ? files.dn.name : "Upload DN"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, dn: event.target.files?.[0] || null })} /></label><label><Upload size={17} /><span><b>{files.coa ? files.coa.name : "Upload COA"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, coa: event.target.files?.[0] || null })} /></label></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><Check size={17} /> Confirm booking</button></div></form></Modal>;
+  return <Modal title="Set delivery time" subtitle={`${rds.rdsNumber} · ${rds.supplier} · requested ${rds.arrivalShift}`} onClose={onClose}><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form, files); }}><div className="notice"><Clock3 size={17} /><span>Choose any exact arrival time. The end time is optional and does not limit the delivery.</span></div><div className="form-grid"><label>Delivery date<input type="date" value={form.scheduledDate} onChange={e => set("scheduledDate", e.target.value)} required /></label><label>Exact arrival time<input type="time" value={form.scheduledTime} onChange={e => set("scheduledTime", e.target.value)} required /></label><label>Optional end time<input type="time" value={form.scheduledEndTime} onChange={e => set("scheduledEndTime", e.target.value)} /></label><label>Truck plate<input value={form.truckPlate} onChange={e => set("truckPlate", e.target.value.toUpperCase())} placeholder="NAB 1234" required /></label><label>Driver name<input value={form.driverName} onChange={e => set("driverName", e.target.value)} required /></label><label>Driver phone<input value={form.driverPhone} onChange={e => set("driverPhone", e.target.value)} placeholder="09xxxxxxxxx" required /></label><label>Load weight (kg)<input type="number" value={form.materialWeightKg} onChange={e => set("materialWeightKg", Number(e.target.value))} /></label><label>DN number<input value={form.dnNumber} onChange={e => set("dnNumber", e.target.value)} /></label><label>Vendor batch<input value={form.batchNumber} onChange={e => set("batchNumber", e.target.value)} /></label></div><div className="upload-pair"><label><Upload size={17} /><span><b>{files.dn ? files.dn.name : "Upload DN"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, dn: event.target.files?.[0] || null })} /></label><label><Upload size={17} /><span><b>{files.coa ? files.coa.name : "Upload COA"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, coa: event.target.files?.[0] || null })} /></label></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><Check size={17} /> Confirm exact time</button></div></form></Modal>;
 }
 
 function ShipmentModal({ shipment, onClose }: { shipment: Shipment; onClose: () => void }) {
-  return <Modal title={shipment.shipmentNumber} subtitle={`${shipment.bookingReceipt} · ${shipment.supplier}`} onClose={onClose} wide><div className="shipment-detail print-area"><div className="receipt-head"><div><span className="brand-mark"><Route size={20} /></span><span><b>DockFlow</b><small>Booking receipt</small></span></div><StatusPill status={shipment.status} /></div><div className="shipment-summary"><div><span className="truck-tile large"><Truck size={26} /></span><div><small>Truck</small><strong>{shipment.truckPlate}</strong><span>{shipment.driverName} · {shipment.driverPhone}</span></div></div><img src={`/api/shipments/${shipment.id}/qr.svg`} alt={`QR code for ${shipment.shipmentNumber}`} /></div><dl className="detail-grid"><div><dt>Delivery date</dt><dd>{formatDate(shipment.scheduledDate)}</dd></div><div><dt>Time slot</dt><dd>{shipment.timeSlot}</dd></div><div><dt>Arrival shift</dt><dd>{shipment.shift}</dd></div><div><dt>Assigned dock</dt><dd>{shipment.dock || "At gate assignment"}</dd></div><div><dt>Load weight</dt><dd>{shipment.materialWeightKg.toLocaleString()} kg</dd></div><div><dt>Pallet progress</dt><dd>{shipment.palletsScanned} / {shipment.palletsTotal}</dd></div></dl><div className="table-wrap detail-items"><table><thead><tr><th>PO number</th><th>Material</th><th>DN number</th><th>Quantity</th><th>Pallets</th><th>Documents</th></tr></thead><tbody>{shipment.items.map(item => <tr key={item.id}><td>{item.poNumber}</td><td><b>{item.materialCode}</b><small>{item.materialName}</small></td><td>{item.dnNumber || "—"}</td><td>{item.quantity.toLocaleString()} {item.uom}</td><td>{item.palletCount}</td><td><div className="document-chips">{item.dnFileName && <span>DN</span>}{item.coaFileName && <span>COA</span>}{!item.dnFileName && !item.coaFileName && "—"}</div></td></tr>)}</tbody></table></div><div className="shipment-actions"><button className="button secondary" onClick={() => window.print()}><Printer size={17} /> Print booking & pallet IDs</button><button className="button primary" onClick={onClose}>Done</button></div></div></Modal>;
+  return <Modal title={shipment.shipmentNumber} subtitle={`${shipment.bookingReceipt} · ${shipment.supplier}`} onClose={onClose} wide><div className="shipment-detail print-area">
+    <div className="receipt-head"><div><span className="brand-mark"><Route size={20} /></span><span><b>DockFlow</b><small>{shipment.importSource ? `Imported from ${shipment.importSource}` : "Booking receipt"}</small></span></div><StatusPill status={shipment.status} /></div>
+    <div className="shipment-summary"><div><span className="truck-tile large"><Truck size={26} /></span><div><small>Truck & driver</small><strong>{shipment.truckPlate}</strong><span>{shipment.driverName}{shipment.driverPhone ? ` · ${shipment.driverPhone}` : ""}</span></div></div><img src={`/api/shipments/${shipment.id}/qr.svg`} alt={`QR code for ${shipment.shipmentNumber}`} /></div>
+    <dl className="detail-grid"><div><dt>Delivery date</dt><dd>{formatDate(shipment.scheduledDate)}</dd></div><div><dt>Scheduled time</dt><dd>{shipment.scheduledTime}{shipment.scheduledEndTime ? ` – ${shipment.scheduledEndTime}` : ""}</dd></div><div><dt>Shift label</dt><dd>{shipment.shift}</dd></div><div><dt>Assigned dock</dt><dd>{shipment.dock || "At gate assignment"}</dd></div><div><dt>Load weight</dt><dd>{shipment.materialWeightKg ? `${shipment.materialWeightKg.toLocaleString()} kg` : "See material quantities"}</dd></div><div><dt>Pallet progress</dt><dd>{shipment.palletsScanned} / {shipment.palletsTotal}</dd></div></dl>
+    <div className="table-wrap detail-items imported-detail-table"><table><thead><tr><th>PO number</th><th>Material</th><th>Quantity</th><th>PO balance</th><th>Source</th><th>Remarks / documents</th></tr></thead><tbody>{shipment.items.map(item => <tr key={item.id}><td>{item.poNumber || "—"}</td><td><b>{item.materialCode}</b><small>{item.materialName}</small></td><td>{item.quantity.toLocaleString()} {item.uom}</td><td>{item.poBalance == null ? "—" : item.poBalance.toLocaleString()}<small>{item.stillToBeDelivered == null ? "" : `${item.stillToBeDelivered.toLocaleString()} still to deliver`}</small></td><td>{item.sourceSheet ? `${item.sourceSheet} · row ${item.sourceRow}` : "Manual"}<small>{item.deliverySite || item.sourceFile || ""}{item.deliveryWeek ? ` · wk ${item.deliveryWeek}` : ""}</small></td><td>{item.remarks || "—"}<div className="document-chips">{item.dnFileName && <span>DN</span>}{item.coaFileName && <span>COA</span>}</div></td></tr>)}</tbody></table></div>
+    <div className="shipment-actions"><button className="button secondary" onClick={() => window.print()}><Printer size={17} /> Print booking & pallet IDs</button><button className="button primary" onClick={onClose}>Done</button></div>
+  </div></Modal>;
 }
 
 export default function DockFlowApp() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [token, setToken] = useState("");
-  const [demo, setDemo] = useState(false);
-  const [data, setData] = useState<AppData>(demoData);
+  const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [view, setView] = useState<View>("overview");
   const [dark, setDark] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -448,12 +406,14 @@ export default function DockFlowApp() {
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
   const [newRds, setNewRds] = useState(false);
   const [bookingRds, setBookingRds] = useState<RdsRequest | null>(null);
+  const [excelImport, setExcelImport] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const saved = JSON.parse(localStorage.getItem("dockflow-session") || "null") as { user: SessionUser; token: string; demo: boolean } | null;
-        if (saved) { setUser(saved.user); setToken(saved.token); setDemo(saved.demo); }
+        const saved = JSON.parse(localStorage.getItem("dockflow-session") || "null") as { user: SessionUser; token: string } | null;
+        if (saved && saved.token.split(".").length === 3) { setUser(saved.user); setToken(saved.token); }
+        else localStorage.removeItem("dockflow-session");
       } catch { localStorage.removeItem("dockflow-session"); }
       if (localStorage.getItem("dockflow-theme") === "dark") setDark(true);
     }, 0);
@@ -461,76 +421,80 @@ export default function DockFlowApp() {
   }, []);
 
   const refresh = useCallback(async (authToken = token) => {
-    if (!authToken || authToken.startsWith("demo-")) return;
+    if (!authToken) return;
     setLoading(true);
     try { setData(await getBootstrap(authToken)); } catch { setToast("Could not refresh operations data."); } finally { setLoading(false); }
   }, [token]);
 
   useEffect(() => {
-    if (!user || demo || !token) return;
+    if (!user || !token) return;
     let active = true;
     getBootstrap(token).then(result => { if (active) setData(result); }).catch(() => { if (active) setToast("Could not refresh operations data."); });
     return () => { active = false; };
-  }, [user, demo, token]);
+  }, [user, token]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("dockflow-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { console.info("Made by Riemar R. Seruelas Jr – Data Digital Intern"); }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 3500); return () => clearTimeout(timer); }, [toast]);
 
-  const handleLogin = (nextUser: SessionUser, nextToken: string, isDemo: boolean) => {
-    setUser(nextUser); setToken(nextToken); setDemo(isDemo); setView("overview");
-    localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token: nextToken, demo: isDemo }));
+  const handleLogin = (nextUser: SessionUser, nextToken: string) => {
+    setUser(nextUser); setToken(nextToken); setView("overview");
+    localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token: nextToken }));
   };
-  const logout = () => { setUser(null); setToken(""); setDemo(false); localStorage.removeItem("dockflow-session"); };
+  const logout = () => { setUser(null); setToken(""); setData(EMPTY_DATA); localStorage.removeItem("dockflow-session"); };
   const notify = (message: string) => setToast(message);
-  const persistOrDemo = async (path: string, method: string, body: unknown, applyDemo: () => void, message: string) => {
-    if (demo) applyDemo(); else { await apiRequest(token, path, method, body); await refresh(); }
+  const persist = async (path: string, method: string, body: unknown, message: string) => {
+    await apiRequest(token, path, method, body);
+    await refresh();
     notify(message);
   };
 
   const updateStatus = async (id: number, status: ShipmentStatus, extra: Record<string, unknown> = {}) => {
     const current = data.shipments.find(s => s.id === id);
-    const palletIncrease = extra.palletId ? 1 : 0;
-    await persistOrDemo(`/api/shipments/${id}/status`, "PATCH", { status, ...extra }, () => setData(previous => ({ ...previous, shipments: previous.shipments.map(shipment => shipment.id === id ? { ...shipment, status, dock: "dock" in extra ? String(extra.dock || "") || null : shipment.dock, palletsScanned: Math.min(shipment.palletsTotal, shipment.palletsScanned + palletIncrease), arrivalTime: status === "ARRIVED" ? new Date().toISOString() : shipment.arrivalTime, completedAt: status === "RECEIVED" ? new Date().toISOString() : shipment.completedAt } : shipment), audit: [{ id: Date.now(), at: new Date().toISOString(), actor: user?.name || "User", action: status, shipmentNumber: current?.shipmentNumber, detail: `${current?.shipmentNumber} moved to ${STATUS_META[status].label}` }, ...previous.audit] })), `${current?.shipmentNumber} is now ${STATUS_META[status].label.toLowerCase()}.`);
+    await persist(`/api/shipments/${id}/status`, "PATCH", { status, ...extra }, `${current?.shipmentNumber} is now ${STATUS_META[status].label.toLowerCase()}.`);
     setSelectedShipment(null);
   };
-  const reschedule = async (id: number, scheduledDate: string, timeSlot: string) => persistOrDemo(`/api/shipments/${id}/reschedule`, "PATCH", { scheduledDate, timeSlot }, () => setData(previous => ({ ...previous, shipments: previous.shipments.map(shipment => shipment.id === id ? { ...shipment, scheduledDate, timeSlot } : shipment) })), `Delivery moved to ${formatDate(scheduledDate, "short")}, ${timeSlot}.`);
-  const confirmRds = async (rds: RdsRequest) => persistOrDemo(`/api/rds/${rds.id}/confirm`, "PATCH", {}, () => setData(previous => ({ ...previous, rdsRequests: previous.rdsRequests.map(item => item.id === rds.id ? { ...item, status: "CONFIRMED" } : item) })), `${rds.rdsNumber} confirmed.`);
+  const reschedule = async (id: number, scheduledDate: string, scheduledTime: string, scheduledEndTime: string) => {
+    const timeSlot = scheduledEndTime ? `${scheduledTime} - ${scheduledEndTime}` : scheduledTime;
+    await persist(`/api/shipments/${id}/reschedule`, "PATCH", { scheduledDate, scheduledTime, scheduledEndTime }, `Delivery moved to ${formatDate(scheduledDate, "short")}, ${timeSlot}.`);
+  };
+  const confirmRds = async (rds: RdsRequest) => persist(`/api/rds/${rds.id}/confirm`, "PATCH", {}, `${rds.rdsNumber} confirmed.`);
   const createRds = async (form: Record<string, string | number>) => {
-    await persistOrDemo("/api/rds", "POST", form, () => setData(previous => ({ ...previous, rdsRequests: [{ id: Date.now(), rdsNumber: `RDS-${localDate().slice(2).replaceAll("-", "")}-${String(previous.rdsRequests.length + 15).padStart(3, "0")}`, dppNumber: String(form.dppNumber), supplier: String(form.supplier), requestedDate: String(form.requestedDate), arrivalShift: String(form.arrivalShift), status: "PENDING", notes: String(form.notes || "") }, ...previous.rdsRequests] })), "Delivery request created and sent to the supplier.");
+    await persist("/api/rds", "POST", form, "Delivery request created and sent to the supplier.");
     setNewRds(false);
   };
   const bookRds = async (form: Record<string, string | number>, files: DeliveryFiles) => {
-    const rds = bookingRds!;
-    if (demo) {
-      setData(previous => { const id = Math.max(...previous.shipments.map(s => s.id)) + 1; const pallets = 8; return { ...previous, rdsRequests: previous.rdsRequests.map(item => item.id === rds.id ? { ...item, status: "SCHEDULED" } : item), shipments: [...previous.shipments, { id, shipmentNumber: `SHP-${String(form.scheduledDate).replaceAll("-", "")}-${String(id).padStart(2, "0")}`, bookingReceipt: `BKG-${903000 + id * 37}`, supplier: rds.supplier, vendorCode: `V${9100 + id}`, scheduledDate: String(form.scheduledDate), timeSlot: String(form.timeSlot), shift: rds.arrivalShift, status: "PLANNED", truckPlate: String(form.truckPlate), driverName: String(form.driverName), driverPhone: String(form.driverPhone), materialWeightKg: Number(form.materialWeightKg), dock: null, items: [{ id, poNumber: "4516017364", materialCode: "6271711", materialName: "Scheduled material", quantity: Number(form.materialWeightKg), uom: "KG", palletCount: pallets, dnNumber: String(form.dnNumber), batchNumber: String(form.batchNumber), dnFileName: files.dn?.name, coaFileName: files.coa?.name }], palletsScanned: 0, palletsTotal: pallets }] }; });
-    } else {
-      const result = await apiRequest<{ id: number; itemIds: number[] }>(token, "/api/shipments", "POST", form);
-      const uploadFile = async (file: File | null, documentType: "DN" | "COA") => {
-        if (!file || !result.itemIds[0]) return;
-        const payload = new FormData(); payload.append("file", file); payload.append("documentType", documentType);
-        const response = await fetch(`/api/shipment-items/${result.itemIds[0]}/documents`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: payload });
-        if (!response.ok) throw new Error(`${documentType} upload failed`);
-      };
-      await uploadFile(files.dn, "DN"); await uploadFile(files.coa, "COA"); await refresh();
-    }
-    notify("Time slot booked. Shipment number, QR, and pallet IDs are ready.");
+    const result = await apiRequest<{ id: number; itemIds: number[] }>(token, "/api/shipments", "POST", form);
+    const uploadFile = async (file: File | null, documentType: "DN" | "COA") => {
+      if (!file || !result.itemIds[0]) return;
+      const payload = new FormData(); payload.append("file", file); payload.append("documentType", documentType);
+      const response = await fetch(`/api/shipment-items/${result.itemIds[0]}/documents`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: payload });
+      if (!response.ok) throw new Error(`${documentType} upload failed`);
+    };
+    await uploadFile(files.dn, "DN"); await uploadFile(files.coa, "COA"); await refresh();
+    notify("Exact delivery time saved. Shipment number, QR, and pallet IDs are ready.");
     setBookingRds(null);
   };
-  const saveSettings = async (settings: AppData["settings"]) => persistOrDemo("/api/settings", "PATCH", settings, () => setData(previous => ({ ...previous, settings })), "Scheduling rules saved.");
-  const addMaterial = async (form: Record<string, string | number>) => persistOrDemo("/api/materials", "POST", form, () => setData(previous => ({ ...previous, materials: [...previous.materials, { id: Date.now(), code: String(form.code), name: String(form.name), type: String(form.type), uom: String(form.uom), shelfLifeDays: Number(form.shelfLifeDays), unitsPerPallet: Number(form.unitsPerPallet), storageZone: String(form.storageZone) }] })), `${form.name} added to material master.`);
-  const addUser = async (form: Record<string, string | number>) => persistOrDemo("/api/users", "POST", form, () => setData(previous => ({ ...previous, users: [...previous.users, { id: Date.now(), name: String(form.name), username: String(form.username), role: String(form.role) as Role, supplierId: form.supplierId ? Number(form.supplierId) : null }] })), `${form.name} added as ${ROLE_LABELS[String(form.role) as Role]}.`);
+  const imported = async (result: ImportResult) => {
+    await refresh();
+    setExcelImport(false);
+    setView("monitoring");
+    notify(`${result.deliveryCount} deliveries created from Excel; ${result.importedRows} rows imported and ${result.skippedRows} skipped.`);
+  };
+  const saveSettings = async (settings: AppData["settings"]) => persist("/api/settings", "PATCH", settings, "Scheduling rules saved.");
+  const addMaterial = async (form: Record<string, string | number>) => persist("/api/materials", "POST", form, `${form.name} added to material master.`);
+  const addUser = async (form: Record<string, string | number>) => persist("/api/users", "POST", form, `${form.name} added as ${ROLE_LABELS[String(form.role) as Role]}.`);
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
   const visibleNav = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(user.role));
   const RoleIcon = ROLE_ICONS[user.role];
 
   return <div className="app-shell">
-    <aside className={`sidebar ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b><small>{item.description}</small></div></button>; })}</nav><div className="sidebar-shift"><span className="live-dot" /><div><b>Morning shift</b><small>06:00 – 14:00 · Active</small></div></div><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{ROLE_LABELS[user.role]}{demo ? " · Demo" : ""}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
+    <aside className={`sidebar ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b><small>{item.description}</small></div></button>; })}</nav><div className="sidebar-shift"><span className="live-dot" /><div><b>Morning shift</b><small>06:00 – 14:00 · Active</small></div></div><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{ROLE_LABELS[user.role]}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><span className="role-badge"><RoleIcon size={15} /> {ROLE_LABELS[user.role]}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="user-mini" onClick={logout}><span>{initials(user.name)}</span><ChevronDown size={15} /></button></div></header>
-      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "schedule" && <SchedulePage data={data} user={user} onConfirmRds={confirmRds} onScheduleRds={setBookingRds} onOpenShipment={setSelectedShipment} />}{view === "operations" && <OperationsPage data={data} user={user} onAction={updateStatus} onOpenShipment={setSelectedShipment} />}{view === "backlog" && <BacklogPage data={data} onReschedule={reschedule} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} />}</div>
+      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={setSelectedShipment} />}{view === "schedule" && <SchedulePage data={data} user={user} onConfirmRds={confirmRds} onScheduleRds={setBookingRds} onOpenShipment={setSelectedShipment} onImportExcel={() => setExcelImport(true)} />}{view === "operations" && <OperationsPage data={data} user={user} onAction={updateStatus} onOpenShipment={setSelectedShipment} />}{view === "backlog" && <BacklogPage data={data} onReschedule={reschedule} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} />}</div>
     </main>
     {loading && <div className="loading-line" />}{toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
-    {selectedShipment && <ShipmentModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} />}{newRds && <NewRdsModal onClose={() => setNewRds(false)} onSubmit={createRds} />}{bookingRds && <BookSlotModal rds={bookingRds} data={data} onClose={() => setBookingRds(null)} onSubmit={bookRds} />}
+    {selectedShipment && <ShipmentModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} />}{newRds && <NewRdsModal onClose={() => setNewRds(false)} onSubmit={createRds} />}{bookingRds && <BookSlotModal rds={bookingRds} onClose={() => setBookingRds(null)} onSubmit={bookRds} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}
   </div>;
 }

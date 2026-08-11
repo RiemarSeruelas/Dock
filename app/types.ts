@@ -33,6 +33,15 @@ export interface ShipmentItem {
   expiryDate?: string;
   dnFileName?: string;
   coaFileName?: string;
+  sourceSheet?: string | null;
+  sourceRow?: number | null;
+  sourceFile?: string | null;
+  deliverySite?: string | null;
+  deliveryWeek?: string | null;
+  poBalance?: number | null;
+  poQuantity?: number | null;
+  stillToBeDelivered?: number | null;
+  remarks?: string | null;
 }
 
 export interface Shipment {
@@ -42,6 +51,9 @@ export interface Shipment {
   supplier: string;
   vendorCode: string;
   scheduledDate: string;
+  scheduledTime: string;
+  scheduledEndTime?: string | null;
+  expectedDurationMinutes?: number | null;
   timeSlot: string;
   shift: string;
   status: ShipmentStatus;
@@ -54,6 +66,8 @@ export interface Shipment {
   startedAt?: string | null;
   completedAt?: string | null;
   rejectionReason?: string | null;
+  importBatchId?: number | null;
+  importSource?: string | null;
   items: ShipmentItem[];
   palletsScanned: number;
   palletsTotal: number;
@@ -96,8 +110,20 @@ export interface AppData {
   materials: Material[];
   users: SessionUser[];
   audit: AuditEntry[];
+  importBatches: {
+    id: number;
+    fileName: string;
+    status: string;
+    totalRows: number;
+    importedRows: number;
+    skippedRows: number;
+    deliveryCount: number;
+    createdAt: string;
+    completedAt?: string | null;
+  }[];
   settings: {
-    slotMinutes: number;
+    flexibleScheduling: boolean;
+    slotMinutes?: number;
     dockCount: number;
     graceMinutes: number;
     siteName: string;

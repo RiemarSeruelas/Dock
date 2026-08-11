@@ -1,9 +1,14 @@
 node_modules
-dist
 .next
 .git
-.sites-runtime
-.wrangler
+.npm-cache
 uploads
+build
+.vinext
+.openai
+examples
+worker
+outputs
+work
 *.zip
 npm-debug.log

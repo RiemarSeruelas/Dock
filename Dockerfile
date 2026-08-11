@@ -4,7 +4,6 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 FROM base AS web
-RUN apk add --no-cache bash coreutils
 COPY . .
 RUN npm run build
 ENV NODE_ENV=production

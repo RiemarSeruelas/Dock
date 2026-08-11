@@ -54,6 +54,21 @@ CREATE TABLE IF NOT EXISTS rds_requests (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS import_batches (
+  id BIGSERIAL PRIMARY KEY,
+  file_name TEXT NOT NULL,
+  sheet_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status VARCHAR(30) NOT NULL DEFAULT 'PREVIEWED' CHECK (status IN ('PREVIEWED','IMPORTED','FAILED')),
+  total_rows INTEGER NOT NULL DEFAULT 0,
+  imported_rows INTEGER NOT NULL DEFAULT 0,
+  skipped_rows INTEGER NOT NULL DEFAULT 0,
+  delivery_count INTEGER NOT NULL DEFAULT 0,
+  issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+  uploaded_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS shipments (
   id SERIAL PRIMARY KEY,
   shipment_number VARCHAR(90) UNIQUE,
@@ -62,6 +77,9 @@ CREATE TABLE IF NOT EXISTS shipments (
   supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
   scheduled_date DATE NOT NULL,
   time_slot VARCHAR(40) NOT NULL,
+  scheduled_time TIME,
+  scheduled_end_time TIME,
+  expected_duration_minutes INTEGER,
   arrival_shift VARCHAR(30) NOT NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'PLANNED',
   truck_plate VARCHAR(40) NOT NULL,
@@ -79,6 +97,7 @@ CREATE TABLE IF NOT EXISTS shipments (
   unloading_started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   rejection_reason TEXT,
+  import_batch_id BIGINT REFERENCES import_batches(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -97,6 +116,22 @@ CREATE TABLE IF NOT EXISTS shipment_items (
   production_date DATE,
   expiry_date DATE
 );
+
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS scheduled_time TIME;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS scheduled_end_time TIME;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS expected_duration_minutes INTEGER;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS import_batch_id BIGINT REFERENCES import_batches(id);
+
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS source_key TEXT;
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS source_sheet VARCHAR(120);
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS source_row INTEGER;
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS source_file TEXT;
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS delivery_site VARCHAR(120);
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS delivery_week VARCHAR(30);
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS po_balance NUMERIC(14,3);
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS po_quantity NUMERIC(14,3);
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS still_to_be_delivered NUMERIC(14,3);
+ALTER TABLE shipment_items ADD COLUMN IF NOT EXISTS remarks TEXT;
 
 CREATE TABLE IF NOT EXISTS shipment_documents (
   id SERIAL PRIMARY KEY,
@@ -134,6 +169,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS shipments_schedule_idx ON shipments (scheduled_date, time_slot);
+DROP INDEX IF EXISTS shipments_schedule_idx;
+CREATE INDEX IF NOT EXISTS shipments_schedule_idx ON shipments (scheduled_date, scheduled_time, time_slot);
 CREATE INDEX IF NOT EXISTS shipments_status_idx ON shipments (status);
 CREATE INDEX IF NOT EXISTS events_created_idx ON shipment_events (created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS shipment_items_source_key_idx ON shipment_items (source_key) WHERE source_key IS NOT NULL;
