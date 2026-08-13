@@ -32,11 +32,14 @@ const startOfWeek = (date: string) => {
 const dayLabel = (date: string) => new Intl.DateTimeFormat("en-PH", { weekday: "short", month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 const longDate = (date: string) => new Intl.DateTimeFormat("en-PH", { month: "long", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`));
 
-export const timesInsideSlot = (slot: AvailabilitySlot, step = 15) => {
-  const values: string[] = [];
-  for (let minute = toMinutes(slot.startTime); minute < toMinutes(slot.endTime); minute += step) values.push(toTime(minute));
-  return values;
-};
+const approvedBookingOverlaps = (shipments: Shipment[], slot: AvailabilityInput, exceptId?: number) => shipments.filter((shipment) =>
+  shipment.id !== exceptId &&
+  shipment.scheduledDate === slot.date &&
+  shipment.scheduledTime >= slot.startTime &&
+  shipment.scheduledTime < slot.endTime &&
+  shipment.bookingStatus === "APPROVED" &&
+  shipment.status !== "REJECTED"
+).length;
 
 type DrawDraft = { date: string; start: number; current: number };
 
@@ -82,7 +85,7 @@ export function AvailabilityCalendar({
     onDraft(draw.date, toTime(start), toTime(end));
     setDraw(null);
   };
-  const bookingCount = (slot: AvailabilityInput) => shipments.filter((shipment) => shipment.scheduledDate === slot.date && shipment.scheduledTime >= slot.startTime && shipment.scheduledTime < slot.endTime && shipment.bookingStatus !== "REJECTED" && shipment.status !== "REJECTED").length;
+  const bookingCount = (slot: AvailabilityInput) => approvedBookingOverlaps(shipments, slot);
   const blockStyle = (slot: AvailabilityInput) => ({
     top: `${(toMinutes(slot.startTime) - DAY_START) / TOTAL_MINUTES * 100}%`,
     height: `${Math.max(3.5, (toMinutes(slot.endTime) - toMinutes(slot.startTime)) / TOTAL_MINUTES * 100)}%`,
@@ -126,7 +129,7 @@ export function AvailabilityCalendar({
           {Array.from({ length: TOTAL_MINUTES / 60 }, (_, index) => <i className="availability-hour-line" style={{ top: `${index / (TOTAL_MINUTES / 60) * 100}%` }} key={index} />)}
           {slots.filter((slot) => slot.date === day && slot.id !== hiddenSlotId).map((slot) => {
             const count = bookingCount(slot);
-            return <button type="button" draggable={editable} className={`availability-block ${selectedSlotId === slot.id ? "selected" : ""}`} style={blockStyle(slot)} key={slot.id} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setMovingSlot(slot); }} onDragEnd={() => setMovingSlot(null)} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onSelect?.(slot); }}><b>{slot.startTime}–{slot.endTime}</b><span>{slot.label || "Open for booking"}</span><small>{count} booking{count === 1 ? "" : "s"} · 2 docks</small></button>;
+            return <button type="button" draggable={editable} className={`availability-block ${selectedSlotId === slot.id ? "selected" : ""}`} style={blockStyle(slot)} key={slot.id} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setMovingSlot(slot); }} onDragEnd={() => setMovingSlot(null)} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onSelect?.(slot); }}><b>{slot.startTime}–{slot.endTime}</b><span>{slot.label || "Open for booking"}</span><small>{count ? `${count} approved booking${count === 1 ? "" : "s"} overlap` : "Open receiving hours"}</small></button>;
           })}
           {previewSlot?.date === day && <div className="availability-block preview" style={blockStyle(previewSlot)}><b>{previewSlot.startTime}–{previewSlot.endTime}</b><span>{previewSlot.label || "Open for booking"}</span><small>Unsaved change</small></div>}
           {draw?.date === day && (() => {

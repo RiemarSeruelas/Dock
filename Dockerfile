@@ -5,6 +5,7 @@ RUN npm ci
 
 FROM base AS web
 COPY . .
+ENV API_INTERNAL_URL=http://api:3001
 RUN npm run build
 ENV NODE_ENV=production
 EXPOSE 3000

@@ -1,74 +1,116 @@
-# DockFlow Delivery Scheduling — JSON Trial
+# DockFlow Delivery Scheduling — Supplier Account Trial
 
-This temporary build is for workflow testing while the final delivery rules are being agreed. It uses a Next.js interface, an Express API, and the editable `data/trial-data.json` file.
+This UAT build uses a Next.js interface, an Express API, and the editable `data/trial-data.json` file. PostgreSQL and nginx remain disconnected while the workflow is being finalized.
 
-PostgreSQL, nginx, and all database containers are intentionally disconnected.
+All dates and process timestamps are displayed in **Asia/Manila (GMT+8)**.
 
-## Start
+## Fast local start
 
-Stop the older stack first if it is still running:
+Requires Node.js 22 or newer. In PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+npm.cmd install
+npm.cmd run dev
+```
+
+Open `http://localhost:3000`. The `dev` command starts both services:
+
+- Next.js web interface on port `3000`
+- JSON API on port `3001`
+
+`API_INTERNAL_URL=http://localhost:3001` is the local proxy target. `APP_ORIGIN` is the browser origin accepted by the API; changing only `APP_ORIGIN` does not change the proxy destination.
+
+## Docker start
 
 ```powershell
 docker compose down --remove-orphans
-```
-
-Extract this ZIP into a new empty folder, then run:
-
-```powershell
 Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
-Open `http://localhost:5059`.
+Open `http://localhost:5059`. Docker overrides the proxy target with `http://api:3001`; `api` is a Docker service name and is not resolvable by a standalone Windows Next.js process.
 
-The stack contains only:
-
-- `web` — Next.js interface on port 5059
-- `api` — Express API with JSON persistence
-
-## Initial credentials
+## Initial accounts
 
 | Role | Username | Password |
 | --- | --- | --- |
 | Administrator | `admin` | `admin123` |
 | Planner | `planner` | `planner123` |
 | Supplier | `supplier` | `supplier123` |
-| Truck driver | `driver` | `driver123` |
+| Driver | `driver` | `driver123` |
 | Security | `security` | `security123` |
 | Warehouse | `warehouse` | `warehouse123` |
 
-Change these before any non-trial use.
+Change these before using the build outside UAT.
 
-## Current workspaces
+## Supplier accounts and product presets
 
-- **Overview** — live summary and two-lane Dock Control with vehicle state.
-- **Monitoring** — all upcoming entries. The icon-only fullscreen control hides filters and navigation for a TV display.
-- **Schedule** — the single scheduling calendar and the arrivals for its selected date. Administrators and planners can drag an empty area to draft a window, drag a saved block to move it, edit exact fields, and then manually save.
-- **Management** — Excel import, RDS workflow, and confirm/deny controls for requested booking times.
-- **Gate & dock** — arrival, verification, dock assignment, unloading, and receiving actions.
-- **History** — received, rejected, completed, and previous-date delivery records.
-- **Reports** and **Administration** — trial reporting, master data, accounts, and site settings.
+Administration now contains **Accounts** and **Supplier catalogs**.
 
-There is no separate Available Time page. Schedule owns availability.
+- Create an account with the Supplier role and enter its supplier company.
+- DockFlow creates or links the supplier record automatically.
+- Add products such as Eggs or Mayonnaise to that supplier’s catalog, including a default amount and unit.
+- A supplier session receives only that supplier’s catalog, schedules, history, reports, and requests.
+- The supplier selects one or more preset products and enters the amount or weight for each delivery.
 
-## Booking-time flow
+## Booking request and approval
 
-1. An administrator or planner creates or moves an open window in **Schedule** and presses **Save**.
-2. Creating a delivery request displays that same calendar under **Booking time**. The requester chooses a green window and an exact 15-minute timestamp.
-3. The RDS request is confirmed and booked from **Management**.
-4. The booking stays pending until an administrator or planner confirms or denies it in **Management**.
+A supplier request contains:
 
-Each exact timestamp has capacity for two active bookings because the trial has two docks. There are no Morning/Afternoon/Night rules.
+- DPP number;
+- booking date, start time, and end time;
+- truck plate;
+- driver name and phone number;
+- checked preset products with amount or weight.
+
+The supplier name comes from the signed-in account. There is no supplier field, dock selector, load field, dock-capacity counter, or two-step booking action.
+
+Bookings may overlap and there is no fixed booking limit. Schedule uses separate colored lanes so overlapping requests remain distinct. Suppliers and planners can switch between day and week views.
+
+Every request enters Management as **Pending confirmation**. Management reviews it once and either confirms it or denies it with a required rejection reason.
+
+The submit button locks while a request is being sent. The API also rejects an exact repeated request, so rapid clicks cannot create duplicate bookings.
+
+## QR process
+
+The required process is:
+
+1. **Booking** — Management confirms the request.
+2. **Trip** — the supplier scans its delivery before departure.
+3. **Gate in** — Security scans at the shared Gate station.
+4. **Unload** — Warehouse scans at the Unloading station.
+5. **Received** — Warehouse scans at the Received station.
+6. **Gate out** — Security scans the same QR at the same Gate station again.
+
+The Gate station automatically chooses Gate in or Gate out from the truck’s current stage. Stages cannot be skipped. Each scan stores an ISO timestamp; the interface shows Manila time and live durations for Trip → Gate in, Gate in → Unloading, Unloading → Received, Received → Gate out, and total Gate in → Gate out.
+
+Use a USB QR scanner by focusing the shipment-number field and scanning. The camera scanner uses browser QR support when available. Manual entry remains available for UAT.
+
+## Main workspaces
+
+- **Overview** — operational summary and the existing two-dock visual control.
+- **Monitoring** — truck-first cards with multiple products, important delivery details only, today-priority sorting, exact-date filtering, and logo-only fullscreen mode.
+- **Schedule** — one calendar with day/week views, color-coded overlapping entries, and admin/planner receiving-window editing.
+- **Management** — Excel import plus one-step confirmation or reasoned denial.
+- **Gate & dock** — role-aware Trip, Gate, Unloading, and Received scanning.
+- **History** — separate Received and Rejected views.
+- **Reports** — supplier self-performance for supplier accounts and per-supplier company performance for internal accounts.
+- **Administration** — materials, accounts, supplier catalogs, and scheduling settings.
+
+## Booking PDF
+
+Open a delivery and select **Download booking PDF**. The authenticated API creates the PDF directly as a single-page document with booking details, products, and the shipment QR code. This avoids the browser print layout that previously produced an empty first page.
 
 ## Edit the JSON directly
 
-The project file is bind-mounted into the API container:
+The editable file is:
 
 ```text
 data/trial-data.json
 ```
 
-To edit it safely:
+Stop the API before editing so a running write does not replace your changes. For Docker:
 
 ```powershell
 docker compose stop api
@@ -76,53 +118,57 @@ docker compose stop api
 docker compose start api
 ```
 
-The file includes examples and a `_howToEdit` field. Useful rules:
+For local development, stop `npm.cmd run dev`, edit the file, and start it again.
+
+Supplier catalog example:
+
+```json
+{
+  "id": 1,
+  "vendorCode": "SUP-001",
+  "name": "Example Foods",
+  "productPresets": [
+    { "id": 1, "name": "Eggs", "uom": "KG", "defaultAmount": 300 },
+    { "id": 2, "name": "Mayonnaise", "uom": "KG", "defaultAmount": 500 }
+  ]
+}
+```
+
+Supplier user example:
+
+```json
+{
+  "name": "Example Foods User",
+  "username": "examplefoods",
+  "password": "change-me-123",
+  "role": "supplier",
+  "supplierId": 1
+}
+```
+
+Useful rules:
 
 - Dates use `YYYY-MM-DD`; times use 24-hour `HH:MM`.
-- You may omit IDs on new records. DockFlow assigns them when the API starts.
-- Missing delivery/material values receive trial placeholders.
-- For a manually added user, provide a one-time plain `password`; startup replaces it with `passwordHash`.
-- Keep the JSON syntactically valid. A missing comma or quote prevents the API from starting.
-
-Normal `docker compose down` and `up` keep the file because it lives in the project folder. To restore the supplied trial examples, replace `data/trial-data.json` with the original copy from this ZIP.
-
-Uploaded DN/COA files still use the `dockflow_uploads` Docker volume.
+- IDs may be omitted on new records; DockFlow assigns them at startup.
+- A plain `password` is accepted once and replaced with `passwordHash` at startup.
+- Keep the JSON syntactically valid.
+- Existing legacy status names are migrated automatically on startup.
 
 ## Excel import
 
-Excel import is in **Management**. Every nonblank row from a recognized schedule sheet is accepted:
+Excel import remains in Management and is intentionally permissive for UAT. Every nonblank recognized schedule row is accepted, including rows with missing optional values, repeated-looking rows, different dates, and different products. Missing fields receive visible placeholders for later review.
 
-- no duplicate blocking;
-- different dates and materials are accepted;
-- repeated-looking rows are accepted;
-- cancelled or received rows are kept for trial review;
-- missing values do not skip a row.
-
-Temporary placeholders are used for missing cells:
-
-| Missing value | Placeholder |
-| --- | --- |
-| Supplier | `Supplier to assign` |
-| Material code | Generated `UNSPECIFIED-...` code |
-| Description | `Material to review` |
-| Quantity | `0` |
-| UOM | `N/A` |
-| Date | First available date |
-| Time | `12:00` |
-
-Completely blank rows are ignored. The workbook needs a schedule sheet with at least two recognizable headers such as Supplier, Material, Quantity, Date, or Time. PO Validation data is optional.
+Completely blank rows are ignored. A schedule sheet needs at least two recognizable headers such as Supplier, Material, Quantity, Date, or Time.
 
 ## Important files
 
-- `data/trial-data.json` — directly editable trial data
-- `app/availability-calendar.tsx` — weekly drag-and-save calendar
+- `data/trial-data.json` — editable UAT data
+- `app/dockflow-app.tsx` — accounts, requests, QR operations, details, and reports
 - `app/dockflow-features.tsx` — Schedule, Management, Monitoring, and History
-- `app/dockflow-app.tsx` — navigation, operations, forms, and API actions
-- `server/index.js` — JSON-backed trial API
-- `server/json-store.js` — atomic JSON persistence
+- `server/index.js` — JSON API, access scoping, approvals, scans, and PDF generation
 - `server/excel-import.js` — permissive Excel mapping
 - `docker-compose.yml` — two-service trial stack
 
 ## Before production
 
-This JSON build is for UAT only. Reconnect PostgreSQL and the production reverse proxy after the booking fields, approvals, Excel structure, and monitoring design are finalized.
+This JSON build is for UAT only. Reconnect PostgreSQL, nginx, production credential policies, backups, and HTTPS after the business workflow is approved.

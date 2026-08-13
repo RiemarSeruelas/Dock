@@ -1,17 +1,16 @@
 export type Role = "admin" | "planner" | "supplier" | "driver" | "security" | "warehouse";
 
 export type ShipmentStatus =
-  | "PLANNED"
+  | "BOOKED"
   | "IN_TRANSIT"
-  | "ARRIVED"
-  | "VERIFIED"
-  | "PARKING"
-  | "AT_DOCK"
+  | "GATE_IN"
   | "UNLOADING"
   | "RECEIVED"
+  | "GATE_OUT"
   | "REJECTED";
 
 export type BookingStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type ScanStage = "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
 
 export interface AvailabilitySlot {
   id: number;
@@ -33,6 +32,7 @@ export interface SessionUser {
 
 export interface ShipmentItem {
   id: number;
+  presetId?: number | null;
   poNumber: string;
   materialCode: string;
   materialName: string;
@@ -61,10 +61,13 @@ export interface Shipment {
   shipmentNumber: string;
   bookingReceipt: string;
   supplier: string;
+  supplierId?: number | null;
+  dppNumber?: string;
   vendorCode: string;
   scheduledDate: string;
   scheduledTime: string;
   scheduledEndTime?: string | null;
+  availabilitySlotId?: number | null;
   expectedDurationMinutes?: number | null;
   timeSlot: string;
   shift: string;
@@ -78,6 +81,12 @@ export interface Shipment {
   arrivalTime?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
+  lastProcessAt?: string | null;
+  tripAt?: string | null;
+  gateInAt?: string | null;
+  unloadingAt?: string | null;
+  receivedAt?: string | null;
+  gateOutAt?: string | null;
   rejectionReason?: string | null;
   importBatchId?: number | null;
   importSource?: string | null;
@@ -93,9 +102,24 @@ export interface RdsRequest {
   supplier: string;
   requestedDate: string;
   requestedTime?: string;
+  requestedEndTime?: string;
   availabilitySlotId?: number | null;
   status: "PENDING" | "CONFIRMED" | "SCHEDULED";
   notes?: string;
+}
+
+export interface SupplierPreset {
+  id: number;
+  name: string;
+  uom: string;
+  defaultAmount: number;
+}
+
+export interface SupplierAccount {
+  id: number;
+  vendorCode: string;
+  name: string;
+  productPresets: SupplierPreset[];
 }
 
 export interface Material {
@@ -122,6 +146,7 @@ export interface AppData {
   shipments: Shipment[];
   rdsRequests: RdsRequest[];
   materials: Material[];
+  suppliers: SupplierAccount[];
   users: SessionUser[];
   audit: AuditEntry[];
   importBatches: {

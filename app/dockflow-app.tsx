@@ -26,7 +26,6 @@ import {
   MoreHorizontal,
   PackageCheck,
   Plus,
-  Printer,
   QrCode,
   RefreshCw,
   Route,
@@ -36,7 +35,6 @@ import {
   ShieldCheck,
   Sun,
   Truck,
-  Upload,
   UsersRound,
   Warehouse,
   X,
@@ -44,10 +42,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, getBootstrap, login as apiLogin } from "./api-client";
 import { localDate } from "./date-utils";
-import { AvailabilityCalendar, timesInsideSlot } from "./availability-calendar";
 import { FlexibleSchedulePage, HistoryPage, ManagementPage, MonitoringPage } from "./dockflow-features";
 import { ExcelImportModal, type ImportResult } from "./excel-import-modal";
-import type { AppData, AvailabilityInput, AvailabilitySlot, RdsRequest, Role, SessionUser, Shipment, ShipmentStatus } from "./types";
+import type { AppData, AvailabilityInput, Role, ScanStage, SessionUser, Shipment, ShipmentStatus, SupplierAccount, SupplierPreset } from "./types";
 
 type View = "overview" | "monitoring" | "schedule" | "management" | "operations" | "history" | "reports" | "admin";
 type Icon = typeof LayoutDashboard;
@@ -56,6 +53,7 @@ const EMPTY_DATA: AppData = {
   shipments: [],
   rdsRequests: [],
   materials: [],
+  suppliers: [],
   users: [],
   audit: [],
   importBatches: [],
@@ -69,26 +67,24 @@ const NAV_ITEMS: { id: View; label: string; description: string; icon: Icon; rol
   { id: "management", label: "Management", description: "Imports and approvals", icon: ClipboardCheck, roles: ["admin", "planner"] },
   { id: "operations", label: "Gate & dock", description: "Arrival to receiving", icon: ScanLine },
   { id: "history", label: "History", description: "Past delivery records", icon: History },
-  { id: "reports", label: "Reports", description: "OTIF and on-time", icon: BarChart3, roles: ["admin", "planner", "warehouse"] },
+  { id: "reports", label: "Reports", description: "Supplier performance", icon: BarChart3, roles: ["admin", "planner", "warehouse", "supplier"] },
   { id: "admin", label: "Administration", description: "Master data and access", icon: Settings, roles: ["admin"] },
 ];
 
 const STATUS_META: Record<ShipmentStatus, { label: string; color: string; step: number }> = {
-  PLANNED: { label: "Planned", color: "slate", step: 1 },
+  BOOKED: { label: "Booking", color: "slate", step: 1 },
   IN_TRANSIT: { label: "In transit", color: "blue", step: 2 },
-  ARRIVED: { label: "At gate", color: "amber", step: 3 },
-  VERIFIED: { label: "Verified", color: "teal", step: 4 },
-  PARKING: { label: "Parking", color: "violet", step: 4 },
-  AT_DOCK: { label: "At dock", color: "cyan", step: 5 },
-  UNLOADING: { label: "Unloading", color: "orange", step: 6 },
-  RECEIVED: { label: "Received", color: "green", step: 7 },
+  GATE_IN: { label: "Gate in", color: "amber", step: 3 },
+  UNLOADING: { label: "Unloading", color: "orange", step: 4 },
+  RECEIVED: { label: "Received", color: "green", step: 5 },
+  GATE_OUT: { label: "Gate out", color: "teal", step: 6 },
   REJECTED: { label: "Rejected", color: "red", step: 0 },
 };
 
 const ROLE_LABELS: Record<Role, string> = {
   admin: "Administrator",
   planner: "Planner",
-  supplier: "Supplier",
+  supplier: "Supplier account",
   driver: "Truck driver",
   security: "Security",
   warehouse: "Warehouse",
@@ -106,7 +102,7 @@ const ROLE_ICONS: Record<Role, Icon> = {
 const formatDate = (date: string, style: "short" | "long" = "long") =>
   new Intl.DateTimeFormat("en-PH", style === "long" ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 
-const formatTime = (value?: string | null) => value ? new Intl.DateTimeFormat("en-PH", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
+const formatTime = (value?: string | null) => value ? new Intl.DateTimeFormat("en-PH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Manila" }).format(new Date(value)) : "—";
 
 const initials = (name: string) => name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 
@@ -192,22 +188,22 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
   const today = localDate();
   const todayShipments = data.shipments.filter((shipment) => shipment.scheduledDate === today);
   const received = todayShipments.filter((shipment) => shipment.status === "RECEIVED").length;
-  const atSite = todayShipments.filter((shipment) => ["ARRIVED", "VERIFIED", "PARKING", "AT_DOCK", "UNLOADING"].includes(shipment.status)).length;
-  const late = todayShipments.filter((shipment) => shipment.status === "PLANNED" && shipment.scheduledTime < new Date().toTimeString().slice(0, 5)).length;
+  const atSite = todayShipments.filter((shipment) => ["GATE_IN", "UNLOADING", "RECEIVED"].includes(shipment.status)).length;
+  const late = todayShipments.filter((shipment) => shipment.status === "BOOKED" && shipment.scheduledTime < new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Manila" })).length;
   const docks = Array.from({ length: data.settings.dockCount }, (_, i) => `Dock ${i + 1}`);
-  const dockActiveShipments = data.shipments.filter((shipment) => ["AT_DOCK", "UNLOADING"].includes(shipment.status));
-  const waitingAtGate = data.shipments.filter((shipment) => ["ARRIVED", "VERIFIED", "PARKING"].includes(shipment.status));
+  const dockActiveShipments = data.shipments.filter((shipment) => shipment.status === "UNLOADING");
+  const waitingAtGate = data.shipments.filter((shipment) => shipment.status === "GATE_IN");
   const nextAction = data.shipments.find((shipment) => {
-    if (user.role === "driver") return shipment.driverName === user.name && ["PLANNED", "IN_TRANSIT"].includes(shipment.status);
-    if (user.role === "security") return ["ARRIVED", "VERIFIED", "PARKING"].includes(shipment.status);
-    if (user.role === "warehouse") return ["AT_DOCK", "UNLOADING"].includes(shipment.status);
+    if (user.role === "supplier") return ["BOOKED", "IN_TRANSIT"].includes(shipment.status);
+    if (user.role === "security") return ["IN_TRANSIT", "RECEIVED"].includes(shipment.status);
+    if (user.role === "warehouse") return ["GATE_IN", "UNLOADING"].includes(shipment.status);
     return false;
   });
 
   return <div className="page-stack">
     <section className="hero-row">
       <div><span className="eyebrow">{formatDate(today)} · Live operations</span><h1>Good day, {user.name.split(" ")[0]}.</h1><p>Here’s what is moving through receiving right now.</p></div>
-      <div className="hero-actions">{["planner", "admin"].includes(user.role) && <button className="button primary" onClick={onNewRds}><Plus size={17} /> Create delivery request</button>}<button className="button secondary" onClick={() => window.location.reload()}><RefreshCw size={16} /> Refresh</button></div>
+      <div className="hero-actions">{user.role === "supplier" && <button className="button primary" onClick={onNewRds}><Plus size={17} /> Request delivery</button>}<button className="button secondary" onClick={() => window.location.reload()}><RefreshCw size={16} /> Refresh</button></div>
     </section>
     {nextAction && <section className="action-banner"><div className="action-banner-icon"><Gauge size={23} /></div><div><span>Your next action</span><strong>{nextAction.shipmentNumber} · {nextAction.supplier}</strong><p>{user.role === "driver" ? "Update the trip milestone when you are ready." : user.role === "security" ? "Validate the booking and direct the truck." : "Receive pallets and close the delivery."}</p></div><button className="button light" onClick={() => onOpenShipment(nextAction)}>Open shipment <ArrowRight size={16} /></button></section>}
     <section className="metrics-grid">
@@ -244,14 +240,31 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
   </div>;
 }
 
-function BarcodeScanner({ onRead }: { onRead: (value: string) => void }) {
+const SCAN_STATIONS: Record<ScanStage, { label: string; helper: string; icon: Icon; roles: Role[] }> = {
+  TRIP: { label: "Trip", helper: "Supplier starts the trip", icon: Truck, roles: ["admin", "planner", "supplier"] },
+  GATE: { label: "Gate in / out", helper: "Same scanner for entry and exit", icon: MapPin, roles: ["admin", "planner", "security"] },
+  UNLOADING: { label: "Unloading", helper: "Record unloading start", icon: Boxes, roles: ["admin", "planner", "warehouse"] },
+  RECEIVED: { label: "Received", helper: "Complete delivery", icon: PackageCheck, roles: ["admin", "planner", "warehouse"] },
+};
+
+function BarcodeScanner({ stageLabel, onRead }: { stageLabel: string; onRead: (value: string) => Promise<void> | void }) {
   const [manual, setManual] = useState("");
   const [camera, setCamera] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
+  const [reading, setReading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const manualRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+  useEffect(() => { if (!camera) manualRef.current?.focus(); }, [camera, stageLabel]);
+
+  const submitScan = async (value: string) => {
+    const cleaned = value.trim();
+    if (!cleaned || reading) return;
+    setReading(true);
+    try { await onRead(cleaned); setManual(""); } catch { /* Parent displays the scan error. */ } finally { setReading(false); setTimeout(() => manualRef.current?.focus(), 0); }
+  };
 
   const startCamera = async () => {
     const Detector = (window as unknown as { BarcodeDetector?: new (options: { formats: string[] }) => { detect(video: HTMLVideoElement): Promise<{ rawValue: string }[]> } }).BarcodeDetector;
@@ -259,158 +272,135 @@ function BarcodeScanner({ onRead }: { onRead: (value: string) => void }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       streamRef.current = stream; setCamera(true);
-      setTimeout(async () => {
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        const detector = new Detector({ formats: ["qr_code"] });
-        const scan = async () => {
-          if (!streamRef.current || !videoRef.current) return;
-          const codes = await detector.detect(videoRef.current).catch(() => []);
-          if (codes[0]?.rawValue) { onRead(codes[0].rawValue); stream.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); return; }
-          requestAnimationFrame(scan);
-        };
-        scan();
-      }, 50);
-    } catch { setUnsupported(true); }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      if (!videoRef.current) throw new Error("Camera preview did not open");
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      const detector = new Detector({ formats: ["qr_code"] });
+      const scan = async () => {
+        if (!streamRef.current || !videoRef.current) return;
+        const codes = await detector.detect(videoRef.current).catch(() => []);
+        if (codes[0]?.rawValue) { stream.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); await submitScan(codes[0].rawValue); return; }
+        requestAnimationFrame(scan);
+      };
+      void scan();
+    } catch { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); setUnsupported(true); }
   };
 
-  return <div className="scanner-box">{camera ? <div className="camera-frame"><video ref={videoRef} playsInline muted /><span><ScanLine size={22} /> Point at shipment QR</span><button onClick={() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); }}>Cancel</button></div> : <><div className="scan-graphic"><span /><QrCode size={58} /><i /></div><h3>Scan shipment QR</h3><p>Use the camera or enter the shipment number.</p><button className="button primary" onClick={startCamera}><ScanLine size={17} /> Open camera</button>{unsupported && <small className="scanner-note">Camera scanning isn’t supported here. Use manual entry below.</small>}<div className="manual-entry"><input placeholder="SHP-YYYYMMDD-01" value={manual} onChange={(event) => setManual(event.target.value)} onKeyDown={(event) => event.key === "Enter" && onRead(manual)} /><button onClick={() => onRead(manual)}><ArrowRight size={17} /></button></div></>}</div>;
+  return <div className="scanner-box">{camera ? <div className="camera-frame"><video ref={videoRef} playsInline muted /><span><ScanLine size={22} /> Point at shipment QR</span><button onClick={() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); }}>Cancel</button></div> : <><div className="scan-graphic"><span /><QrCode size={58} /><i /></div><h3>Scan for {stageLabel}</h3><p>The scan immediately records this station. USB QR scanners can type directly into the field below.</p><button className="button primary" onClick={startCamera} disabled={reading}><ScanLine size={17} /> Open camera</button>{unsupported && <small className="scanner-note">Camera access needs a supported browser and secure connection. A USB scanner or manual shipment number still works.</small>}<div className="manual-entry"><input ref={manualRef} aria-label="Scanned QR value or shipment number" autoComplete="off" placeholder="Scan QR or enter SHP-YYYYMMDD-001" value={manual} onChange={(event) => setManual(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void submitScan(manual); } }} /><button disabled={!manual.trim() || reading} onClick={() => void submitScan(manual)} aria-label={`Record ${stageLabel} scan`}>{reading ? <Loader2 className="spin" size={17} /> : <ArrowRight size={17} />}</button></div></>}</div>;
 }
 
-function OperationsPage({ data, user, onAction, onOpenShipment }: { data: AppData; user: SessionUser; onAction: (id: number, status: ShipmentStatus, extra?: Record<string, unknown>) => void; onOpenShipment: (shipment: Shipment) => void }) {
+function OperationsPage({ data, user, onScanStage, onOpenShipment }: { data: AppData; user: SessionUser; onScanStage: (scanValue: string, stage: ScanStage) => Promise<Shipment>; onOpenShipment: (shipment: Shipment) => void }) {
+  const availableStages = (Object.keys(SCAN_STATIONS) as ScanStage[]).filter((item) => SCAN_STATIONS[item].roles.includes(user.role));
+  const [stage, setStage] = useState<ScanStage>(availableStages[0] || "TRIP");
   const [selected, setSelected] = useState<Shipment | null>(null);
-  const [dock, setDock] = useState("Dock 1");
-  const [palletId, setPalletId] = useState("");
-  const [message, setMessage] = useState("");
-  const approvedShipments = data.shipments.filter(shipment => shipment.bookingStatus !== "PENDING_APPROVAL");
-  const visibleShipments = user.role === "driver" ? approvedShipments.filter(shipment => shipment.driverName === user.name) : approvedShipments;
-  const findShipment = (value: string) => {
-    let scanValue = value.trim();
-    try { scanValue = new URL(scanValue).searchParams.get("shipment") || scanValue; } catch {}
-    const normalized = scanValue.split("/").pop()?.toUpperCase();
-    const found = visibleShipments.find((shipment) => shipment.shipmentNumber.toUpperCase() === normalized || String(shipment.id) === normalized);
-    setSelected(found || null); setMessage(found ? "" : "Shipment not found. Check the number and try again.");
-  };
-  const withLocation = (shipment: Shipment, status: ShipmentStatus) => {
-    const commit = (location?: { latitude: number; longitude: number }) => onAction(shipment.id, status, location ? { latitude: location.latitude, longitude: location.longitude } : undefined);
-    if (!navigator.geolocation) return commit();
-    navigator.geolocation.getCurrentPosition((position) => commit(position.coords), () => commit(), { enableHighAccuracy: true, timeout: 8000 });
+  const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [scanRecorded, setScanRecorded] = useState(false);
+  const approvedShipments = data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED");
+  const visibleShipments = user.role === "supplier" ? approvedShipments.filter(shipment => Number(shipment.supplierId) === Number(user.supplierId)) : approvedShipments;
+  const stageStatuses: Record<ScanStage, ShipmentStatus[]> = { TRIP: ["BOOKED"], GATE: ["IN_TRANSIT", "RECEIVED"], UNLOADING: ["GATE_IN"], RECEIVED: ["UNLOADING"] };
+  const queue = visibleShipments.filter((shipment) => stageStatuses[stage].includes(shipment.status)).slice(0, 6);
+  const recordScan = async (value: string) => {
+    setFeedback(null);
+    try {
+      const shipment = await onScanStage(value, stage);
+      setSelected(shipment);
+      setScanRecorded(true);
+      setFeedback({ tone: "success", text: `${shipment.shipmentNumber} recorded at ${SCAN_STATIONS[stage].label}.` });
+    } catch (reason) {
+      setFeedback({ tone: "error", text: reason instanceof Error ? reason.message : "The QR scan could not be recorded." });
+      throw reason;
+    }
   };
   const next = selected && STATUS_META[selected.status].step;
 
+  const activeStation = SCAN_STATIONS[stage];
   return <div className="page-stack">
-    <section className="hero-row"><div><span className="eyebrow">Role workspace · {ROLE_LABELS[user.role]}</span><h1>{user.role === "driver" ? "Trip milestones" : user.role === "security" ? "Gate verification" : user.role === "warehouse" ? "Dock receiving" : "Gate & dock operations"}</h1><p>Each scan advances one verified handoff in the receiving journey.</p></div><div className="operation-live"><span className="live-dot" /> Operations online</div></section>
-    <section className="operations-grid">
-      <article className="panel scan-panel"><BarcodeScanner onRead={findShipment} />{message && <div className="inline-warning"><AlertTriangle size={17} />{message}</div>}</article>
+    <section className="hero-row"><div><span className="eyebrow">Role workspace · {ROLE_LABELS[user.role]}</span><h1>QR receiving stations</h1><p>Select the physical station, then scan the delivery QR to record that process immediately.</p></div><div className="operation-live"><span className="live-dot" /> Scanner online</div></section>
+    {availableStages.length ? <section className="scan-stations">{availableStages.map((item) => { const station = SCAN_STATIONS[item]; const StationIcon = station.icon; return <button className={stage === item ? "active" : ""} key={item} onClick={() => { setStage(item); setFeedback(null); setSelected(null); setScanRecorded(false); }}><span><StationIcon size={19} /></span><span><b>{station.label}</b><small>{station.helper}</small></span></button>; })}</section> : <section className="panel scan-role-empty"><ShieldCheck size={22} /><div><b>No scan station assigned to this role</b><span>Suppliers record Trip, Security records Gate in/out, and Warehouse records Unloading and Received.</span></div></section>}
+    {availableStages.length > 0 && <><section className="operations-grid">
+      <article className="panel scan-panel"><BarcodeScanner stageLabel={activeStation.label} onRead={recordScan} />{feedback && <div className={`scan-feedback ${feedback.tone}`}>{feedback.tone === "success" ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}{feedback.text}</div>}</article>
       <article className="panel verification-panel">
-        {!selected ? <EmptyState icon={QrCode} title="Ready for a shipment" body="Scan a QR code or enter a shipment number to see the booking." /> : <>
-          <div className="verification-head"><div><span className="eyebrow">Booking found</span><h2>{selected.shipmentNumber}</h2></div><StatusPill status={selected.status} /></div>
+        {!selected ? <EmptyState icon={QrCode} title={`Ready for the ${activeStation.label} scan`} body="Scan the printed booking QR. The entry status updates as soon as the code is accepted." /> : <>
+          <div className="verification-head"><div><span className="eyebrow">Latest scan recorded</span><h2>{selected.shipmentNumber}</h2></div><StatusPill status={selected.status} /></div>
           <div className="identity-strip"><div className="truck-tile large"><Truck size={26} /></div><div><strong>{selected.truckPlate}</strong><span>{selected.supplier}</span></div><button className="text-button" onClick={() => onOpenShipment(selected)}>View all details</button></div>
-          <dl className="verification-data"><div><dt>Driver</dt><dd>{selected.driverName}</dd></div><div><dt>Scheduled time</dt><dd>{selected.scheduledTime}{selected.scheduledEndTime ? ` – ${selected.scheduledEndTime}` : ""}</dd></div><div><dt>Delivery date</dt><dd>{formatDate(selected.scheduledDate, "short")}</dd></div><div><dt>Load</dt><dd>{selected.materialWeightKg.toLocaleString()} kg</dd></div></dl>
-          <div className="flow-progress">{["Plan", "Trip", "Gate", "Dock", "Unload", "Received"].map((label, index) => <div className={next && next >= index + 1 ? "done" : ""} key={label}><span>{next && next > index + 1 ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div>
+          <dl className="verification-data"><div><dt>Driver</dt><dd>{selected.driverName}</dd></div><div><dt>Phone</dt><dd>{selected.driverPhone}</dd></div><div><dt>Scheduled time</dt><dd>{selected.scheduledTime}{selected.scheduledEndTime ? ` – ${selected.scheduledEndTime}` : ""}</dd></div><div><dt>Products</dt><dd>{selected.items.length}</dd></div></dl>
+          <div className="flow-progress">{["Booking", "Trip", "Gate in", "Unload", "Received", "Gate out"].map((label, index) => <div className={next && next >= index + 1 ? "done" : ""} key={label}><span>{next && next > index + 1 ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div>
           <div className="operation-actions">
-            {user.role === "driver" && selected.status === "PLANNED" && <button className="button primary full" onClick={() => withLocation(selected, "IN_TRANSIT")}><Route size={17} /> Start shipment & capture GPS</button>}
-            {user.role === "driver" && selected.status === "IN_TRANSIT" && <button className="button primary full" onClick={() => withLocation(selected, "ARRIVED")}><MapPin size={17} /> Mark arrival</button>}
-            {user.role === "security" && selected.status === "ARRIVED" && <button className="button primary full" onClick={() => onAction(selected.id, "VERIFIED")}><ShieldCheck size={17} /> Verify truck, driver & DN</button>}
-            {user.role === "security" && ["VERIFIED", "PARKING"].includes(selected.status) && <div className="dock-assign"><label>Dock direction<select value={dock} onChange={(event) => setDock(event.target.value)}>{Array.from({ length: data.settings.dockCount }, (_, i) => <option key={i}>Dock {i + 1}</option>)}<option>Parking area</option></select></label><button className="button primary" onClick={() => onAction(selected.id, dock === "Parking area" ? "PARKING" : "AT_DOCK", { dock: dock === "Parking area" ? null : dock })}><ArrowRight size={17} /> Direct truck</button></div>}
-            {user.role === "warehouse" && selected.status === "AT_DOCK" && <button className="button primary full" onClick={() => onAction(selected.id, "UNLOADING")}><Boxes size={17} /> Start unloading</button>}
-            {user.role === "warehouse" && selected.status === "UNLOADING" && <div className="pallet-scan"><div className="pallet-count"><span>{selected.palletsScanned}</span><small>of {selected.palletsTotal} pallets scanned</small></div><div className="manual-entry"><input placeholder="Scan or enter pallet ID" value={palletId} onChange={(event) => setPalletId(event.target.value)} /><button disabled={!palletId} onClick={() => { onAction(selected.id, selected.palletsScanned + 1 >= selected.palletsTotal ? "RECEIVED" : "UNLOADING", { palletId }); setPalletId(""); }}><ScanLine size={17} /></button></div></div>}
-            {!["driver", "security", "warehouse"].includes(user.role) && <button className="button secondary full" onClick={() => onOpenShipment(selected)}>Open shipment record</button>}
+            {scanRecorded ? <div className="scan-recorded-note"><CheckCircle2 size={18} /><span><b>{activeStation.label} recorded</b><small>Use the next station’s scanner when the truck moves forward.</small></span></div> : <div className="scan-recorded-note waiting"><QrCode size={18} /><span><b>Record still unchanged</b><small>Scan this delivery’s QR at {activeStation.label} to update it.</small></span></div>}
           </div>
         </>}
       </article>
     </section>
-    <section className="panel queue-panel"><div className="panel-head"><div><span className="eyebrow">Current queue</span><h2>Trucks needing this team</h2></div></div><div className="queue-cards">{visibleShipments.filter((shipment) => user.role === "driver" ? ["PLANNED", "IN_TRANSIT"].includes(shipment.status) : user.role === "security" ? ["ARRIVED", "VERIFIED", "PARKING"].includes(shipment.status) : user.role === "warehouse" ? ["AT_DOCK", "UNLOADING"].includes(shipment.status) : shipment.status !== "RECEIVED").slice(0, 5).map((shipment) => <button key={shipment.id} onClick={() => setSelected(shipment)}><span className="truck-tile"><Truck size={18} /></span><span><b>{shipment.truckPlate}</b><small>{shipment.shipmentNumber}</small></span><StatusPill status={shipment.status} /></button>)}</div></section>
+    <section className="panel queue-panel"><div className="panel-head"><div><span className="eyebrow">Waiting for {activeStation.label}</span><h2>{queue.length} truck{queue.length === 1 ? "" : "s"} ready for this scan</h2></div></div><div className="queue-cards">{queue.map((shipment) => <button key={shipment.id} onClick={() => { setSelected(shipment); setScanRecorded(false); }}><span className="truck-tile"><Truck size={18} /></span><span><b>{shipment.truckPlate}</b><small>{shipment.shipmentNumber}</small></span><StatusPill status={shipment.status} /></button>)}</div>{!queue.length && <div className="approval-empty"><Check size={17} /><span>No deliveries are waiting at this station.</span></div>}</section></>}
   </div>;
 }
 
-function ReportsPage({ data }: { data: AppData }) {
-  const received = data.shipments.filter(s => s.status === "RECEIVED");
-  const total = Math.max(data.shipments.length, 1);
-  const onTime = Math.round(data.shipments.filter(s => s.status !== "REJECTED").length / total * 100);
-  const complete = Math.round(received.length / total * 100);
-  const supplierRows = Array.from(new Set(data.shipments.map(s => s.supplier))).map((supplier) => { const rows = data.shipments.filter(s => s.supplier === supplier); return { supplier, deliveries: rows.length, onTime: Math.round(rows.filter(s => s.status !== "REJECTED").length / rows.length * 100), complete: Math.round(rows.filter(s => s.status === "RECEIVED").length / rows.length * 100) }; });
-  const chart = [72, 84, 91, 88, 96, onTime, Math.max(68, onTime - 4)];
-  return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">Performance</span><h1>Delivery reports</h1><p>On-time, in-full, and receiving throughput in one view.</p></div><button className="button secondary" onClick={() => window.print()}><Download size={17} /> Export report</button></section>
-    <section className="metrics-grid report-metrics"><MetricCard label="On-time arrival" value={`${onTime}%`} helper="Exact time + grace period" icon={Clock3} tone="blue" trend="+3.2%" /><MetricCard label="In-full receiving" value={`${complete}%`} helper="All pallets received" icon={PackageCheck} tone="green" /><MetricCard label="Average unload" value="42 min" helper="Gate-to-dock excluded" icon={Gauge} tone="orange" /><MetricCard label="Rejected at gate" value={data.shipments.filter(s => s.status === "REJECTED").length} helper="Booking/data mismatch" icon={ShieldCheck} tone="red" /></section>
-    <section className="reports-grid"><article className="panel trend-panel"><div className="panel-head"><div><span className="eyebrow">Last seven days</span><h2>On-time arrival trend</h2></div><span className="legend"><i /> On-time %</span></div><div className="bar-chart">{chart.map((value, index) => <div key={index}><span style={{ height: `${value}%` }}><b>{value}%</b></span><small>{["Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"][index]}</small></div>)}</div></article><article className="panel loss-panel"><div className="panel-head"><div><span className="eyebrow">Time losses</span><h2>Where delays happen</h2></div></div>{[{ label: "Late supplier departure", value: 38, tone: "orange" }, { label: "Gate data mismatch", value: 24, tone: "red" }, { label: "Dock unavailable", value: 21, tone: "blue" }, { label: "Unloading overrun", value: 17, tone: "violet" }].map(row => <div className="loss-row" key={row.label}><div><span>{row.label}</span><b>{row.value}%</b></div><div><span className={`loss-${row.tone}`} style={{ width: `${row.value}%` }} /></div></div>)}</article></section>
-    <section className="panel"><div className="panel-head"><div><span className="eyebrow">Supplier scorecard</span><h2>OTIF performance</h2></div></div><div className="table-wrap"><table><thead><tr><th>Supplier</th><th>Deliveries</th><th>On-time</th><th>In-full</th><th>Score</th></tr></thead><tbody>{supplierRows.map(row => <tr key={row.supplier}><td><b>{row.supplier}</b></td><td>{row.deliveries}</td><td>{row.onTime}%</td><td>{row.complete}%</td><td><span className={`score-chip ${row.onTime >= 90 ? "good" : "watch"}`}>{row.onTime >= 90 ? "Good" : "Watch"}</span></td></tr>)}</tbody></table></div></section>
-  </div>;
+function ReportsPage({ data, user }: { data: AppData; user: SessionUser }) {
+  const elapsed = (start?: string | null, end?: string | null) => start && end ? Math.max(0, Math.round((Date.parse(end) - Date.parse(start)) / 60000)) : null;
+  const average = (values: (number | null)[]) => { const valid = values.filter((value): value is number => value !== null); return valid.length ? Math.round(valid.reduce((sum, value) => sum + value, 0) / valid.length) : 0; };
+  const total = data.shipments.length;
+  const approved = data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED").length;
+  const completed = data.shipments.filter((shipment) => shipment.status === "GATE_OUT").length;
+  const supplierRows = Array.from(new Set(data.shipments.map((shipment) => shipment.supplier))).map((supplier) => { const rows = data.shipments.filter((shipment) => shipment.supplier === supplier); const accepted = rows.filter((shipment) => shipment.bookingStatus === "APPROVED").length; return { supplier, deliveries: rows.length, approval: rows.length ? Math.round(accepted / rows.length * 100) : 0, completed: rows.filter((shipment) => shipment.status === "GATE_OUT").length, trip: average(rows.map((shipment) => elapsed(shipment.tripAt, shipment.gateInAt))), unload: average(rows.map((shipment) => elapsed(shipment.unloadingAt, shipment.receivedAt))), turnaround: average(rows.map((shipment) => elapsed(shipment.gateInAt, shipment.gateOutAt))) }; });
+  return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">{user.role === "supplier" ? "My supplier account" : "Company supplier scorecard"}</span><h1>{user.role === "supplier" ? "My delivery performance" : "Supplier performance"}</h1><p>Approval, completion, and actual process durations calculated from scan timestamps in Manila time.</p></div><button className="button secondary" onClick={() => window.print()}><Download size={17} /> Export report</button></section><section className="metrics-grid report-metrics"><MetricCard label="Booking approval" value={`${total ? Math.round(approved / total * 100) : 0}%`} helper={`${approved} of ${total} requests approved`} icon={ShieldCheck} tone="blue" /><MetricCard label="Gate-out complete" value={completed} helper="Full journey completed" icon={PackageCheck} tone="green" /><MetricCard label="Average unloading" value={`${average(data.shipments.map((shipment) => elapsed(shipment.unloadingAt, shipment.receivedAt)))} min`} helper="Unload to received" icon={Gauge} tone="orange" /><MetricCard label="Average site time" value={`${average(data.shipments.map((shipment) => elapsed(shipment.gateInAt, shipment.gateOutAt)))} min`} helper="Gate in to gate out" icon={Clock3} tone="violet" /></section><section className="panel"><div className="panel-head"><div><span className="eyebrow">{user.role === "supplier" ? "Account report" : "Per supplier"}</span><h2>Operational performance</h2></div></div><div className="table-wrap"><table><thead><tr><th>Supplier</th><th>Requests</th><th>Approval</th><th>Gate-out complete</th><th>Trip to gate</th><th>Unload</th><th>Site turnaround</th></tr></thead><tbody>{supplierRows.map((row) => <tr key={row.supplier}><td><b>{row.supplier}</b></td><td>{row.deliveries}</td><td>{row.approval}%</td><td>{row.completed}</td><td>{row.trip} min</td><td>{row.unload} min</td><td><span className={`score-chip ${row.turnaround && row.turnaround <= 180 ? "good" : "watch"}`}>{row.turnaround} min</span></td></tr>)}</tbody></table></div></section></div>;
 }
 
 function AdminCreateModal({ kind, onClose, onSubmit }: { kind: "materials" | "users"; onClose: () => void; onSubmit: (form: Record<string, string | number>) => void }) {
-  const [form, setForm] = useState<Record<string, string | number>>(kind === "materials" ? { code: "", name: "", type: "ROH", uom: "KG", shelfLifeDays: 365, unitsPerPallet: 1, storageZone: "Zone A" } : { name: "", username: "", password: "", role: "planner", supplierId: "" });
+  const [form, setForm] = useState<Record<string, string | number>>(kind === "materials" ? { code: "", name: "", type: "ROH", uom: "KG", shelfLifeDays: 365, unitsPerPallet: 1, storageZone: "Zone A" } : { name: "", username: "", password: "", role: "supplier", supplierName: "" });
   const set = (name: string, value: string | number) => setForm({ ...form, [name]: value });
-  return <Modal title={kind === "materials" ? "Add material" : "Add user account"} subtitle={kind === "materials" ? "Create a new material master record." : "Assign a role and initial password."} onClose={onClose}><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form); }}><div className="form-grid">{kind === "materials" ? <><label>Material code<input value={form.code} onChange={event => set("code", event.target.value)} required /></label><label>Material name<input value={form.name} onChange={event => set("name", event.target.value)} required /></label><label>Type<select value={form.type} onChange={event => set("type", event.target.value)}><option>ROH</option><option>PACK</option><option>FINISHED</option></select></label><label>UOM<select value={form.uom} onChange={event => set("uom", event.target.value)}><option>KG</option><option>PC</option><option>L</option><option>T</option></select></label><label>Shelf life (days)<input type="number" min="0" value={form.shelfLifeDays} onChange={event => set("shelfLifeDays", Number(event.target.value))} /></label><label>Units per pallet<input type="number" min="0" value={form.unitsPerPallet} onChange={event => set("unitsPerPallet", Number(event.target.value))} /></label><label>Storage zone<input value={form.storageZone} onChange={event => set("storageZone", event.target.value)} /></label></> : <><label>Full name<input value={form.name} onChange={event => set("name", event.target.value)} required /></label><label>Username<input value={form.username} onChange={event => set("username", event.target.value.toLowerCase())} required /></label><label>Initial password<input type="password" minLength={8} value={form.password} onChange={event => set("password", event.target.value)} required /></label><label>Role<select value={form.role} onChange={event => set("role", event.target.value)}>{(Object.keys(ROLE_LABELS) as Role[]).map(role => <option value={role} key={role}>{ROLE_LABELS[role]}</option>)}</select></label><label>Supplier ID (supplier role only)<input type="number" min="1" value={form.supplierId} onChange={event => set("supplierId", event.target.value)} placeholder="Example: 1" /></label></>}</div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><Plus size={17} /> Add {kind === "materials" ? "material" : "user"}</button></div></form></Modal>;
+  return <Modal title={kind === "materials" ? "Add material" : "Add user account"} subtitle={kind === "materials" ? "Create a new material master record." : "Supplier accounts only see their own bookings, catalog, history, and reports."} onClose={onClose}><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form); }}><div className="form-grid">{kind === "materials" ? <><label>Material code<input value={form.code} onChange={event => set("code", event.target.value)} required /></label><label>Material name<input value={form.name} onChange={event => set("name", event.target.value)} required /></label><label>Type<select value={form.type} onChange={event => set("type", event.target.value)}><option>ROH</option><option>PACK</option><option>FINISHED</option></select></label><label>UOM<select value={form.uom} onChange={event => set("uom", event.target.value)}><option>KG</option><option>PC</option><option>L</option><option>T</option></select></label><label>Shelf life (days)<input type="number" min="0" value={form.shelfLifeDays} onChange={event => set("shelfLifeDays", Number(event.target.value))} /></label><label>Units per pallet<input type="number" min="0" value={form.unitsPerPallet} onChange={event => set("unitsPerPallet", Number(event.target.value))} /></label><label>Storage zone<input value={form.storageZone} onChange={event => set("storageZone", event.target.value)} /></label></> : <><label>Account display name<input value={form.name} onChange={event => set("name", event.target.value)} required /></label><label>Username<input value={form.username} onChange={event => set("username", event.target.value.toLowerCase())} required /></label><label>Initial password<input type="password" minLength={8} value={form.password} onChange={event => set("password", event.target.value)} required /></label><label>Account role<select value={form.role} onChange={event => set("role", event.target.value)}>{(Object.keys(ROLE_LABELS) as Role[]).map(role => <option value={role} key={role}>{ROLE_LABELS[role]}</option>)}</select></label>{form.role === "supplier" && <label>Supplier company<input value={form.supplierName} onChange={event => set("supplierName", event.target.value)} placeholder="Example Foods Supplier" required /></label>}</>}</div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><Plus size={17} /> Add {kind === "materials" ? "material" : "account"}</button></div></form></Modal>;
 }
 
-function AdminPage({ data, onSaveSettings, onAddMaterial, onAddUser }: { data: AppData; onSaveSettings: (settings: AppData["settings"]) => void; onAddMaterial: (form: Record<string, string | number>) => void; onAddUser: (form: Record<string, string | number>) => void }) {
-  const [tab, setTab] = useState<"materials" | "users" | "settings">("materials");
+function SupplierPresetEditor({ supplier, onSave }: { supplier: SupplierAccount; onSave: (supplier: SupplierAccount, presets: SupplierPreset[]) => Promise<void> | void }) {
+  const [presets, setPresets] = useState<SupplierPreset[]>(supplier.productPresets || []);
+  const update = (index: number, field: keyof SupplierPreset, value: string | number) => setPresets((current) => current.map((preset, itemIndex) => itemIndex === index ? { ...preset, [field]: value } : preset));
+  return <article className="supplier-preset-card"><div className="supplier-preset-head"><div><strong>{supplier.name}</strong><small>{supplier.vendorCode} · {presets.length} preset product{presets.length === 1 ? "" : "s"}</small></div><button className="button secondary compact" onClick={() => setPresets((current) => [...current, { id: 0, name: "", uom: "KG", defaultAmount: 0 }])}><Plus size={14} /> Product</button></div><div className="supplier-preset-list">{presets.map((preset, index) => <div key={`${preset.id}-${index}`}><input aria-label="Product name" placeholder="Product name" value={preset.name} onChange={(event) => update(index, "name", event.target.value)} /><input aria-label="Default amount" type="number" min="0" step="any" value={preset.defaultAmount} onChange={(event) => update(index, "defaultAmount", Number(event.target.value))} /><select aria-label="Unit of measure" value={preset.uom} onChange={(event) => update(index, "uom", event.target.value)}><option>KG</option><option>MT</option><option>PC</option><option>L</option><option>CASE</option></select><button className="icon-button danger" aria-label="Remove preset" onClick={() => setPresets((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></button></div>)}</div>{!presets.length && <div className="approval-empty"><Boxes size={17} /><span>Add the products this supplier is allowed to select.</span></div>}<button className="button primary compact" onClick={() => void onSave(supplier, presets)}><Check size={14} /> Save supplier catalog</button></article>;
+}
+
+function AdminPage({ data, onSaveSettings, onAddMaterial, onAddUser, onSaveSupplierPresets }: { data: AppData; onSaveSettings: (settings: AppData["settings"]) => void; onAddMaterial: (form: Record<string, string | number>) => void; onAddUser: (form: Record<string, string | number>) => void; onSaveSupplierPresets: (supplier: SupplierAccount, presets: SupplierPreset[]) => Promise<void> | void }) {
+  const [tab, setTab] = useState<"materials" | "users" | "suppliers" | "settings">("materials");
   const [search, setSearch] = useState("");
   const [settings, setSettings] = useState(data.settings);
   const [creating, setCreating] = useState<"materials" | "users" | null>(null);
   const exportCsv = () => {
-    const rows = tab === "materials" ? [["Material Code", "Material Name", "Type", "UOM", "Shelf Life", "Units Per Pallet", "Storage Zone"], ...data.materials.map(material => [material.code, material.name, material.type, material.uom, material.shelfLifeDays, material.unitsPerPallet, material.storageZone])] : [["Name", "Username", "Role"], ...data.users.map(account => [account.name, account.username, account.role])];
+    const rows = tab === "materials" ? [["Material Code", "Material Name", "Type", "UOM", "Shelf Life", "Units Per Pallet", "Storage Zone"], ...data.materials.map(material => [material.code, material.name, material.type, material.uom, material.shelfLifeDays, material.unitsPerPallet, material.storageZone])] : tab === "suppliers" ? [["Supplier", "Vendor Code", "Preset Products"], ...data.suppliers.map(supplier => [supplier.name, supplier.vendorCode, supplier.productPresets.map(preset => preset.name).join("; ")])] : [["Name", "Username", "Role"], ...data.users.map(account => [account.name, account.username, account.role])];
     const csv = rows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `dockflow-${tab}.csv`; anchor.click(); URL.revokeObjectURL(url);
   };
   const finishCreate = (form: Record<string, string | number>) => { if (creating === "materials") onAddMaterial(form); else onAddUser(form); setCreating(null); };
-  return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">System control</span><h1>Administration</h1><p>Keep master data, access, and scheduling rules reliable.</p></div>{tab !== "settings" && <button className="button primary" onClick={() => setCreating(tab)}><Plus size={17} /> Add {tab === "materials" ? "material" : "user"}</button>}</section>
-    <div className="admin-tabs"><button className={tab === "materials" ? "active" : ""} onClick={() => setTab("materials")}><Boxes size={17} /> Materials</button><button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}><UsersRound size={17} /> Users & roles</button><button className={tab === "settings" ? "active" : ""} onClick={() => setTab("settings")}><Settings size={17} /> Scheduling rules</button></div>
+  return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">System control</span><h1>Administration</h1><p>Create supplier-only accounts and maintain the preset product list available to each account.</p></div>{["materials", "users"].includes(tab) && <button className="button primary" onClick={() => setCreating(tab as "materials" | "users")}><Plus size={17} /> Add {tab === "materials" ? "material" : "account"}</button>}</section>
+    <div className="admin-tabs"><button className={tab === "materials" ? "active" : ""} onClick={() => setTab("materials")}><Boxes size={17} /> Materials</button><button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}><UsersRound size={17} /> Accounts</button><button className={tab === "suppliers" ? "active" : ""} onClick={() => setTab("suppliers")}><Truck size={17} /> Supplier catalogs</button><button className={tab === "settings" ? "active" : ""} onClick={() => setTab("settings")}><Settings size={17} /> Scheduling rules</button></div>
     <section className="panel admin-panel">{tab !== "settings" && <div className="toolbar"><label className="search-box"><Search size={17} /><input placeholder={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="button secondary" onClick={exportCsv}><Download size={16} /> Export CSV</button></div>}
       {tab === "materials" && <div className="table-wrap"><table><thead><tr><th>Material code</th><th>Material name</th><th>Type</th><th>UOM</th><th>Shelf life</th><th>Units / pallet</th><th>Storage</th><th /></tr></thead><tbody>{data.materials.filter(material => `${material.code} ${material.name}`.toLowerCase().includes(search.toLowerCase())).map(material => <tr key={material.id}><td><b>{material.code}</b></td><td>{material.name}</td><td><span className="type-chip">{material.type}</span></td><td>{material.uom}</td><td>{material.shelfLifeDays ? `${material.shelfLifeDays} days` : "N/A"}</td><td>{material.unitsPerPallet.toLocaleString()}</td><td>{material.storageZone}</td><td><button className="icon-button"><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>}
       {tab === "users" && <div className="user-cards">{data.users.filter(user => `${user.name} ${user.username}`.toLowerCase().includes(search.toLowerCase())).map(user => { const RoleIcon = ROLE_ICONS[user.role]; return <article className="user-card" key={user.id}><span className="user-avatar">{initials(user.name)}</span><div><strong>{user.name}</strong><small>@{user.username}</small></div><span className="role-chip"><RoleIcon size={14} /> {ROLE_LABELS[user.role]}</span><button className="icon-button"><MoreHorizontal size={18} /></button></article>; })}</div>}
-      {tab === "settings" && <form className="settings-form" onSubmit={(event) => { event.preventDefault(); onSaveSettings({ ...settings, dockCount: 2 }); }}><div className="settings-intro"><span className="settings-icon"><Settings size={22} /></span><div><h2>Site and booking rules</h2><p>Use Schedule to maintain the shared booking calendar.</p></div></div><div className="form-grid"><label>Site name<input value={settings.siteName} onChange={event => setSettings({ ...settings, siteName: event.target.value })} /></label><label>Receiving docks<input value="2 docks" readOnly /></label><label>Late grace period<select value={settings.graceMinutes} onChange={event => setSettings({ ...settings, graceMinutes: Number(event.target.value) })}><option value={0}>No grace period</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div><button className="button primary" type="submit"><Check size={17} /> Save scheduling rules</button></form>}
+      {tab === "suppliers" && <div className="supplier-preset-grid">{data.suppliers.filter(supplier => `${supplier.name} ${supplier.vendorCode}`.toLowerCase().includes(search.toLowerCase())).map(supplier => <SupplierPresetEditor supplier={supplier} onSave={onSaveSupplierPresets} key={`${supplier.id}-${supplier.productPresets.map((preset) => `${preset.id}:${preset.name}:${preset.uom}:${preset.defaultAmount}`).join("|")}`} />)}</div>}
+      {tab === "settings" && <form className="settings-form" onSubmit={(event) => { event.preventDefault(); onSaveSettings({ ...settings, dockCount: 2 }); }}><div className="settings-intro"><span className="settings-icon"><Settings size={22} /></span><div><h2>Site and booking rules</h2><p>Use Schedule to maintain unlimited receiving windows in Manila time.</p></div></div><div className="form-grid"><label>Site name<input value={settings.siteName} onChange={event => setSettings({ ...settings, siteName: event.target.value })} /></label><label>Late grace period<select value={settings.graceMinutes} onChange={event => setSettings({ ...settings, graceMinutes: Number(event.target.value) })}><option value={0}>No grace period</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div><button className="button primary" type="submit"><Check size={17} /> Save scheduling rules</button></form>}
     </section>{creating && <AdminCreateModal kind={creating} onClose={() => setCreating(null)} onSubmit={finishCreate} />}
   </div>;
 }
 
-function NewRdsModal({ availableSlots, shipments, onClose, onSubmit }: { availableSlots: AvailabilitySlot[]; shipments: Shipment[]; onClose: () => void; onSubmit: (form: Record<string, string | number>) => void }) {
-  const sortedSlots = [...availableSlots].sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
-  const initialSlot = sortedSlots[0] || null;
-  const [anchorDate, setAnchorDate] = useState(initialSlot?.date || localDate());
-  const [selectedSlotId, setSelectedSlotId] = useState<number | null>(initialSlot?.id || null);
-  const [form, setForm] = useState<Record<string, string | number>>({ dppNumber: `DPP-${localDate().slice(2).replaceAll("-", "")}-001`, supplier: "", requestedDate: initialSlot?.date || "", requestedTime: initialSlot?.startTime || "", availabilitySlotId: initialSlot?.id || 0, poNumber: "", materialCode: "", materialName: "", quantity: 0, uom: "KG", palletCount: 0, notes: "" });
-  const set = (name: string, value: string | number) => setForm({ ...form, [name]: value });
-  const selectedSlot = sortedSlots.find((slot) => slot.id === selectedSlotId) || null;
-  const chooseSlot = (slot: AvailabilitySlot) => {
-    setSelectedSlotId(slot.id);
-    setAnchorDate(slot.date);
-    setForm((current) => ({ ...current, requestedDate: slot.date, requestedTime: slot.startTime, availabilitySlotId: slot.id }));
-  };
-  const timeOptions = selectedSlot ? timesInsideSlot(selectedSlot) : [];
-  const usage = (time: string) => shipments.filter((shipment) => shipment.scheduledDate === selectedSlot?.date && shipment.scheduledTime === time && shipment.bookingStatus !== "REJECTED" && shipment.status !== "REJECTED").length;
-  return <Modal title="Create delivery request" subtitle="Choose an open booking time, then send the delivery request." onClose={onClose} wide><form className="modal-form" onSubmit={event => { event.preventDefault(); if (selectedSlot) onSubmit(form); }}><div className="form-section"><span>01</span><div><h3>Delivery plan</h3><div className="form-grid"><label>DPP number<input value={form.dppNumber} onChange={e => set("dppNumber", e.target.value)} required /></label><label>Supplier<input value={form.supplier} onChange={e => set("supplier", e.target.value)} placeholder="Type any supplier name" required /></label></div><div className="booking-request-calendar"><span className="eyebrow">Booking time</span>{availableSlots.length ? <AvailabilityCalendar slots={availableSlots} shipments={shipments} anchorDate={anchorDate} selectedSlotId={selectedSlotId} onAnchorDateChange={setAnchorDate} onSelect={chooseSlot} /> : <div className="feature-empty booking-no-slots"><CalendarDays size={24} /><strong>No booking times are open</strong><span>Add availability in Schedule before creating a delivery request.</span></div>}</div><div className="booking-selection"><div><span className="eyebrow">Selected booking time</span><h3>{selectedSlot ? `${formatDate(selectedSlot.date)} · ${selectedSlot.startTime}–${selectedSlot.endTime}` : "Select an open window above"}</h3><p>The exact time stays within the selected green availability window.</p></div><label>Exact timestamp<select value={form.requestedTime} onChange={e => set("requestedTime", e.target.value)} disabled={!selectedSlot} required><option value="" disabled>Select time</option>{timeOptions.map(time => <option key={time} value={time} disabled={usage(time) >= 2}>{time} · {Math.max(0, 2 - usage(time))} dock{2 - usage(time) === 1 ? "" : "s"} available</option>)}</select></label></div></div></div><div className="form-section"><span>02</span><div><h3>Material line</h3><div className="form-grid three"><label>PO number<input value={form.poNumber} onChange={e => set("poNumber", e.target.value)} /></label><label>Material code<input value={form.materialCode} onChange={e => set("materialCode", e.target.value)} required /></label><label>Material name<input value={form.materialName} onChange={e => set("materialName", e.target.value)} required /></label><label>Quantity<input type="number" min="0.001" step="any" value={form.quantity} onChange={e => set("quantity", Number(e.target.value))} required /></label><label>UOM<select value={form.uom} onChange={e => set("uom", e.target.value)}><option>KG</option><option>PC</option><option>L</option></select></label><label>Pallet count<input type="number" min="0" value={form.palletCount} onChange={e => set("palletCount", Number(e.target.value))} /></label></div><label>Planner note<textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional instruction to supplier" /></label></div></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={!selectedSlot || !form.requestedTime}><ArrowRight size={17} /> Create & send RDS</button></div></form></Modal>;
+type BookingRequestInput = { dppNumber: string; scheduledDate: string; scheduledTime: string; scheduledEndTime: string; truckPlate: string; driverName: string; driverPhone: string; products: { presetId: number; amount: number }[] };
+
+function NewRdsModal({ supplier, availableSlots, shipments, onClose, onSubmit }: { supplier: SupplierAccount; availableSlots: AppData["settings"]["availableSlots"]; shipments: Shipment[]; onClose: () => void; onSubmit: (form: BookingRequestInput) => Promise<void> | void }) {
+  const firstSlot = [...availableSlots].sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`)).find((slot) => slot.date >= localDate());
+  const [form, setForm] = useState({ dppNumber: "", scheduledDate: firstSlot?.date || localDate(), scheduledTime: firstSlot?.startTime || "08:00", scheduledEndTime: firstSlot?.endTime || "10:00", truckPlate: "", driverName: "", driverPhone: "" });
+  const [products, setProducts] = useState<Record<number, { checked: boolean; amount: number }>>(() => Object.fromEntries((supplier.productPresets || []).map((preset) => [preset.id, { checked: false, amount: preset.defaultAmount }])));
+  const [submitting, setSubmitting] = useState(false);
+  const dayWindows = availableSlots.filter((slot) => slot.date === form.scheduledDate).sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const overlaps = shipments.filter((shipment) => shipment.scheduledDate === form.scheduledDate && shipment.status !== "REJECTED" && shipment.scheduledTime < form.scheduledEndTime && (shipment.scheduledEndTime || shipment.scheduledTime) > form.scheduledTime).sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+  const selectedProducts = supplier.productPresets.filter((preset) => products[preset.id]?.checked && products[preset.id].amount > 0).map((preset) => ({ presetId: preset.id, amount: products[preset.id].amount }));
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (submitting || !selectedProducts.length) return; setSubmitting(true); try { await onSubmit({ ...form, products: selectedProducts }); } catch { setSubmitting(false); } };
+  return <Modal title="Request a delivery" subtitle={`${supplier.name} · one complete request for Management review`} onClose={onClose} wide><form className="modal-form supplier-request-form" onSubmit={submit}><div className="form-section"><span>01</span><div><h3>Booking and truck</h3><div className="form-grid three"><label>DPP number<input value={form.dppNumber} onChange={(event) => setForm({ ...form, dppNumber: event.target.value })} required /></label><label>Delivery date<input type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></label><label>Start time<input type="time" value={form.scheduledTime} onChange={(event) => setForm({ ...form, scheduledTime: event.target.value })} required /></label><label>End time<input type="time" min={form.scheduledTime} value={form.scheduledEndTime} onChange={(event) => setForm({ ...form, scheduledEndTime: event.target.value })} required /></label><label>Truck plate<input value={form.truckPlate} onChange={(event) => setForm({ ...form, truckPlate: event.target.value.toUpperCase() })} placeholder="NAB 1234" required /></label><label>Driver name<input value={form.driverName} onChange={(event) => setForm({ ...form, driverName: event.target.value })} required /></label><label>Phone number<input value={form.driverPhone} onChange={(event) => setForm({ ...form, driverPhone: event.target.value })} placeholder="09xxxxxxxxx" required /></label></div><div className="request-window-summary"><div><span className="eyebrow">Open receiving hours</span>{dayWindows.length ? dayWindows.map((slot) => <button type="button" key={slot.id} onClick={() => setForm({ ...form, scheduledTime: slot.startTime, scheduledEndTime: slot.endTime })}><Clock3 size={14} /> {slot.startTime}–{slot.endTime}</button>) : <small>No restricted window is set for this date.</small>}</div><div><span className="eyebrow">Bookings overlapping your time</span>{overlaps.length ? overlaps.map((shipment) => <span className="request-overlap" key={shipment.id}><i />{shipment.scheduledTime}–{shipment.scheduledEndTime} · {shipment.truckPlate}</span>) : <small>No current overlap. Overlaps are still allowed and will be reviewed by Management.</small>}</div></div></div></div><div className="form-section"><span>02</span><div><h3>Products to deliver</h3><p className="section-helper">Select from the catalog configured for this supplier account, then enter the actual amount or weight.</p><div className="preset-check-list">{supplier.productPresets.map((preset) => { const selected = products[preset.id] || { checked: false, amount: preset.defaultAmount }; return <label className={selected.checked ? "selected" : ""} key={preset.id}><input type="checkbox" checked={selected.checked} onChange={(event) => setProducts({ ...products, [preset.id]: { ...selected, checked: event.target.checked } })} /><span><b>{preset.name}</b><small>Preset unit: {preset.uom}</small></span><input aria-label={`${preset.name} amount`} type="number" min="0.001" step="any" disabled={!selected.checked} value={selected.amount} onChange={(event) => setProducts({ ...products, [preset.id]: { ...selected, amount: Number(event.target.value) } })} /><em>{preset.uom}</em></label>; })}</div>{!supplier.productPresets.length && <div className="feature-empty booking-no-slots"><Boxes size={24} /><strong>No preset products configured</strong><span>Ask an administrator to add this supplier’s product catalog.</span></div>}</div></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={submitting}>Cancel</button><button className="button primary" disabled={submitting || !selectedProducts.length || form.scheduledEndTime <= form.scheduledTime}>{submitting ? <><Loader2 className="spin" size={17} /> Submitting once</> : <><Check size={17} /> Submit for confirmation</>}</button></div></form></Modal>;
 }
 
-type DeliveryFiles = { dn: File | null; coa: File | null };
-
-function BookSlotModal({ rds, availableSlots, shipments, onClose, onSubmit }: { rds: RdsRequest; availableSlots: AvailabilitySlot[]; shipments: Shipment[]; onClose: () => void; onSubmit: (form: Record<string, string | number>, files: DeliveryFiles) => void }) {
-  const sortedSlots = [...availableSlots].sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
-  const initialSlot = sortedSlots.find((slot) => slot.id === rds.availabilitySlotId) || sortedSlots.find((slot) => slot.date === rds.requestedDate) || sortedSlots[0] || null;
-  const [anchorDate, setAnchorDate] = useState(initialSlot?.date || rds.requestedDate);
-  const [selectedSlotId, setSelectedSlotId] = useState<number | null>(initialSlot?.id || null);
-  const initialTime = initialSlot && rds.requestedTime && timesInsideSlot(initialSlot).includes(rds.requestedTime) ? rds.requestedTime : initialSlot?.startTime || "";
-  const [form, setForm] = useState<Record<string, string | number>>({ rdsId: rds.id, scheduledDate: initialSlot?.date || "", scheduledTime: initialTime, scheduledEndTime: "", truckPlate: "", driverName: "", driverPhone: "", materialWeightKg: 12000, dnNumber: "", batchNumber: "" });
-  const [files, setFiles] = useState<DeliveryFiles>({ dn: null, coa: null });
-  const set = (name: string, value: string | number) => setForm({ ...form, [name]: value });
-  const selectedSlot = sortedSlots.find((slot) => slot.id === selectedSlotId) || null;
-  const chooseSlot = (slot: AvailabilitySlot) => { setSelectedSlotId(slot.id); setAnchorDate(slot.date); setForm({ ...form, scheduledDate: slot.date, scheduledTime: slot.startTime, scheduledEndTime: "" }); };
-  const timeOptions = selectedSlot ? timesInsideSlot(selectedSlot) : [];
-  const usage = (time: string) => shipments.filter((shipment) => shipment.scheduledDate === selectedSlot?.date && shipment.scheduledTime === time && shipment.bookingStatus !== "REJECTED" && shipment.status !== "REJECTED").length;
-  return <Modal title="Book an available time" subtitle={`${rds.rdsNumber} · ${rds.supplier} · requested ${formatDate(rds.requestedDate, "short")}`} onClose={onClose} wide><form className="modal-form booking-rule-form" onSubmit={event => { event.preventDefault(); if (selectedSlot) onSubmit(form, files); }}><div className="notice"><Clock3 size={17} /><span>Booking time: choose a green window, then pick an exact timestamp. A planner or administrator will decide the request in Management.</span></div>{availableSlots.length ? <AvailabilityCalendar slots={availableSlots} shipments={shipments} anchorDate={anchorDate} selectedSlotId={selectedSlotId} onAnchorDateChange={setAnchorDate} onSelect={chooseSlot} /> : <div className="feature-empty booking-no-slots"><CalendarDays size={24} /><strong>No booking times are open</strong><span>Ask an administrator or planner to add availability first.</span></div>}<div className="booking-selection"><div><span className="eyebrow">Selected booking time</span><h3>{selectedSlot ? `${formatDate(selectedSlot.date)} · ${selectedSlot.startTime}–${selectedSlot.endTime}` : "Select an open window above"}</h3><p>Capacity is limited to the two receiving docks at each timestamp.</p></div><label>Exact timestamp<select value={form.scheduledTime} onChange={e => set("scheduledTime", e.target.value)} disabled={!selectedSlot} required><option value="" disabled>Select time</option>{timeOptions.map(time => <option key={time} value={time} disabled={usage(time) >= 2}>{time} · {Math.max(0, 2 - usage(time))} dock{2 - usage(time) === 1 ? "" : "s"} available</option>)}</select></label></div><div className="form-grid"><label>Truck plate<input value={form.truckPlate} onChange={e => set("truckPlate", e.target.value.toUpperCase())} placeholder="NAB 1234" required /></label><label>Driver name<input value={form.driverName} onChange={e => set("driverName", e.target.value)} required /></label><label>Driver phone<input value={form.driverPhone} onChange={e => set("driverPhone", e.target.value)} placeholder="09xxxxxxxxx" required /></label><label>Load weight (kg)<input type="number" value={form.materialWeightKg} onChange={e => set("materialWeightKg", Number(e.target.value))} /></label><label>DN number<input value={form.dnNumber} onChange={e => set("dnNumber", e.target.value)} /></label><label>Vendor batch<input value={form.batchNumber} onChange={e => set("batchNumber", e.target.value)} /></label></div><div className="upload-pair"><label><Upload size={17} /><span><b>{files.dn ? files.dn.name : "Upload DN"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, dn: event.target.files?.[0] || null })} /></label><label><Upload size={17} /><span><b>{files.coa ? files.coa.name : "Upload COA"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, coa: event.target.files?.[0] || null })} /></label></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={!selectedSlot || !form.scheduledTime}><Check size={17} /> Submit for approval</button></div></form></Modal>;
-}
-
-function ShipmentModal({ shipment, onClose }: { shipment: Shipment; onClose: () => void }) {
-  return <Modal title={shipment.shipmentNumber} subtitle={`${shipment.bookingReceipt} · ${shipment.supplier}`} onClose={onClose} wide><div className="shipment-detail print-area">
-    <div className="receipt-head"><div><span className="brand-mark"><Route size={20} /></span><span><b>DockFlow</b><small>{shipment.importSource ? `Imported from ${shipment.importSource}` : "Booking receipt"}</small></span></div><StatusPill status={shipment.status} /></div>
-    <div className="shipment-summary"><div><span className="truck-tile large"><Truck size={26} /></span><div><small>Truck & driver</small><strong>{shipment.truckPlate}</strong><span>{shipment.driverName}{shipment.driverPhone ? ` · ${shipment.driverPhone}` : ""}</span></div></div><img src={`/api/shipments/${shipment.id}/qr.svg`} alt={`QR code for ${shipment.shipmentNumber}`} /></div>
-    <dl className="detail-grid"><div><dt>Delivery date</dt><dd>{formatDate(shipment.scheduledDate)}</dd></div><div><dt>Scheduled time</dt><dd>{shipment.scheduledTime}{shipment.scheduledEndTime ? ` – ${shipment.scheduledEndTime}` : ""}</dd></div><div><dt>Booking approval</dt><dd>{shipment.bookingStatus === "PENDING_APPROVAL" ? "Waiting for planner" : shipment.bookingStatus === "REJECTED" ? "Rejected" : "Approved"}</dd></div><div><dt>Assigned dock</dt><dd>{shipment.dock || "At gate assignment"}</dd></div><div><dt>Load weight</dt><dd>{shipment.materialWeightKg ? `${shipment.materialWeightKg.toLocaleString()} kg` : "See material quantities"}</dd></div><div><dt>Pallet progress</dt><dd>{shipment.palletsScanned} / {shipment.palletsTotal}</dd></div></dl>
-    <div className="table-wrap detail-items imported-detail-table"><table><thead><tr><th>PO number</th><th>Material</th><th>Quantity</th><th>PO balance</th><th>Source</th><th>Remarks / documents</th></tr></thead><tbody>{shipment.items.map(item => <tr key={item.id}><td>{item.poNumber || "—"}</td><td><b>{item.materialCode}</b><small>{item.materialName}</small></td><td>{item.quantity.toLocaleString()} {item.uom}</td><td>{item.poBalance == null ? "—" : item.poBalance.toLocaleString()}<small>{item.stillToBeDelivered == null ? "" : `${item.stillToBeDelivered.toLocaleString()} still to deliver`}</small></td><td>{item.sourceSheet ? `${item.sourceSheet} · row ${item.sourceRow}` : "Manual"}<small>{item.deliverySite || item.sourceFile || ""}{item.deliveryWeek ? ` · wk ${item.deliveryWeek}` : ""}</small></td><td>{item.remarks || "—"}<div className="document-chips">{item.dnFileName && <span>DN</span>}{item.coaFileName && <span>COA</span>}</div></td></tr>)}</tbody></table></div>
-    <div className="shipment-actions"><button className="button secondary" onClick={() => window.print()}><Printer size={17} /> Print booking & pallet IDs</button><button className="button primary" onClick={onClose}>Done</button></div>
-  </div></Modal>;
+function ShipmentModal({ shipment, onClose, onDownloadPdf }: { shipment: Shipment; onClose: () => void; onDownloadPdf: (shipment: Shipment) => Promise<void> | void }) {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  const duration = (start?: string | null, end?: string | null) => { if (!start) return "Not started"; const seconds = Math.max(0, Math.floor(((end ? Date.parse(end) : now ?? Date.parse(start)) - Date.parse(start)) / 1000)); const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60); return `${hours ? `${hours}h ` : ""}${minutes}m ${seconds % 60}s${end ? "" : " · live"}`; };
+  const stages = [{ label: "Trip", at: shipment.tripAt }, { label: "Gate in", at: shipment.gateInAt }, { label: "Unloading", at: shipment.unloadingAt }, { label: "Received", at: shipment.receivedAt }, { label: "Gate out", at: shipment.gateOutAt }];
+  return <Modal title={shipment.shipmentNumber} subtitle={`${shipment.bookingReceipt} · ${shipment.supplier}`} onClose={onClose} wide><div className="shipment-detail"><div className="receipt-head"><div><span className="brand-mark"><Route size={20} /></span><span><b>DockFlow</b><small>{shipment.importSource ? `Imported from ${shipment.importSource}` : "Booking receipt"}</small></span></div><StatusPill status={shipment.status} /></div><div className="shipment-summary"><div><span className="truck-tile large"><Truck size={26} /></span><div><small>Truck & driver</small><strong>{shipment.truckPlate}</strong><span>{shipment.driverName}{shipment.driverPhone ? ` · ${shipment.driverPhone}` : ""}</span></div></div><img src={`/api/shipments/${shipment.id}/qr.svg`} alt={`QR code for ${shipment.shipmentNumber}`} /></div><dl className="detail-grid"><div><dt>DPP number</dt><dd>{shipment.dppNumber || "—"}</dd></div><div><dt>Delivery date</dt><dd>{formatDate(shipment.scheduledDate)}</dd></div><div><dt>Scheduled time</dt><dd>{shipment.scheduledTime} – {shipment.scheduledEndTime || shipment.scheduledTime}</dd></div><div><dt>Booking approval</dt><dd>{shipment.bookingStatus === "PENDING_APPROVAL" ? "Waiting for Management" : shipment.bookingStatus === "REJECTED" ? "Rejected" : "Approved"}</dd></div><div><dt>Products</dt><dd>{shipment.items.length}</dd></div><div><dt>Manila timezone</dt><dd>GMT+8</dd></div></dl>{shipment.rejectionReason && <div className="rejection-banner"><AlertTriangle size={17} /><span><b>Request rejected</b>{shipment.rejectionReason}</span></div>}<section className="process-tracker"><div className="panel-head"><div><span className="eyebrow">Scan timestamps</span><h3>Process tracker · Manila time</h3></div></div><div className="process-stage-row">{stages.map((stage, index) => <div className={stage.at ? "complete" : ""} key={stage.label}><i>{stage.at ? <Check size={13} /> : index + 1}</i><b>{stage.label}</b><small>{stage.at ? `${new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }).format(new Date(stage.at))}` : "Waiting"}</small></div>)}</div><div className="process-duration-grid"><span><small>Trip → Gate in</small><b>{duration(shipment.tripAt, shipment.gateInAt)}</b></span><span><small>Gate in → Unloading</small><b>{duration(shipment.gateInAt, shipment.unloadingAt)}</b></span><span><small>Unloading → Received</small><b>{duration(shipment.unloadingAt, shipment.receivedAt)}</b></span><span><small>Received → Gate out</small><b>{duration(shipment.receivedAt, shipment.gateOutAt)}</b></span><span><small>Total site time</small><b>{duration(shipment.gateInAt, shipment.gateOutAt)}</b></span></div></section><div className="table-wrap detail-items"><table><thead><tr><th>Product</th><th>Amount / weight</th><th>UOM</th><th>Source</th></tr></thead><tbody>{shipment.items.map((item) => <tr key={item.id}><td><b>{item.materialName}</b><small>{item.materialCode}</small></td><td>{item.quantity.toLocaleString()}</td><td>{item.uom}</td><td>{item.presetId ? "Supplier preset" : item.sourceSheet ? `${item.sourceSheet} · row ${item.sourceRow}` : "Manual / Excel"}</td></tr>)}</tbody></table></div><div className="shipment-actions"><button className="button secondary" onClick={() => void onDownloadPdf(shipment)}><Download size={17} /> Download booking PDF</button><button className="button primary" onClick={onClose}>Done</button></div></div></Modal>;
 }
 
 export default function DockFlowApp() {
@@ -424,7 +414,6 @@ export default function DockFlowApp() {
   const [toast, setToast] = useState("");
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
   const [newRds, setNewRds] = useState(false);
-  const [bookingRds, setBookingRds] = useState<RdsRequest | null>(null);
   const [excelImport, setExcelImport] = useState(false);
 
   useEffect(() => {
@@ -466,27 +455,15 @@ export default function DockFlowApp() {
     notify(message);
   };
 
-  const updateStatus = async (id: number, status: ShipmentStatus, extra: Record<string, unknown> = {}) => {
-    const current = data.shipments.find(s => s.id === id);
-    await persist(`/api/shipments/${id}/status`, "PATCH", { status, ...extra }, `${current?.shipmentNumber} is now ${STATUS_META[status].label.toLowerCase()}.`);
-    setSelectedShipment(null);
+  const scanShipmentStage = async (scanValue: string, stage: ScanStage) => {
+    const result = await apiRequest<{ shipment: Shipment; message: string }>(token, "/api/shipments/scan-stage", "POST", { scanValue, stage });
+    await refresh();
+    notify(result.message);
+    return result.shipment;
   };
-  const confirmRds = async (rds: RdsRequest) => persist(`/api/rds/${rds.id}/confirm`, "PATCH", {}, `${rds.rdsNumber} confirmed.`);
-  const createRds = async (form: Record<string, string | number>) => {
-    await persist("/api/rds", "POST", form, "Delivery request created and sent to the supplier.");
+  const createRds = async (form: BookingRequestInput) => {
+    await persist("/api/rds", "POST", form, "Booking request submitted once. Management can now confirm or deny it.");
     setNewRds(false);
-  };
-  const bookRds = async (form: Record<string, string | number>, files: DeliveryFiles) => {
-    const result = await apiRequest<{ id: number; itemIds: number[] }>(token, "/api/shipments", "POST", form);
-    const uploadFile = async (file: File | null, documentType: "DN" | "COA") => {
-      if (!file || !result.itemIds[0]) return;
-      const payload = new FormData(); payload.append("file", file); payload.append("documentType", documentType);
-      const response = await fetch(`/api/shipment-items/${result.itemIds[0]}/documents`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: payload });
-      if (!response.ok) throw new Error(`${documentType} upload failed`);
-    };
-    await uploadFile(files.dn, "DN"); await uploadFile(files.coa, "COA"); await refresh();
-    notify("Booking submitted. A planner or administrator must approve it in Management.");
-    setBookingRds(null);
   };
   const imported = async (result: ImportResult) => {
     await refresh();
@@ -500,9 +477,16 @@ export default function DockFlowApp() {
     await persist(slot.id ? `/api/availability/${slot.id}` : "/api/availability", slot.id ? "PATCH" : "POST", body, `${formatDate(slot.date, "short")}, ${slot.startTime}–${slot.endTime} saved for booking.`);
   };
   const deleteAvailability = async (id: number) => persist(`/api/availability/${id}`, "DELETE", undefined, "Availability window removed.");
-  const approveBooking = async (shipment: Shipment, decision: "APPROVE" | "REJECT") => persist(`/api/shipments/${shipment.id}/booking-approval`, "PATCH", { decision }, `${shipment.shipmentNumber} ${decision === "APPROVE" ? "approved" : "rejected"}.`);
+  const approveBooking = async (shipment: Shipment, decision: "APPROVE" | "REJECT", reason?: string) => persist(`/api/shipments/${shipment.id}/booking-approval`, "PATCH", { decision, reason }, `${shipment.shipmentNumber} ${decision === "APPROVE" ? "approved" : "rejected"}.`);
   const addMaterial = async (form: Record<string, string | number>) => persist("/api/materials", "POST", form, `${form.name} added to material master.`);
   const addUser = async (form: Record<string, string | number>) => persist("/api/users", "POST", form, `${form.name} added as ${ROLE_LABELS[String(form.role) as Role]}.`);
+  const saveSupplierPresets = async (supplier: SupplierAccount, presets: SupplierPreset[]) => persist(`/api/suppliers/${supplier.id}/presets`, "PATCH", { presets }, `${supplier.name} catalog saved.`);
+  const downloadBookingPdf = async (shipment: Shipment) => {
+    const response = await fetch(`/api/shipments/${shipment.id}/booking.pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error("The booking PDF could not be downloaded");
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${shipment.bookingReceipt}.pdf`; anchor.click(); URL.revokeObjectURL(url);
+  };
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
   const visibleNav = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(user.role));
@@ -512,9 +496,9 @@ export default function DockFlowApp() {
     <aside className={`sidebar ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b><small>{item.description}</small></div></button>; })}</nav><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{ROLE_LABELS[user.role]}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><span className="role-badge"><RoleIcon size={15} /> {ROLE_LABELS[user.role]}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="user-mini" onClick={logout}><span>{initials(user.name)}</span><ChevronDown size={15} /></button></div></header>
-      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={setSelectedShipment} />}{view === "schedule" && <FlexibleSchedulePage data={data} user={user} onOpenShipment={setSelectedShipment} onSaveAvailability={saveAvailability} onDeleteAvailability={deleteAvailability} />}{view === "management" && <ManagementPage data={data} onImportExcel={() => setExcelImport(true)} onConfirmRds={confirmRds} onScheduleRds={setBookingRds} onApproveBooking={approveBooking} />}{view === "operations" && <OperationsPage data={data} user={user} onAction={updateStatus} onOpenShipment={setSelectedShipment} />}{view === "history" && <HistoryPage data={data} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} />}</div>
+      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={setSelectedShipment} />}{view === "schedule" && <FlexibleSchedulePage data={data} user={user} onOpenShipment={setSelectedShipment} onSaveAvailability={saveAvailability} onDeleteAvailability={deleteAvailability} />}{view === "management" && <ManagementPage data={data} onImportExcel={() => setExcelImport(true)} onApproveBooking={approveBooking} />}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onOpenShipment={setSelectedShipment} />}{view === "history" && <HistoryPage data={data} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} user={user} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} onSaveSupplierPresets={saveSupplierPresets} />}</div>
     </main>
     {loading && <div className="loading-line" />}{toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
-    {selectedShipment && <ShipmentModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} />}{newRds && <NewRdsModal availableSlots={data.settings.availableSlots} shipments={data.shipments} onClose={() => setNewRds(false)} onSubmit={createRds} />}{bookingRds && <BookSlotModal rds={bookingRds} availableSlots={data.settings.availableSlots} shipments={data.shipments} onClose={() => setBookingRds(null)} onSubmit={bookRds} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}
+    {selectedShipment && <ShipmentModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} onDownloadPdf={downloadBookingPdf} />}{newRds && data.suppliers[0] && <NewRdsModal supplier={data.suppliers[0]} availableSlots={data.settings.availableSlots} shipments={data.shipments} onClose={() => setNewRds(false)} onSubmit={createRds} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}
   </div>;
 }
