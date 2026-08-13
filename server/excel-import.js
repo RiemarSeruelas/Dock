@@ -107,10 +107,7 @@ const mapHeaders = (worksheet) => {
 };
 
 const cellAt = (worksheet, rowNumber, columns, field) => columns[field] ? displayValue(worksheet.getRow(rowNumber).getCell(columns[field])) : "";
-const shiftForTime = (time) => {
-  const hour = Number(String(time).slice(0, 2));
-  return hour >= 6 && hour < 14 ? "Morning" : hour >= 14 && hour < 22 ? "Afternoon" : "Night";
-};
+const shiftForTime = () => "Flexible date";
 const hashParts = (parts) => createHash("sha256").update(parts.map((value) => normalize(value)).join("|")).digest("hex");
 const legacySourceKeyFor = (row) => hashParts([
   row.site,
@@ -149,16 +146,19 @@ export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
   for (const worksheet of workbook.worksheets) {
     const mapping = mapHeaders(worksheet);
     const fields = Object.keys(mapping.columns);
-    const isSchedule = ["supplier", "materialCode", "quantity", "deliveryDate", "deliveryTime"].every((field) => fields.includes(field));
     const isPoValidation = fields.includes("materialCode") && fields.includes("poNumber") && (fields.includes("poBalance") || fields.includes("stillToBeDelivered"));
-    const role = isSchedule ? "Delivery schedule" : isPoValidation ? "PO validation reference" : /po\s*download/i.test(worksheet.name) ? "PO download reference (not imported)" : "Ignored";
+    const isPoDownload = /po\s*download/i.test(worksheet.name);
+    const scheduleSignals = ["supplier", "materialCode", "materialName", "quantity", "deliveryDate", "deliveryTime"].filter((field) => fields.includes(field)).length;
+    const looksLikeSchedule = /(^|\b)(rm|pm|delivery|schedule)(\b|$)/i.test(worksheet.name);
+    const isSchedule = !isPoValidation && !isPoDownload && (scheduleSignals >= 2 || (looksLikeSchedule && mapping.score > 0));
+    const role = isSchedule ? "Delivery schedule" : isPoValidation ? "PO validation reference" : isPoDownload ? "PO download reference (not imported)" : "Ignored";
     const ignoredColumns = mapping.headers.filter((header) => !Object.values(mapping.columns).includes(header.column)).map((header) => header.raw).filter(Boolean);
     detectedSheets.push({ name: worksheet.name, role, headerRow: mapping.row || null, dataRows: Math.max(0, worksheet.rowCount - mapping.row), ignoredColumns });
     if (isSchedule) scheduleSheets.push({ worksheet, mapping });
     if (isPoValidation) poLookups.push({ worksheet, mapping });
   }
 
-  if (!scheduleSheets.length) throw new Error("No RM/PM delivery schedule sheet was found. Required columns are Supplier, Material Code, Quantity, Date, and Time.");
+  if (!scheduleSheets.length) throw new Error("No delivery schedule sheet was found. Keep at least two recognizable headers such as Supplier, Material, Quantity, Date, or Time.");
 
   const poBySupplierMaterial = new Map();
   const poByMaterial = new Map();
@@ -180,37 +180,43 @@ export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
 
   const rows = [];
   const issues = [];
-  const seenKeys = new Set();
   for (const { worksheet, mapping } of scheduleSheets) {
     for (let rowNumber = mapping.row + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-      const supplier = String(cellAt(worksheet, rowNumber, mapping.columns, "supplier") || "").trim();
-      const materialCode = String(cellAt(worksheet, rowNumber, mapping.columns, "materialCode") || "").trim();
-      const materialName = String(cellAt(worksheet, rowNumber, mapping.columns, "materialName") || "").trim();
+      const rawSupplier = String(cellAt(worksheet, rowNumber, mapping.columns, "supplier") || "").trim();
+      const rawMaterialCode = String(cellAt(worksheet, rowNumber, mapping.columns, "materialCode") || "").trim();
+      const rawMaterialName = String(cellAt(worksheet, rowNumber, mapping.columns, "materialName") || "").trim();
       const rawQuantity = cellAt(worksheet, rowNumber, mapping.columns, "quantity");
       const rawDate = cellAt(worksheet, rowNumber, mapping.columns, "deliveryDate");
       const rawTime = cellAt(worksheet, rowNumber, mapping.columns, "deliveryTime");
       const remarks = String(cellAt(worksheet, rowNumber, mapping.columns, "remarks") || "").trim();
       const received = String(cellAt(worksheet, rowNumber, mapping.columns, "received") || "").trim();
-      const hasAnyData = [supplier, materialCode, materialName, rawQuantity, rawDate, rawTime, remarks].some((value) => String(value ?? "").trim());
+      const hasAnyData = [rawSupplier, rawMaterialCode, rawMaterialName, rawQuantity, rawDate, rawTime, remarks].some((value) => String(value ?? "").trim());
       if (!hasAnyData) continue;
 
-      const deliveryDate = toDate(rawDate, now);
-      const deliveryTime = toTime(rawTime);
+      const parsedDate = toDate(rawDate, now);
+      const parsedTime = toTime(rawTime);
       const endTime = toTime(cellAt(worksheet, rowNumber, mapping.columns, "endTime"));
-      const quantity = toNumber(rawQuantity);
-      const uom = String(cellAt(worksheet, rowNumber, mapping.columns, "uom") || "").trim().toUpperCase();
+      const parsedQuantity = toNumber(rawQuantity);
+      const rawUom = String(cellAt(worksheet, rowNumber, mapping.columns, "uom") || "").trim().toUpperCase();
       const site = String(cellAt(worksheet, rowNumber, mapping.columns, "site") || "").trim();
       const week = String(cellAt(worksheet, rowNumber, mapping.columns, "week") || "").trim();
       const cancelled = /cancel/i.test(remarks);
       const alreadyReceived = /^(yes|y|received|done|true|1)$/i.test(received) || received instanceof Date;
-      const missing = [];
-      if (!supplier) missing.push("supplier");
-      if (!materialCode) missing.push("material code");
-      if (!materialName) missing.push("description");
-      if (!(quantity > 0)) missing.push("quantity");
-      if (!uom) missing.push("UOM");
-      if (!deliveryDate) missing.push("valid date");
-      if (!deliveryTime) missing.push("valid time");
+      const placeholderFields = [];
+      if (!rawSupplier) placeholderFields.push("supplier");
+      if (!rawMaterialCode) placeholderFields.push("material code");
+      if (!rawMaterialName) placeholderFields.push("description");
+      if (!(parsedQuantity >= 0)) placeholderFields.push("quantity");
+      if (!rawUom) placeholderFields.push("UOM");
+      if (!parsedDate) placeholderFields.push("date");
+      if (!parsedTime) placeholderFields.push("time");
+      const supplier = rawSupplier || "Supplier to assign";
+      const materialCode = rawMaterialCode || `UNSPECIFIED-${normalize(worksheet.name).toUpperCase() || "SHEET"}-${rowNumber}`;
+      const materialName = rawMaterialName || "Material to review";
+      const quantity = parsedQuantity ?? 0;
+      const uom = rawUom || "N/A";
+      const deliveryDate = parsedDate || options.fallbackDate || toDate(now, now);
+      const deliveryTime = parsedTime || "12:00";
 
       const po = poBySupplierMaterial.get(`${normalize(supplier)}|${normalize(materialCode)}`) || poByMaterial.get(normalize(materialCode)) || {};
       const poNumber = String(cellAt(worksheet, rowNumber, mapping.columns, "poNumber") || po.poNumber || "").trim();
@@ -233,15 +239,14 @@ export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
         poNumber,
         poBalance: po.poBalance ?? null,
         stillToBeDelivered: po.stillToBeDelivered ?? null,
-        remarks,
-        status: cancelled || alreadyReceived || missing.length ? "skipped" : "ready",
-        message: cancelled ? "Cancelled in workbook" : alreadyReceived ? "Already received" : missing.length ? `Missing ${missing.join(", ")}` : poNumber ? "PO matched" : "PO reference not found; delivery can still be imported",
+        remarks: [remarks, placeholderFields.length ? `Needs review: ${placeholderFields.join(", ")} supplied with trial placeholders` : ""].filter(Boolean).join(" · "),
+        placeholderFields,
+        status: "ready",
+        message: placeholderFields.length ? `Accepted with placeholders: ${placeholderFields.join(", ")}` : cancelled ? "Accepted; workbook marks this row cancelled" : alreadyReceived ? "Accepted; workbook marks this row received" : poNumber ? "Ready · PO matched" : "Ready · PO can be added later",
       };
-      row.sourceKey = sourceKeyFor(row);
+      row.sourceKey = hashParts([fileName, worksheet.name, rowNumber, sourceKeyFor(row)]);
       row.legacySourceKey = legacySourceKeyFor(row);
-      if (row.status === "ready" && seenKeys.has(row.sourceKey)) { row.status = "skipped"; row.message = "Exact duplicate in workbook (same date, time, PO, material and quantity)"; }
-      seenKeys.add(row.sourceKey);
-      if (row.status !== "ready" || !row.poNumber) issues.push({ sheet: worksheet.name, row: rowNumber, severity: row.status === "ready" ? "warning" : "error", message: row.message });
+      if (placeholderFields.length || !row.poNumber || cancelled || alreadyReceived) issues.push({ sheet: worksheet.name, row: rowNumber, severity: "warning", message: row.message });
       rows.push(row);
     }
   }
@@ -256,14 +261,14 @@ export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
     summary: {
       totalRows: rows.length,
       readyRows: readyRows.length,
-      skippedRows: rows.length - readyRows.length,
+      skippedRows: 0,
       deliveryGroups: groups.size,
       poMatchedRows: readyRows.filter((row) => row.poNumber).length,
-      warningRows: readyRows.filter((row) => !row.poNumber).length,
+      warningRows: readyRows.filter((row) => !row.poNumber || row.placeholderFields.length).length,
     },
     rules: {
-      required: ["Supplier", "Material Code", "Description", "Quantity", "UOM", "Date", "Time"],
-      optional: ["Week", "Site", "PO reference", "PO balance", "Remarks", "End time"],
+      required: [],
+      optional: ["Supplier", "Material Code", "Description", "Quantity", "UOM", "Date", "Time", "Week", "Site", "PO reference", "PO balance", "Remarks", "End time"],
       excluded: ["Net price", "Purchasing organization", "Document date", "Price unit", "Deletion indicator", "SAP export metadata"],
     },
   };

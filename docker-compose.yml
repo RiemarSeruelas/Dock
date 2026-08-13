@@ -1,25 +1,16 @@
 services:
-  nginx:
-    image: nginx:1.27-alpine
-    ports:
-      - "${APP_PORT:-5059}:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      web:
-        condition: service_started
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-
   web:
     build:
       context: .
       target: web
     environment:
       NODE_ENV: production
-    expose:
-      - "3000"
+      API_INTERNAL_URL: http://api:3001
+    ports:
+      - "${APP_PORT:-5059}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
   api:
@@ -28,15 +19,14 @@ services:
       target: api
     environment:
       API_PORT: 3001
-      DATABASE_URL: postgresql://${POSTGRES_USER:-dockflow}:${POSTGRES_PASSWORD:-dockflow}@db:5432/${POSTGRES_DB:-dockflow}
       JWT_SECRET: ${JWT_SECRET:-replace-this-secret-before-production}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5059}
+      DATA_FILE: /app/data/trial-data.json
       UPLOAD_DIR: /app/uploads
+      TZ: ${TZ:-Asia/Manila}
     volumes:
+      - ./data:/app/data
       - dockflow_uploads:/app/uploads
-    depends_on:
-      db:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
       interval: 10s
@@ -44,22 +34,5 @@ services:
       retries: 10
     restart: unless-stopped
 
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-dockflow}
-      POSTGRES_USER: ${POSTGRES_USER:-dockflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dockflow}
-      TZ: ${TZ:-Asia/Manila}
-    volumes:
-      - dockflow_postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dockflow} -d ${POSTGRES_DB:-dockflow}"]
-      interval: 5s
-      timeout: 4s
-      retries: 15
-    restart: unless-stopped
-
 volumes:
-  dockflow_postgres:
   dockflow_uploads:

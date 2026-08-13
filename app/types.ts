@@ -11,6 +11,18 @@ export type ShipmentStatus =
   | "RECEIVED"
   | "REJECTED";
 
+export type BookingStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+
+export interface AvailabilitySlot {
+  id: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+  label?: string;
+}
+
+export type AvailabilityInput = Omit<AvailabilitySlot, "id"> & { id?: number };
+
 export interface SessionUser {
   id: number;
   name: string;
@@ -56,6 +68,7 @@ export interface Shipment {
   expectedDurationMinutes?: number | null;
   timeSlot: string;
   shift: string;
+  bookingStatus?: BookingStatus;
   status: ShipmentStatus;
   truckPlate: string;
   driverName: string;
@@ -79,7 +92,8 @@ export interface RdsRequest {
   dppNumber: string;
   supplier: string;
   requestedDate: string;
-  arrivalShift: string;
+  requestedTime?: string;
+  availabilitySlotId?: number | null;
   status: "PENDING" | "CONFIRMED" | "SCHEDULED";
   notes?: string;
 }
@@ -127,5 +141,7 @@ export interface AppData {
     dockCount: number;
     graceMinutes: number;
     siteName: string;
+    availableDates: string[];
+    availableSlots: AvailabilitySlot[];
   };
 }

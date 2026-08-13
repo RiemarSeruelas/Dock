@@ -12,8 +12,7 @@ CMD ["npm", "run", "start"]
 
 FROM base AS api
 COPY server ./server
-COPY db ./db
-RUN mkdir -p /app/uploads
+RUN mkdir -p /app/uploads /app/data
 ENV NODE_ENV=production
 EXPOSE 3001
 CMD ["node", "server/index.js"]

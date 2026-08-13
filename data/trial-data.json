@@ -1,0 +1,458 @@
+{
+  "_howToEdit": [
+    "Stop the api container before editing this file so a running write does not replace your changes.",
+    "Dates use YYYY-MM-DD and times use 24-hour HH:MM.",
+    "IDs may be omitted on new users, suppliers, materials, shipments, items, requests, and availability windows; DockFlow assigns them at startup.",
+    "Missing shipment and item fields receive trial placeholders at startup.",
+    "A manually added user may use a plain password field once; DockFlow replaces it with passwordHash on startup."
+  ],
+  "version": 3,
+  "settings": {
+    "siteName": "Cavite Foods Receiving · Trial",
+    "dockCount": 2,
+    "graceMinutes": 30,
+    "flexibleScheduling": true,
+    "availableDates": [
+      "2026-08-13",
+      "2026-08-14",
+      "2026-08-15"
+    ],
+    "availableSlots": [
+      {
+        "id": 1,
+        "date": "2026-08-13",
+        "startTime": "07:00",
+        "endTime": "12:00",
+        "label": "Open receiving window"
+      },
+      {
+        "id": 2,
+        "date": "2026-08-13",
+        "startTime": "13:00",
+        "endTime": "18:00",
+        "label": "Open receiving window"
+      },
+      {
+        "id": 3,
+        "date": "2026-08-14",
+        "startTime": "08:00",
+        "endTime": "11:30",
+        "label": "Open receiving window"
+      },
+      {
+        "id": 4,
+        "date": "2026-08-14",
+        "startTime": "14:00",
+        "endTime": "19:00",
+        "label": "Open receiving window"
+      },
+      {
+        "id": 5,
+        "date": "2026-08-15",
+        "startTime": "09:00",
+        "endTime": "16:00",
+        "label": "Open receiving window"
+      }
+    ]
+  },
+  "users": [
+    {
+      "id": 1,
+      "name": "System Administrator",
+      "username": "admin",
+      "role": "admin",
+      "supplierId": null,
+      "passwordHash": "$2b$10$ZUbWEMqbaSW79pAgoWApQuLY8rfT2Qof7ghU.JSeuVfX64W1PKHp6"
+    },
+    {
+      "id": 2,
+      "name": "Planner User",
+      "username": "planner",
+      "role": "planner",
+      "supplierId": null,
+      "passwordHash": "$2b$10$jjYd6kJjRxavmi3nFA7ea.3FrwnBmA3O4PeaZogou2KQFxgtMrfJq"
+    },
+    {
+      "id": 3,
+      "name": "Supplier User",
+      "username": "supplier",
+      "role": "supplier",
+      "supplierId": 1,
+      "passwordHash": "$2b$10$GfYmRFD2pxaEHbi/DJfzreCNk2KpTZUr75L5zb16/tBQr1i9yb5YG"
+    },
+    {
+      "id": 4,
+      "name": "Driver User",
+      "username": "driver",
+      "role": "driver",
+      "supplierId": null,
+      "passwordHash": "$2b$10$WGX87gkTURrVNyUcNabUd.tTTAsc0SycH6yuupHJeKhnojLJTxBh2"
+    },
+    {
+      "id": 5,
+      "name": "Security User",
+      "username": "security",
+      "role": "security",
+      "supplierId": null,
+      "passwordHash": "$2b$10$.tT/X9EYyvavgnryRKt40.pvLn60dKX1p5z688XKKwpWM/3TKWwMy"
+    },
+    {
+      "id": 6,
+      "name": "Warehouse User",
+      "username": "warehouse",
+      "role": "warehouse",
+      "supplierId": null,
+      "passwordHash": "$2b$10$uWF1u6.eF96pyqskPGXah.4t6CSPVF0JDghFGZoHnHxIdR4lo9ozW"
+    }
+  ],
+  "suppliers": [
+    {
+      "id": 1,
+      "vendorCode": "TRIAL-001",
+      "name": "Trial Ingredients Supplier"
+    },
+    {
+      "id": 2,
+      "vendorCode": "TRIAL-002",
+      "name": "Trial Packaging Supplier"
+    }
+  ],
+  "materials": [
+    {
+      "id": 1,
+      "code": "65013575",
+      "name": "Aspartame Powder",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 730,
+      "unitsPerPallet": 500,
+      "storageZone": "Dry store"
+    },
+    {
+      "id": 2,
+      "code": "65013743",
+      "name": "Delta Cap 470/700/940 ML",
+      "type": "PM",
+      "uom": "PC",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 18480,
+      "storageZone": "Packaging"
+    }
+  ],
+  "shipments": [
+    {
+      "id": 1,
+      "supplier": "Trial Ingredients Supplier",
+      "vendorCode": "TRIAL-001",
+      "scheduledDate": "2026-08-13",
+      "scheduledTime": "08:15",
+      "status": "PLANNED",
+      "bookingStatus": "APPROVED",
+      "truckPlate": "ABC 1234",
+      "driverName": "Driver User",
+      "driverPhone": "09170000001",
+      "materialWeightKg": 300,
+      "dock": null,
+      "items": [
+        {
+          "id": 1,
+          "poNumber": "450000101",
+          "materialCode": "65013575",
+          "materialName": "Aspartame Powder",
+          "quantity": 300,
+          "uom": "KG",
+          "palletCount": 1,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": null,
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null
+        }
+      ],
+      "scheduledEndTime": null,
+      "shipmentNumber": "SHP-20260813-001",
+      "bookingReceipt": "BKG-20260813-001",
+      "palletsScanned": 0,
+      "palletsTotal": 1,
+      "timeSlot": "08:15",
+      "shift": "Flexible date",
+      "rejectionReason": null
+    },
+    {
+      "id": 2,
+      "supplier": "Trial Packaging Supplier",
+      "vendorCode": "TRIAL-002",
+      "scheduledDate": "2026-08-13",
+      "scheduledTime": "10:30",
+      "status": "ARRIVED",
+      "truckPlate": "DEF 5678",
+      "driverName": "Alex Santos",
+      "driverPhone": "09170000002",
+      "dock": null,
+      "items": [
+        {
+          "id": 2,
+          "poNumber": "450000102",
+          "materialCode": "65013743",
+          "materialName": "Delta Cap 470/700/940 ML",
+          "quantity": 18480,
+          "uom": "PC",
+          "palletCount": 2,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": null,
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null
+        }
+      ],
+      "scheduledEndTime": null,
+      "bookingStatus": "APPROVED",
+      "shipmentNumber": "SHP-20260813-002",
+      "bookingReceipt": "BKG-20260813-002",
+      "materialWeightKg": 0,
+      "palletsScanned": 0,
+      "palletsTotal": 2,
+      "timeSlot": "10:30",
+      "shift": "Flexible date"
+    },
+    {
+      "id": 3,
+      "supplier": "Trial Ingredients Supplier",
+      "vendorCode": "TRIAL-001",
+      "scheduledDate": "2026-08-13",
+      "scheduledTime": "14:00",
+      "status": "UNLOADING",
+      "truckPlate": "GHI 9012",
+      "driverName": "Ben Cruz",
+      "driverPhone": "09170000003",
+      "materialWeightKg": 500,
+      "dock": "Dock 1",
+      "palletsScanned": 1,
+      "items": [
+        {
+          "id": 3,
+          "poNumber": "450000103",
+          "materialCode": "65013575",
+          "materialName": "Aspartame Powder",
+          "quantity": 500,
+          "uom": "KG",
+          "palletCount": 2,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": null,
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null
+        }
+      ],
+      "scheduledEndTime": null,
+      "bookingStatus": "APPROVED",
+      "shipmentNumber": "SHP-20260813-003",
+      "bookingReceipt": "BKG-20260813-003",
+      "palletsTotal": 2,
+      "timeSlot": "14:00",
+      "shift": "Flexible date"
+    },
+    {
+      "id": 4,
+      "supplier": "Trial Packaging Supplier",
+      "vendorCode": "TRIAL-002",
+      "scheduledDate": "2026-08-12",
+      "scheduledTime": "09:00",
+      "status": "RECEIVED",
+      "truckPlate": "JKL 3456",
+      "driverName": "Carlo Reyes",
+      "dock": "Dock 2",
+      "completedAt": "2026-08-12T03:15:00.000Z",
+      "items": [
+        {
+          "id": 4,
+          "poNumber": "",
+          "materialCode": "65013743",
+          "materialName": "Delta Cap 470/700/940 ML",
+          "quantity": 9200,
+          "uom": "PC",
+          "palletCount": 1,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": null,
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null
+        }
+      ],
+      "scheduledEndTime": null,
+      "bookingStatus": "APPROVED",
+      "shipmentNumber": "SHP-20260812-004",
+      "bookingReceipt": "BKG-20260812-004",
+      "driverPhone": "",
+      "materialWeightKg": 0,
+      "palletsScanned": 0,
+      "palletsTotal": 1,
+      "timeSlot": "09:00",
+      "shift": "Flexible date"
+    },
+    {
+      "id": 5,
+      "supplier": "Trial Ingredients Supplier",
+      "scheduledDate": "2026-08-11",
+      "scheduledTime": "15:30",
+      "status": "REJECTED",
+      "bookingStatus": "REJECTED",
+      "truckPlate": "MNO 7890",
+      "driverName": "Dana Flores",
+      "rejectionReason": "Trial history example",
+      "items": [
+        {
+          "id": 5,
+          "poNumber": "",
+          "materialCode": "65013575",
+          "materialName": "Aspartame Powder",
+          "quantity": 100,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": null,
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null
+        }
+      ],
+      "scheduledEndTime": null,
+      "shipmentNumber": "SHP-20260811-005",
+      "bookingReceipt": "BKG-20260811-005",
+      "vendorCode": "TRIAL",
+      "driverPhone": "",
+      "materialWeightKg": 0,
+      "palletsScanned": 0,
+      "palletsTotal": 0,
+      "timeSlot": "15:30",
+      "shift": "Flexible date"
+    }
+  ],
+  "rdsRequests": [
+    {
+      "id": 1,
+      "rdsNumber": "RDS-TRIAL-001",
+      "dppNumber": "DPP-TRIAL-001",
+      "supplier": "Trial Packaging Supplier",
+      "supplierId": 2,
+      "requestedDate": "2026-08-14",
+      "requestedTime": "09:30",
+      "availabilitySlotId": 3,
+      "status": "PENDING",
+      "notes": "Example request waiting for confirmation",
+      "items": [
+        {
+          "id": 6,
+          "poNumber": "450000201",
+          "materialCode": "65013743",
+          "materialName": "Delta Cap 470/700/940 ML",
+          "quantity": 12000,
+          "uom": "PC",
+          "palletCount": 2,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": null,
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "rdsNumber": "RDS-TRIAL-002",
+      "dppNumber": "DPP-TRIAL-002",
+      "supplier": "Trial Ingredients Supplier",
+      "supplierId": 1,
+      "requestedDate": "2026-08-14",
+      "requestedTime": "15:00",
+      "availabilitySlotId": 4,
+      "status": "CONFIRMED",
+      "notes": "Example request ready to book",
+      "items": [
+        {
+          "id": 7,
+          "poNumber": "450000202",
+          "materialCode": "65013575",
+          "materialName": "Aspartame Powder",
+          "quantity": 500,
+          "uom": "KG",
+          "palletCount": 1,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": null,
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null
+        }
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "id": 3,
+      "at": "2026-08-13T03:14:50.195Z",
+      "actor": "System Administrator",
+      "action": "BOOKING_APPROVED",
+      "shipmentNumber": "SHP-20260813-001",
+      "detail": "SHP-20260813-001 was approved for 2026-08-13 at 08:15"
+    },
+    {
+      "id": 2,
+      "at": "2026-08-13T02:30:00.000Z",
+      "actor": "Security User",
+      "action": "ARRIVED",
+      "shipmentNumber": "SHP-20260813-002",
+      "detail": "Truck DEF 5678 arrived at the gate"
+    },
+    {
+      "id": 1,
+      "at": "2026-08-12T03:15:00.000Z",
+      "actor": "Warehouse User",
+      "action": "RECEIVED",
+      "shipmentNumber": "SHP-20260812-004",
+      "detail": "Delivery completed at Dock 2"
+    }
+  ],
+  "importBatches": []
+}

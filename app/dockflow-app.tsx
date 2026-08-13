@@ -11,6 +11,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Clock3,
   Download,
@@ -43,11 +44,12 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, getBootstrap, login as apiLogin } from "./api-client";
 import { localDate } from "./date-utils";
-import { FlexibleBacklogPage, FlexibleSchedulePage, MonitoringPage } from "./dockflow-features";
+import { AvailabilityCalendar, timesInsideSlot } from "./availability-calendar";
+import { FlexibleSchedulePage, HistoryPage, ManagementPage, MonitoringPage } from "./dockflow-features";
 import { ExcelImportModal, type ImportResult } from "./excel-import-modal";
-import type { AppData, RdsRequest, Role, SessionUser, Shipment, ShipmentStatus } from "./types";
+import type { AppData, AvailabilityInput, AvailabilitySlot, RdsRequest, Role, SessionUser, Shipment, ShipmentStatus } from "./types";
 
-type View = "overview" | "monitoring" | "schedule" | "operations" | "backlog" | "reports" | "admin";
+type View = "overview" | "monitoring" | "schedule" | "management" | "operations" | "history" | "reports" | "admin";
 type Icon = typeof LayoutDashboard;
 
 const EMPTY_DATA: AppData = {
@@ -57,15 +59,16 @@ const EMPTY_DATA: AppData = {
   users: [],
   audit: [],
   importBatches: [],
-  settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 30, siteName: "Cavite Foods Receiving" },
+  settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", availableDates: [], availableSlots: [] },
 };
 
 const NAV_ITEMS: { id: View; label: string; description: string; icon: Icon; roles?: Role[] }[] = [
   { id: "overview", label: "Overview", description: "Live receiving picture", icon: LayoutDashboard },
   { id: "monitoring", label: "Monitoring", description: "Every delivery status", icon: Activity },
-  { id: "schedule", label: "Schedule", description: "Exact times and Excel", icon: CalendarDays },
+  { id: "schedule", label: "Schedule", description: "Calendar and arrivals", icon: CalendarDays },
+  { id: "management", label: "Management", description: "Imports and approvals", icon: ClipboardCheck, roles: ["admin", "planner"] },
   { id: "operations", label: "Gate & dock", description: "Arrival to receiving", icon: ScanLine },
-  { id: "backlog", label: "Backlog", description: "Move late deliveries", icon: History, roles: ["admin", "planner", "security", "warehouse"] },
+  { id: "history", label: "History", description: "Past delivery records", icon: History },
   { id: "reports", label: "Reports", description: "OTIF and on-time", icon: BarChart3, roles: ["admin", "planner", "warehouse"] },
   { id: "admin", label: "Administration", description: "Master data and access", icon: Settings, roles: ["admin"] },
 ];
@@ -175,7 +178,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
             {error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}
             <button className="button primary full" disabled={loading}>{loading ? <><Loader2 className="spin" size={17} /> Signing in</> : <>Sign in <ArrowRight size={17} /></>}</button>
           </form>
-          <p className="login-guidance">This is the live database workspace. No sample deliveries are loaded.</p>
         </div>
       </section>
     </main>
@@ -193,6 +195,8 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
   const atSite = todayShipments.filter((shipment) => ["ARRIVED", "VERIFIED", "PARKING", "AT_DOCK", "UNLOADING"].includes(shipment.status)).length;
   const late = todayShipments.filter((shipment) => shipment.status === "PLANNED" && shipment.scheduledTime < new Date().toTimeString().slice(0, 5)).length;
   const docks = Array.from({ length: data.settings.dockCount }, (_, i) => `Dock ${i + 1}`);
+  const dockActiveShipments = data.shipments.filter((shipment) => ["AT_DOCK", "UNLOADING"].includes(shipment.status));
+  const waitingAtGate = data.shipments.filter((shipment) => ["ARRIVED", "VERIFIED", "PARKING"].includes(shipment.status));
   const nextAction = data.shipments.find((shipment) => {
     if (user.role === "driver") return shipment.driverName === user.name && ["PLANNED", "IN_TRANSIT"].includes(shipment.status);
     if (user.role === "security") return ["ARRIVED", "VERIFIED", "PARKING"].includes(shipment.status);
@@ -208,7 +212,7 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
     {nextAction && <section className="action-banner"><div className="action-banner-icon"><Gauge size={23} /></div><div><span>Your next action</span><strong>{nextAction.shipmentNumber} · {nextAction.supplier}</strong><p>{user.role === "driver" ? "Update the trip milestone when you are ready." : user.role === "security" ? "Validate the booking and direct the truck." : "Receive pallets and close the delivery."}</p></div><button className="button light" onClick={() => onOpenShipment(nextAction)}>Open shipment <ArrowRight size={16} /></button></section>}
     <section className="metrics-grid">
       <MetricCard label="Today’s arrivals" value={todayShipments.length} helper={`${todayShipments.filter(s => s.status === "IN_TRANSIT").length} currently in transit`} icon={Truck} tone="blue" trend="Live" />
-      <MetricCard label="On site" value={atSite} helper={`${docks.filter(dock => todayShipments.some(s => s.dock === dock && s.status !== "RECEIVED")).length} docks occupied`} icon={MapPin} tone="orange" />
+      <MetricCard label="On site" value={atSite} helper={`${docks.filter(dock => dockActiveShipments.some(s => s.dock === dock)).length} docks occupied`} icon={MapPin} tone="orange" />
       <MetricCard label="Received" value={`${received}/${todayShipments.length}`} helper={`${todayShipments.length ? Math.round(received / todayShipments.length * 100) : 0}% completion`} icon={PackageCheck} tone="green" />
       <MetricCard label="Attention needed" value={late} helper="Late or waiting deliveries" icon={AlertTriangle} tone="red" />
     </section>
@@ -217,14 +221,16 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
         <div className="panel-head"><div><span className="eyebrow">Dock control</span><h2>Live receiving lanes</h2></div><span className="updated"><span className="live-dot" /> Updated now</span></div>
         <div className="dock-lanes">
           {docks.map((dock) => {
-            const active = todayShipments.find((shipment) => shipment.dock === dock && shipment.status !== "RECEIVED");
+            const active = dockActiveShipments.find((shipment) => shipment.dock === dock);
             return <div className={`dock-lane ${active ? "occupied" : "available"}`} key={dock}>
               <div className="dock-name"><span>{dock}</span><em>{active ? "Occupied" : "Available"}</em></div>
-              {active ? <button className="dock-shipment" onClick={() => onOpenShipment(active)}><div className="truck-tile"><Truck size={22} /></div><div><strong>{active.truckPlate}</strong><span>{active.supplier}</span><small>{active.palletsScanned}/{active.palletsTotal} pallets</small></div><ChevronDown size={18} /></button> : <div className="dock-empty"><CheckCircle2 size={22} /><span>Ready for assignment</span></div>}
-              {active && <div className="progress-track"><span style={{ width: `${Math.max(12, active.palletsScanned / active.palletsTotal * 100)}%` }} /></div>}
+              <div className="dock-vehicle-visual"><span className="dock-lane-line" />{active ? <Truck size={44} /> : <Truck size={44} className="vehicle-away" />}<i>{active ? active.status === "UNLOADING" ? "In use · unloading" : "Truck arrived" : "No vehicle"}</i></div>
+              {active ? <button className="dock-shipment" onClick={() => onOpenShipment(active)}><div><strong>{active.truckPlate}</strong><span>{active.supplier}</span><small>{active.palletsScanned}/{active.palletsTotal} pallets</small></div><ChevronDown size={18} /></button> : <div className="dock-empty"><CheckCircle2 size={20} /><span>Lane ready for the next truck</span></div>}
+              {active && <div className="progress-track"><span style={{ width: `${Math.max(12, active.palletsTotal ? active.palletsScanned / active.palletsTotal * 100 : 12)}%` }} /></div>}
             </div>;
           })}
         </div>
+        <div className="dock-arrival-queue"><span><MapPin size={15} /> Arrived, awaiting dock</span>{waitingAtGate.length ? waitingAtGate.slice(0, 3).map((shipment) => <button key={shipment.id} onClick={() => onOpenShipment(shipment)}><Truck size={14} /><b>{shipment.truckPlate}</b><small>{STATUS_META[shipment.status].label}</small></button>) : <small>No trucks waiting at the gate.</small>}</div>
       </article>
       <article className="panel activity-panel">
         <div className="panel-head"><div><span className="eyebrow">Activity</span><h2>Latest handoffs</h2></div><button className="icon-button"><MoreHorizontal size={19} /></button></div>
@@ -236,10 +242,6 @@ function OverviewPage({ data, user, onOpenShipment, onNewRds }: { data: AppData;
       <div className="table-wrap"><table><thead><tr><th>Scheduled</th><th>Shipment</th><th>Supplier</th><th>Truck & driver</th><th>Status</th><th>Dock</th><th /></tr></thead><tbody>{todayShipments.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime)).map((shipment) => <tr key={shipment.id}><td><b>{shipment.scheduledTime}</b><small>{shipment.scheduledEndTime ? `to ${shipment.scheduledEndTime}` : "exact arrival"}</small></td><td><button className="table-link" onClick={() => onOpenShipment(shipment)}>{shipment.shipmentNumber}</button><small>{shipment.items[0]?.materialName}</small></td><td>{shipment.supplier}</td><td>{shipment.truckPlate}<small>{shipment.driverName}</small></td><td><StatusPill status={shipment.status} /></td><td>{shipment.dock || "—"}</td><td><button className="icon-button" onClick={() => onOpenShipment(shipment)}><ArrowRight size={17} /></button></td></tr>)}</tbody></table></div>
     </section>
   </div>;
-}
-
-function SchedulePage({ data, user, onConfirmRds, onScheduleRds, onOpenShipment, onImportExcel }: { data: AppData; user: SessionUser; onConfirmRds: (rds: RdsRequest) => void; onScheduleRds: (rds: RdsRequest) => void; onOpenShipment: (shipment: Shipment) => void; onImportExcel: () => void }) {
-  return <FlexibleSchedulePage data={data} user={user} onConfirmRds={onConfirmRds} onScheduleRds={onScheduleRds} onOpenShipment={onOpenShipment} onImportExcel={onImportExcel} />;
 }
 
 function BarcodeScanner({ onRead }: { onRead: (value: string) => void }) {
@@ -281,7 +283,8 @@ function OperationsPage({ data, user, onAction, onOpenShipment }: { data: AppDat
   const [dock, setDock] = useState("Dock 1");
   const [palletId, setPalletId] = useState("");
   const [message, setMessage] = useState("");
-  const visibleShipments = user.role === "driver" ? data.shipments.filter(shipment => shipment.driverName === user.name) : data.shipments;
+  const approvedShipments = data.shipments.filter(shipment => shipment.bookingStatus !== "PENDING_APPROVAL");
+  const visibleShipments = user.role === "driver" ? approvedShipments.filter(shipment => shipment.driverName === user.name) : approvedShipments;
   const findShipment = (value: string) => {
     let scanValue = value.trim();
     try { scanValue = new URL(scanValue).searchParams.get("shipment") || scanValue; } catch {}
@@ -322,10 +325,6 @@ function OperationsPage({ data, user, onAction, onOpenShipment }: { data: AppDat
   </div>;
 }
 
-function BacklogPage({ data, onReschedule, onOpenShipment }: { data: AppData; onReschedule: (id: number, date: string, start: string, end: string) => void; onOpenShipment: (shipment: Shipment) => void }) {
-  return <FlexibleBacklogPage data={data} onReschedule={onReschedule} onOpenShipment={onOpenShipment} />;
-}
-
 function ReportsPage({ data }: { data: AppData }) {
   const received = data.shipments.filter(s => s.status === "RECEIVED");
   const total = Math.max(data.shipments.length, 1);
@@ -363,32 +362,52 @@ function AdminPage({ data, onSaveSettings, onAddMaterial, onAddUser }: { data: A
     <section className="panel admin-panel">{tab !== "settings" && <div className="toolbar"><label className="search-box"><Search size={17} /><input placeholder={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="button secondary" onClick={exportCsv}><Download size={16} /> Export CSV</button></div>}
       {tab === "materials" && <div className="table-wrap"><table><thead><tr><th>Material code</th><th>Material name</th><th>Type</th><th>UOM</th><th>Shelf life</th><th>Units / pallet</th><th>Storage</th><th /></tr></thead><tbody>{data.materials.filter(material => `${material.code} ${material.name}`.toLowerCase().includes(search.toLowerCase())).map(material => <tr key={material.id}><td><b>{material.code}</b></td><td>{material.name}</td><td><span className="type-chip">{material.type}</span></td><td>{material.uom}</td><td>{material.shelfLifeDays ? `${material.shelfLifeDays} days` : "N/A"}</td><td>{material.unitsPerPallet.toLocaleString()}</td><td>{material.storageZone}</td><td><button className="icon-button"><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>}
       {tab === "users" && <div className="user-cards">{data.users.filter(user => `${user.name} ${user.username}`.toLowerCase().includes(search.toLowerCase())).map(user => { const RoleIcon = ROLE_ICONS[user.role]; return <article className="user-card" key={user.id}><span className="user-avatar">{initials(user.name)}</span><div><strong>{user.name}</strong><small>@{user.username}</small></div><span className="role-chip"><RoleIcon size={14} /> {ROLE_LABELS[user.role]}</span><button className="icon-button"><MoreHorizontal size={18} /></button></article>; })}</div>}
-      {tab === "settings" && <form className="settings-form" onSubmit={(event) => { event.preventDefault(); onSaveSettings(settings); }}><div className="settings-intro"><span className="settings-icon"><Clock3 size={22} /></span><div><h2>Flexible arrival policy</h2><p>Bookings and Excel imports can use any exact time; an end time is optional.</p></div></div><div className="form-grid"><label>Site name<input value={settings.siteName} onChange={event => setSettings({ ...settings, siteName: event.target.value })} /></label><label>Number of docks<input type="number" min="1" max="12" value={settings.dockCount} onChange={event => setSettings({ ...settings, dockCount: Number(event.target.value) })} /></label><label>Late grace period<select value={settings.graceMinutes} onChange={event => setSettings({ ...settings, graceMinutes: Number(event.target.value) })}><option value={0}>No grace period</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div><div className="shift-policy"><h3>Shift labels (informational)</h3>{[{ name: "Morning", time: "06:00 – 14:00" }, { name: "Afternoon", time: "14:00 – 22:00" }, { name: "Night", time: "22:00 – 06:00" }].map(shift => <div key={shift.name}><span className="live-dot" /><b>{shift.name}</b><span>{shift.time}</span><em>Auto</em></div>)}</div><button className="button primary" type="submit"><Check size={17} /> Save scheduling rules</button></form>}
+      {tab === "settings" && <form className="settings-form" onSubmit={(event) => { event.preventDefault(); onSaveSettings({ ...settings, dockCount: 2 }); }}><div className="settings-intro"><span className="settings-icon"><Settings size={22} /></span><div><h2>Site and booking rules</h2><p>Use Schedule to maintain the shared booking calendar.</p></div></div><div className="form-grid"><label>Site name<input value={settings.siteName} onChange={event => setSettings({ ...settings, siteName: event.target.value })} /></label><label>Receiving docks<input value="2 docks" readOnly /></label><label>Late grace period<select value={settings.graceMinutes} onChange={event => setSettings({ ...settings, graceMinutes: Number(event.target.value) })}><option value={0}>No grace period</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div><button className="button primary" type="submit"><Check size={17} /> Save scheduling rules</button></form>}
     </section>{creating && <AdminCreateModal kind={creating} onClose={() => setCreating(null)} onSubmit={finishCreate} />}
   </div>;
 }
 
-function NewRdsModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (form: Record<string, string | number>) => void }) {
-  const [form, setForm] = useState<Record<string, string | number>>({ dppNumber: `DPP-${localDate().slice(2).replaceAll("-", "")}-001`, supplier: "", requestedDate: localDate(1), arrivalShift: "Morning", poNumber: "", materialCode: "", materialName: "", quantity: 0, uom: "KG", palletCount: 0, notes: "" });
+function NewRdsModal({ availableSlots, shipments, onClose, onSubmit }: { availableSlots: AvailabilitySlot[]; shipments: Shipment[]; onClose: () => void; onSubmit: (form: Record<string, string | number>) => void }) {
+  const sortedSlots = [...availableSlots].sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
+  const initialSlot = sortedSlots[0] || null;
+  const [anchorDate, setAnchorDate] = useState(initialSlot?.date || localDate());
+  const [selectedSlotId, setSelectedSlotId] = useState<number | null>(initialSlot?.id || null);
+  const [form, setForm] = useState<Record<string, string | number>>({ dppNumber: `DPP-${localDate().slice(2).replaceAll("-", "")}-001`, supplier: "", requestedDate: initialSlot?.date || "", requestedTime: initialSlot?.startTime || "", availabilitySlotId: initialSlot?.id || 0, poNumber: "", materialCode: "", materialName: "", quantity: 0, uom: "KG", palletCount: 0, notes: "" });
   const set = (name: string, value: string | number) => setForm({ ...form, [name]: value });
-  return <Modal title="Create delivery request" subtitle="Create the DPP record and send an RDS to the supplier." onClose={onClose} wide><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form); }}><div className="form-section"><span>01</span><div><h3>Delivery plan</h3><div className="form-grid"><label>DPP number<input value={form.dppNumber} onChange={e => set("dppNumber", e.target.value)} required /></label><label>Supplier<input value={form.supplier} onChange={e => set("supplier", e.target.value)} placeholder="Exact registered supplier name" required /></label><label>Requested date<input type="date" value={form.requestedDate} onChange={e => set("requestedDate", e.target.value)} required /></label><label>Arrival shift<select value={form.arrivalShift} onChange={e => set("arrivalShift", e.target.value)}><option>Morning</option><option>Afternoon</option><option>Night</option></select></label></div></div></div><div className="form-section"><span>02</span><div><h3>Material line</h3><div className="form-grid three"><label>PO number<input value={form.poNumber} onChange={e => set("poNumber", e.target.value)} /></label><label>Material code<input value={form.materialCode} onChange={e => set("materialCode", e.target.value)} required /></label><label>Material name<input value={form.materialName} onChange={e => set("materialName", e.target.value)} required /></label><label>Quantity<input type="number" min="0.001" step="any" value={form.quantity} onChange={e => set("quantity", Number(e.target.value))} required /></label><label>UOM<select value={form.uom} onChange={e => set("uom", e.target.value)}><option>KG</option><option>PC</option><option>L</option></select></label><label>Pallet count<input type="number" min="0" value={form.palletCount} onChange={e => set("palletCount", Number(e.target.value))} /></label></div><label>Planner note<textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional instruction to supplier" /></label></div></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><ArrowRight size={17} /> Create & send RDS</button></div></form></Modal>;
+  const selectedSlot = sortedSlots.find((slot) => slot.id === selectedSlotId) || null;
+  const chooseSlot = (slot: AvailabilitySlot) => {
+    setSelectedSlotId(slot.id);
+    setAnchorDate(slot.date);
+    setForm((current) => ({ ...current, requestedDate: slot.date, requestedTime: slot.startTime, availabilitySlotId: slot.id }));
+  };
+  const timeOptions = selectedSlot ? timesInsideSlot(selectedSlot) : [];
+  const usage = (time: string) => shipments.filter((shipment) => shipment.scheduledDate === selectedSlot?.date && shipment.scheduledTime === time && shipment.bookingStatus !== "REJECTED" && shipment.status !== "REJECTED").length;
+  return <Modal title="Create delivery request" subtitle="Choose an open booking time, then send the delivery request." onClose={onClose} wide><form className="modal-form" onSubmit={event => { event.preventDefault(); if (selectedSlot) onSubmit(form); }}><div className="form-section"><span>01</span><div><h3>Delivery plan</h3><div className="form-grid"><label>DPP number<input value={form.dppNumber} onChange={e => set("dppNumber", e.target.value)} required /></label><label>Supplier<input value={form.supplier} onChange={e => set("supplier", e.target.value)} placeholder="Type any supplier name" required /></label></div><div className="booking-request-calendar"><span className="eyebrow">Booking time</span>{availableSlots.length ? <AvailabilityCalendar slots={availableSlots} shipments={shipments} anchorDate={anchorDate} selectedSlotId={selectedSlotId} onAnchorDateChange={setAnchorDate} onSelect={chooseSlot} /> : <div className="feature-empty booking-no-slots"><CalendarDays size={24} /><strong>No booking times are open</strong><span>Add availability in Schedule before creating a delivery request.</span></div>}</div><div className="booking-selection"><div><span className="eyebrow">Selected booking time</span><h3>{selectedSlot ? `${formatDate(selectedSlot.date)} · ${selectedSlot.startTime}–${selectedSlot.endTime}` : "Select an open window above"}</h3><p>The exact time stays within the selected green availability window.</p></div><label>Exact timestamp<select value={form.requestedTime} onChange={e => set("requestedTime", e.target.value)} disabled={!selectedSlot} required><option value="" disabled>Select time</option>{timeOptions.map(time => <option key={time} value={time} disabled={usage(time) >= 2}>{time} · {Math.max(0, 2 - usage(time))} dock{2 - usage(time) === 1 ? "" : "s"} available</option>)}</select></label></div></div></div><div className="form-section"><span>02</span><div><h3>Material line</h3><div className="form-grid three"><label>PO number<input value={form.poNumber} onChange={e => set("poNumber", e.target.value)} /></label><label>Material code<input value={form.materialCode} onChange={e => set("materialCode", e.target.value)} required /></label><label>Material name<input value={form.materialName} onChange={e => set("materialName", e.target.value)} required /></label><label>Quantity<input type="number" min="0.001" step="any" value={form.quantity} onChange={e => set("quantity", Number(e.target.value))} required /></label><label>UOM<select value={form.uom} onChange={e => set("uom", e.target.value)}><option>KG</option><option>PC</option><option>L</option></select></label><label>Pallet count<input type="number" min="0" value={form.palletCount} onChange={e => set("palletCount", Number(e.target.value))} /></label></div><label>Planner note<textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional instruction to supplier" /></label></div></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={!selectedSlot || !form.requestedTime}><ArrowRight size={17} /> Create & send RDS</button></div></form></Modal>;
 }
 
 type DeliveryFiles = { dn: File | null; coa: File | null };
 
-function BookSlotModal({ rds, onClose, onSubmit }: { rds: RdsRequest; onClose: () => void; onSubmit: (form: Record<string, string | number>, files: DeliveryFiles) => void }) {
-  const suggestedTime = rds.arrivalShift === "Afternoon" ? "14:00" : rds.arrivalShift === "Night" ? "22:00" : "08:00";
-  const [form, setForm] = useState<Record<string, string | number>>({ rdsId: rds.id, scheduledDate: rds.requestedDate, scheduledTime: suggestedTime, scheduledEndTime: "", truckPlate: "", driverName: "", driverPhone: "", materialWeightKg: 12000, dnNumber: "", batchNumber: "" });
+function BookSlotModal({ rds, availableSlots, shipments, onClose, onSubmit }: { rds: RdsRequest; availableSlots: AvailabilitySlot[]; shipments: Shipment[]; onClose: () => void; onSubmit: (form: Record<string, string | number>, files: DeliveryFiles) => void }) {
+  const sortedSlots = [...availableSlots].sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
+  const initialSlot = sortedSlots.find((slot) => slot.id === rds.availabilitySlotId) || sortedSlots.find((slot) => slot.date === rds.requestedDate) || sortedSlots[0] || null;
+  const [anchorDate, setAnchorDate] = useState(initialSlot?.date || rds.requestedDate);
+  const [selectedSlotId, setSelectedSlotId] = useState<number | null>(initialSlot?.id || null);
+  const initialTime = initialSlot && rds.requestedTime && timesInsideSlot(initialSlot).includes(rds.requestedTime) ? rds.requestedTime : initialSlot?.startTime || "";
+  const [form, setForm] = useState<Record<string, string | number>>({ rdsId: rds.id, scheduledDate: initialSlot?.date || "", scheduledTime: initialTime, scheduledEndTime: "", truckPlate: "", driverName: "", driverPhone: "", materialWeightKg: 12000, dnNumber: "", batchNumber: "" });
   const [files, setFiles] = useState<DeliveryFiles>({ dn: null, coa: null });
   const set = (name: string, value: string | number) => setForm({ ...form, [name]: value });
-  return <Modal title="Set delivery time" subtitle={`${rds.rdsNumber} · ${rds.supplier} · requested ${rds.arrivalShift}`} onClose={onClose}><form className="modal-form" onSubmit={event => { event.preventDefault(); onSubmit(form, files); }}><div className="notice"><Clock3 size={17} /><span>Choose any exact arrival time. The end time is optional and does not limit the delivery.</span></div><div className="form-grid"><label>Delivery date<input type="date" value={form.scheduledDate} onChange={e => set("scheduledDate", e.target.value)} required /></label><label>Exact arrival time<input type="time" value={form.scheduledTime} onChange={e => set("scheduledTime", e.target.value)} required /></label><label>Optional end time<input type="time" value={form.scheduledEndTime} onChange={e => set("scheduledEndTime", e.target.value)} /></label><label>Truck plate<input value={form.truckPlate} onChange={e => set("truckPlate", e.target.value.toUpperCase())} placeholder="NAB 1234" required /></label><label>Driver name<input value={form.driverName} onChange={e => set("driverName", e.target.value)} required /></label><label>Driver phone<input value={form.driverPhone} onChange={e => set("driverPhone", e.target.value)} placeholder="09xxxxxxxxx" required /></label><label>Load weight (kg)<input type="number" value={form.materialWeightKg} onChange={e => set("materialWeightKg", Number(e.target.value))} /></label><label>DN number<input value={form.dnNumber} onChange={e => set("dnNumber", e.target.value)} /></label><label>Vendor batch<input value={form.batchNumber} onChange={e => set("batchNumber", e.target.value)} /></label></div><div className="upload-pair"><label><Upload size={17} /><span><b>{files.dn ? files.dn.name : "Upload DN"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, dn: event.target.files?.[0] || null })} /></label><label><Upload size={17} /><span><b>{files.coa ? files.coa.name : "Upload COA"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, coa: event.target.files?.[0] || null })} /></label></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary"><Check size={17} /> Confirm exact time</button></div></form></Modal>;
+  const selectedSlot = sortedSlots.find((slot) => slot.id === selectedSlotId) || null;
+  const chooseSlot = (slot: AvailabilitySlot) => { setSelectedSlotId(slot.id); setAnchorDate(slot.date); setForm({ ...form, scheduledDate: slot.date, scheduledTime: slot.startTime, scheduledEndTime: "" }); };
+  const timeOptions = selectedSlot ? timesInsideSlot(selectedSlot) : [];
+  const usage = (time: string) => shipments.filter((shipment) => shipment.scheduledDate === selectedSlot?.date && shipment.scheduledTime === time && shipment.bookingStatus !== "REJECTED" && shipment.status !== "REJECTED").length;
+  return <Modal title="Book an available time" subtitle={`${rds.rdsNumber} · ${rds.supplier} · requested ${formatDate(rds.requestedDate, "short")}`} onClose={onClose} wide><form className="modal-form booking-rule-form" onSubmit={event => { event.preventDefault(); if (selectedSlot) onSubmit(form, files); }}><div className="notice"><Clock3 size={17} /><span>Booking time: choose a green window, then pick an exact timestamp. A planner or administrator will decide the request in Management.</span></div>{availableSlots.length ? <AvailabilityCalendar slots={availableSlots} shipments={shipments} anchorDate={anchorDate} selectedSlotId={selectedSlotId} onAnchorDateChange={setAnchorDate} onSelect={chooseSlot} /> : <div className="feature-empty booking-no-slots"><CalendarDays size={24} /><strong>No booking times are open</strong><span>Ask an administrator or planner to add availability first.</span></div>}<div className="booking-selection"><div><span className="eyebrow">Selected booking time</span><h3>{selectedSlot ? `${formatDate(selectedSlot.date)} · ${selectedSlot.startTime}–${selectedSlot.endTime}` : "Select an open window above"}</h3><p>Capacity is limited to the two receiving docks at each timestamp.</p></div><label>Exact timestamp<select value={form.scheduledTime} onChange={e => set("scheduledTime", e.target.value)} disabled={!selectedSlot} required><option value="" disabled>Select time</option>{timeOptions.map(time => <option key={time} value={time} disabled={usage(time) >= 2}>{time} · {Math.max(0, 2 - usage(time))} dock{2 - usage(time) === 1 ? "" : "s"} available</option>)}</select></label></div><div className="form-grid"><label>Truck plate<input value={form.truckPlate} onChange={e => set("truckPlate", e.target.value.toUpperCase())} placeholder="NAB 1234" required /></label><label>Driver name<input value={form.driverName} onChange={e => set("driverName", e.target.value)} required /></label><label>Driver phone<input value={form.driverPhone} onChange={e => set("driverPhone", e.target.value)} placeholder="09xxxxxxxxx" required /></label><label>Load weight (kg)<input type="number" value={form.materialWeightKg} onChange={e => set("materialWeightKg", Number(e.target.value))} /></label><label>DN number<input value={form.dnNumber} onChange={e => set("dnNumber", e.target.value)} /></label><label>Vendor batch<input value={form.batchNumber} onChange={e => set("batchNumber", e.target.value)} /></label></div><div className="upload-pair"><label><Upload size={17} /><span><b>{files.dn ? files.dn.name : "Upload DN"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, dn: event.target.files?.[0] || null })} /></label><label><Upload size={17} /><span><b>{files.coa ? files.coa.name : "Upload COA"}</b><small>PDF or image · max 15 MB</small></span><input type="file" accept="application/pdf,image/*" onChange={event => setFiles({ ...files, coa: event.target.files?.[0] || null })} /></label></div><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={!selectedSlot || !form.scheduledTime}><Check size={17} /> Submit for approval</button></div></form></Modal>;
 }
 
 function ShipmentModal({ shipment, onClose }: { shipment: Shipment; onClose: () => void }) {
   return <Modal title={shipment.shipmentNumber} subtitle={`${shipment.bookingReceipt} · ${shipment.supplier}`} onClose={onClose} wide><div className="shipment-detail print-area">
     <div className="receipt-head"><div><span className="brand-mark"><Route size={20} /></span><span><b>DockFlow</b><small>{shipment.importSource ? `Imported from ${shipment.importSource}` : "Booking receipt"}</small></span></div><StatusPill status={shipment.status} /></div>
     <div className="shipment-summary"><div><span className="truck-tile large"><Truck size={26} /></span><div><small>Truck & driver</small><strong>{shipment.truckPlate}</strong><span>{shipment.driverName}{shipment.driverPhone ? ` · ${shipment.driverPhone}` : ""}</span></div></div><img src={`/api/shipments/${shipment.id}/qr.svg`} alt={`QR code for ${shipment.shipmentNumber}`} /></div>
-    <dl className="detail-grid"><div><dt>Delivery date</dt><dd>{formatDate(shipment.scheduledDate)}</dd></div><div><dt>Scheduled time</dt><dd>{shipment.scheduledTime}{shipment.scheduledEndTime ? ` – ${shipment.scheduledEndTime}` : ""}</dd></div><div><dt>Shift label</dt><dd>{shipment.shift}</dd></div><div><dt>Assigned dock</dt><dd>{shipment.dock || "At gate assignment"}</dd></div><div><dt>Load weight</dt><dd>{shipment.materialWeightKg ? `${shipment.materialWeightKg.toLocaleString()} kg` : "See material quantities"}</dd></div><div><dt>Pallet progress</dt><dd>{shipment.palletsScanned} / {shipment.palletsTotal}</dd></div></dl>
+    <dl className="detail-grid"><div><dt>Delivery date</dt><dd>{formatDate(shipment.scheduledDate)}</dd></div><div><dt>Scheduled time</dt><dd>{shipment.scheduledTime}{shipment.scheduledEndTime ? ` – ${shipment.scheduledEndTime}` : ""}</dd></div><div><dt>Booking approval</dt><dd>{shipment.bookingStatus === "PENDING_APPROVAL" ? "Waiting for planner" : shipment.bookingStatus === "REJECTED" ? "Rejected" : "Approved"}</dd></div><div><dt>Assigned dock</dt><dd>{shipment.dock || "At gate assignment"}</dd></div><div><dt>Load weight</dt><dd>{shipment.materialWeightKg ? `${shipment.materialWeightKg.toLocaleString()} kg` : "See material quantities"}</dd></div><div><dt>Pallet progress</dt><dd>{shipment.palletsScanned} / {shipment.palletsTotal}</dd></div></dl>
     <div className="table-wrap detail-items imported-detail-table"><table><thead><tr><th>PO number</th><th>Material</th><th>Quantity</th><th>PO balance</th><th>Source</th><th>Remarks / documents</th></tr></thead><tbody>{shipment.items.map(item => <tr key={item.id}><td>{item.poNumber || "—"}</td><td><b>{item.materialCode}</b><small>{item.materialName}</small></td><td>{item.quantity.toLocaleString()} {item.uom}</td><td>{item.poBalance == null ? "—" : item.poBalance.toLocaleString()}<small>{item.stillToBeDelivered == null ? "" : `${item.stillToBeDelivered.toLocaleString()} still to deliver`}</small></td><td>{item.sourceSheet ? `${item.sourceSheet} · row ${item.sourceRow}` : "Manual"}<small>{item.deliverySite || item.sourceFile || ""}{item.deliveryWeek ? ` · wk ${item.deliveryWeek}` : ""}</small></td><td>{item.remarks || "—"}<div className="document-chips">{item.dnFileName && <span>DN</span>}{item.coaFileName && <span>COA</span>}</div></td></tr>)}</tbody></table></div>
     <div className="shipment-actions"><button className="button secondary" onClick={() => window.print()}><Printer size={17} /> Print booking & pallet IDs</button><button className="button primary" onClick={onClose}>Done</button></div>
   </div></Modal>;
@@ -452,10 +471,6 @@ export default function DockFlowApp() {
     await persist(`/api/shipments/${id}/status`, "PATCH", { status, ...extra }, `${current?.shipmentNumber} is now ${STATUS_META[status].label.toLowerCase()}.`);
     setSelectedShipment(null);
   };
-  const reschedule = async (id: number, scheduledDate: string, scheduledTime: string, scheduledEndTime: string) => {
-    const timeSlot = scheduledEndTime ? `${scheduledTime} - ${scheduledEndTime}` : scheduledTime;
-    await persist(`/api/shipments/${id}/reschedule`, "PATCH", { scheduledDate, scheduledTime, scheduledEndTime }, `Delivery moved to ${formatDate(scheduledDate, "short")}, ${timeSlot}.`);
-  };
   const confirmRds = async (rds: RdsRequest) => persist(`/api/rds/${rds.id}/confirm`, "PATCH", {}, `${rds.rdsNumber} confirmed.`);
   const createRds = async (form: Record<string, string | number>) => {
     await persist("/api/rds", "POST", form, "Delivery request created and sent to the supplier.");
@@ -470,16 +485,22 @@ export default function DockFlowApp() {
       if (!response.ok) throw new Error(`${documentType} upload failed`);
     };
     await uploadFile(files.dn, "DN"); await uploadFile(files.coa, "COA"); await refresh();
-    notify("Exact delivery time saved. Shipment number, QR, and pallet IDs are ready.");
+    notify("Booking submitted. A planner or administrator must approve it in Management.");
     setBookingRds(null);
   };
   const imported = async (result: ImportResult) => {
     await refresh();
     setExcelImport(false);
-    setView("monitoring");
-    notify(`${result.deliveryCount} deliveries created from Excel; ${result.importedRows} rows imported and ${result.skippedRows} skipped.`);
+    setView("management");
+    notify(`${result.deliveryCount} deliveries created from Excel; all ${result.importedRows} nonblank rows were accepted.`);
   };
   const saveSettings = async (settings: AppData["settings"]) => persist("/api/settings", "PATCH", settings, "Scheduling rules saved.");
+  const saveAvailability = async (slot: AvailabilityInput) => {
+    const body = { date: slot.date, startTime: slot.startTime, endTime: slot.endTime, label: slot.label };
+    await persist(slot.id ? `/api/availability/${slot.id}` : "/api/availability", slot.id ? "PATCH" : "POST", body, `${formatDate(slot.date, "short")}, ${slot.startTime}–${slot.endTime} saved for booking.`);
+  };
+  const deleteAvailability = async (id: number) => persist(`/api/availability/${id}`, "DELETE", undefined, "Availability window removed.");
+  const approveBooking = async (shipment: Shipment, decision: "APPROVE" | "REJECT") => persist(`/api/shipments/${shipment.id}/booking-approval`, "PATCH", { decision }, `${shipment.shipmentNumber} ${decision === "APPROVE" ? "approved" : "rejected"}.`);
   const addMaterial = async (form: Record<string, string | number>) => persist("/api/materials", "POST", form, `${form.name} added to material master.`);
   const addUser = async (form: Record<string, string | number>) => persist("/api/users", "POST", form, `${form.name} added as ${ROLE_LABELS[String(form.role) as Role]}.`);
 
@@ -488,12 +509,12 @@ export default function DockFlowApp() {
   const RoleIcon = ROLE_ICONS[user.role];
 
   return <div className="app-shell">
-    <aside className={`sidebar ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b><small>{item.description}</small></div></button>; })}</nav><div className="sidebar-shift"><span className="live-dot" /><div><b>Morning shift</b><small>06:00 – 14:00 · Active</small></div></div><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{ROLE_LABELS[user.role]}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
+    <aside className={`sidebar ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b><small>{item.description}</small></div></button>; })}</nav><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{ROLE_LABELS[user.role]}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><span className="role-badge"><RoleIcon size={15} /> {ROLE_LABELS[user.role]}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="user-mini" onClick={logout}><span>{initials(user.name)}</span><ChevronDown size={15} /></button></div></header>
-      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={setSelectedShipment} />}{view === "schedule" && <SchedulePage data={data} user={user} onConfirmRds={confirmRds} onScheduleRds={setBookingRds} onOpenShipment={setSelectedShipment} onImportExcel={() => setExcelImport(true)} />}{view === "operations" && <OperationsPage data={data} user={user} onAction={updateStatus} onOpenShipment={setSelectedShipment} />}{view === "backlog" && <BacklogPage data={data} onReschedule={reschedule} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} />}</div>
+      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={setSelectedShipment} />}{view === "schedule" && <FlexibleSchedulePage data={data} user={user} onOpenShipment={setSelectedShipment} onSaveAvailability={saveAvailability} onDeleteAvailability={deleteAvailability} />}{view === "management" && <ManagementPage data={data} onImportExcel={() => setExcelImport(true)} onConfirmRds={confirmRds} onScheduleRds={setBookingRds} onApproveBooking={approveBooking} />}{view === "operations" && <OperationsPage data={data} user={user} onAction={updateStatus} onOpenShipment={setSelectedShipment} />}{view === "history" && <HistoryPage data={data} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} />}</div>
     </main>
     {loading && <div className="loading-line" />}{toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
-    {selectedShipment && <ShipmentModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} />}{newRds && <NewRdsModal onClose={() => setNewRds(false)} onSubmit={createRds} />}{bookingRds && <BookSlotModal rds={bookingRds} onClose={() => setBookingRds(null)} onSubmit={bookRds} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}
+    {selectedShipment && <ShipmentModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} />}{newRds && <NewRdsModal availableSlots={data.settings.availableSlots} shipments={data.shipments} onClose={() => setNewRds(false)} onSubmit={createRds} />}{bookingRds && <BookSlotModal rds={bookingRds} availableSlots={data.settings.availableSlots} shipments={data.shipments} onClose={() => setBookingRds(null)} onSubmit={bookRds} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}
   </div>;
 }
