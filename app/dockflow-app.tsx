@@ -433,7 +433,6 @@ export default function DockFlowApp() {
     return () => { active = false; };
   }, [user, token]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("dockflow-theme", dark ? "dark" : "light"); }, [dark]);
-  useEffect(() => { console.info("Made by Riemar R. Seruelas Jr – Data Digital Intern"); }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 3500); return () => clearTimeout(timer); }, [toast]);
 
   const handleLogin = (nextUser: SessionUser, nextToken: string) => {
