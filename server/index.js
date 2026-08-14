@@ -499,6 +499,30 @@ app.patch("/api/shipments/:id/booking-approval", auth, allow("admin", "planner")
   response.json(result);
 }));
 
+app.patch("/api/shipments/:id/schedule", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
+  const scheduledDate = String(request.body?.scheduledDate || "");
+  const scheduledTime = String(request.body?.scheduledTime || "").slice(0, 5);
+  const scheduledEndTime = String(request.body?.scheduledEndTime || "").slice(0, 5);
+  if (!validDate(scheduledDate) || !validTime(scheduledTime) || !validTime(scheduledEndTime)) return response.status(400).json({ message: "Choose a valid date, start time, and end time" });
+  const result = await store.update((state) => {
+    const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
+    if (!shipment) return null;
+    if (shipment.status !== "BOOKED") return { locked: true };
+    const previous = `${shipment.scheduledDate} ${shipment.scheduledTime}–${shipment.scheduledEndTime || shipment.scheduledTime}`;
+    shipment.scheduledDate = scheduledDate;
+    shipment.scheduledTime = scheduledTime;
+    shipment.scheduledEndTime = scheduledEndTime;
+    shipment.expectedDurationMinutes = durationMinutes(scheduledTime, scheduledEndTime);
+    shipment.timeSlot = scheduleLabel(scheduledTime, scheduledEndTime);
+    shipment.availabilitySlotId = matchingAvailability(state, scheduledDate, scheduledTime, scheduledEndTime)?.id || null;
+    addAudit(state, request.user, "BOOKING_RESCHEDULED", `${shipment.shipmentNumber} moved from ${previous} to ${scheduledDate} ${scheduledTime}–${scheduledEndTime}`, shipment.shipmentNumber);
+    return { ok: true, shipment };
+  });
+  if (!result) return response.status(404).json({ message: "Shipment not found" });
+  if (result.locked) return response.status(409).json({ message: "Only bookings that have not started their trip can be dragged to another time" });
+  response.json(result);
+}));
+
 app.post("/api/availability", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
   const date = String(request.body?.date || "");
   const startTime = String(request.body?.startTime || "").slice(0, 5);

@@ -66,7 +66,7 @@ A supplier request contains:
 
 The supplier name comes from the signed-in account. There is no supplier field, dock selector, load field, dock-capacity counter, or two-step booking action.
 
-Bookings may overlap and there is no fixed booking limit. Schedule uses separate colored lanes so overlapping requests remain distinct. Suppliers and planners can switch between day and week views.
+Bookings may overlap and there is no fixed booking limit. Schedule keeps two clearly separated workspaces that share the same date and day/week controls: **Booking setup** contains availability only, while **Booked deliveries** contains actual trucks only. Both use the full 00:00–24:00 timeline. Bookings whose time ranges overlap are automatically narrowed into separate colored side-by-side lanes instead of being drawn on top of each other. Administrators and planners can drag unstarted bookings or availability windows to any 15-minute position. Excel imports appear automatically under Booked deliveries.
 
 Every request enters Management as **Pending confirmation**. Management reviews it once and either confirms it or denies it with a required rejection reason.
 
@@ -90,13 +90,15 @@ Use a USB QR scanner by focusing the shipment-number field and scanning. The cam
 ## Main workspaces
 
 - **Overview** — operational summary and the existing two-dock visual control.
-- **Monitoring** — truck-first cards with multiple products, important delivery details only, today-priority sorting, exact-date filtering, and logo-only fullscreen mode.
-- **Schedule** — one calendar with day/week views, color-coded overlapping entries, and admin/planner receiving-window editing.
+- **Monitoring** — truck-first cards with multiple products, important delivery details only, today-priority sorting, one horizontal See all/Specific date filter with a themed in-app calendar, and logo-only fullscreen mode.
+- **Schedule** — separate Booking setup and Booked deliveries views on a shared 24-hour day/week calendar, with drag-and-drop scheduling and side-by-side overlapping bookings.
 - **Management** — Excel import plus one-step confirmation or reasoned denial.
-- **Gate & dock** — role-aware Trip, Gate, Unloading, and Received scanning.
+- **Scan** — role-aware Trip, Gate, Unloading, and Received scanning.
 - **History** — separate Received and Rejected views.
 - **Reports** — supplier self-performance for supplier accounts and per-supplier company performance for internal accounts.
 - **Administration** — materials, accounts, supplier catalogs, and scheduling settings.
+
+Supplier accounts only receive **Schedule** and **Scan** in their sidebar. Their profile indicator is display-only; sign-out remains the explicit button at the bottom of the sidebar.
 
 ## Booking PDF
 

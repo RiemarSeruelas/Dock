@@ -22,8 +22,8 @@
       {
         "id": 1,
         "date": "2026-08-13",
-        "startTime": "07:00",
-        "endTime": "12:00",
+        "startTime": "07:15",
+        "endTime": "12:15",
         "label": "Open receiving window"
       },
       {
@@ -63,7 +63,7 @@
       "username": "admin",
       "role": "admin",
       "supplierId": null,
-      "passwordHash": "$2b$10$zeKf77tDYVPEgcuEwqv.X.xxQ3XqWIzgMzgIaTRWe42bLpcoR.zlG"
+      "passwordHash": "$2b$10$MDbDX2ponccnkqEhLmKvueGOgNOE7rXOZgAD.5MNI26AlNAyV1HUe"
     },
     {
       "id": 2,
@@ -71,7 +71,7 @@
       "username": "planner",
       "role": "planner",
       "supplierId": null,
-      "passwordHash": "$2b$10$lLatcV9M4gN1TQ.TEBDS/uVocMSCPiH/O/qCx9dR4AtR/az6eEUNq"
+      "passwordHash": "$2b$10$rG5PUAy4/k0goLCUGbPAaeJYNNNOn.NXXVgYWeZZYJSbwbaoye5KK"
     },
     {
       "id": 3,
@@ -79,7 +79,7 @@
       "username": "supplier",
       "role": "supplier",
       "supplierId": 1,
-      "passwordHash": "$2b$10$OhS/iSJVk11ZaRidPN155.fCusw4mFm6TqSxrKoJfqG89aSGiNk82"
+      "passwordHash": "$2b$10$1k/SF5ruKyRIRXJ8ZW8SROGtOOFDp/HeRKQxmO8r1Hx4mx.6CSyxu"
     },
     {
       "id": 4,
@@ -87,7 +87,7 @@
       "username": "driver",
       "role": "driver",
       "supplierId": null,
-      "passwordHash": "$2b$10$/NXj7cnD2l.0HOrlp6jvVehxfmfrqpjbR2UoEA1KCojFVq/SQ594S"
+      "passwordHash": "$2b$10$XGtCvTUktq6yWD.GmuNx5eU9xOzqw7Cxt.K1Ijh.amU5SgZ.dA7t6"
     },
     {
       "id": 5,
@@ -95,7 +95,7 @@
       "username": "security",
       "role": "security",
       "supplierId": null,
-      "passwordHash": "$2b$10$nKYgHXwc8yk3LMkFc10Wf.klyIYWHAcJmVqTeM0ztRZ6ZMWHjyjgu"
+      "passwordHash": "$2b$10$KDCyVERwvtxnmgFp9QO8.u7piHzfc8BYVY54la2glRmkxSyZQnoSG"
     },
     {
       "id": 6,
@@ -103,7 +103,7 @@
       "username": "warehouse",
       "role": "warehouse",
       "supplierId": null,
-      "passwordHash": "$2b$10$uXC.SwUj3qKd5Z35NRePuuhOkIMF9UQAoAT2aYy1K7teKEAWMrLUe"
+      "passwordHash": "$2b$10$Pbo9Y5.b28Rs.FWgbUE6NuR9xye3yuSQLSvcUmGQQwzlvK88FwVs6"
     }
   ],
   "suppliers": [
@@ -174,7 +174,7 @@
       "scheduledEndTime": "10:00",
       "availabilitySlotId": 1,
       "status": "BOOKED",
-      "bookingStatus": "APPROVED",
+      "bookingStatus": "PENDING_APPROVAL",
       "truckPlate": "ABC 1234",
       "driverName": "Driver User",
       "driverPhone": "09170000001",
@@ -214,8 +214,7 @@
       "unloadingAt": null,
       "receivedAt": null,
       "gateOutAt": null,
-      "lastProcessAt": null,
-      "rejectionReason": null
+      "lastProcessAt": null
     },
     {
       "id": 2,
@@ -224,8 +223,8 @@
       "vendorCode": "TRIAL-002",
       "dppNumber": "DPP-TRIAL-002",
       "scheduledDate": "2026-08-13",
-      "scheduledTime": "10:30",
-      "scheduledEndTime": "12:00",
+      "scheduledTime": "09:00",
+      "scheduledEndTime": "11:00",
       "availabilitySlotId": 1,
       "status": "GATE_IN",
       "bookingStatus": "APPROVED",
@@ -263,7 +262,7 @@
       "materialWeightKg": 0,
       "palletsScanned": 0,
       "palletsTotal": 2,
-      "timeSlot": "10:30 - 12:00",
+      "timeSlot": "09:00 - 11:00",
       "shift": "Flexible date",
       "unloadingAt": null,
       "receivedAt": null,
@@ -507,12 +506,60 @@
   ],
   "audit": [
     {
-      "id": 3,
-      "at": "2026-08-13T08:11:58.633Z",
+      "id": 10,
+      "at": "2026-08-14T08:16:31.266Z",
       "actor": "System Administrator",
-      "action": "BOOKING_APPROVED",
-      "shipmentNumber": "SHP-20260813-001",
-      "detail": "SHP-20260813-001 was approved for 2026-08-13 at 08:15"
+      "action": "AVAILABILITY_REMOVED",
+      "detail": "2026-08-14 from 05:30 to 07:30 was closed"
+    },
+    {
+      "id": 9,
+      "at": "2026-08-14T08:16:29.672Z",
+      "actor": "System Administrator",
+      "action": "AVAILABILITY_UPDATED",
+      "detail": "2026-08-14 06:30–08:30 moved to 2026-08-14 05:30–07:30"
+    },
+    {
+      "id": 8,
+      "at": "2026-08-14T08:16:28.639Z",
+      "actor": "System Administrator",
+      "action": "AVAILABILITY_UPDATED",
+      "detail": "2026-08-14 08:00–10:00 moved to 2026-08-14 06:30–08:30"
+    },
+    {
+      "id": 7,
+      "at": "2026-08-14T08:16:23.183Z",
+      "actor": "System Administrator",
+      "action": "AVAILABILITY_ADDED",
+      "detail": "2026-08-14 from 08:00 to 10:00 opened for booking"
+    },
+    {
+      "id": 6,
+      "at": "2026-08-14T08:16:21.155Z",
+      "actor": "System Administrator",
+      "action": "AVAILABILITY_UPDATED",
+      "detail": "2026-08-14 08:00–11:30 moved to 2026-08-14 08:00–11:30"
+    },
+    {
+      "id": 5,
+      "at": "2026-08-14T08:16:18.967Z",
+      "actor": "System Administrator",
+      "action": "AVAILABILITY_UPDATED",
+      "detail": "2026-08-13 05:15–10:15 moved to 2026-08-13 07:15–12:15"
+    },
+    {
+      "id": 4,
+      "at": "2026-08-14T08:16:18.257Z",
+      "actor": "System Administrator",
+      "action": "AVAILABILITY_UPDATED",
+      "detail": "2026-08-13 08:00–13:00 moved to 2026-08-13 05:15–10:15"
+    },
+    {
+      "id": 3,
+      "at": "2026-08-14T08:16:17.661Z",
+      "actor": "System Administrator",
+      "action": "AVAILABILITY_UPDATED",
+      "detail": "2026-08-13 07:00–12:00 moved to 2026-08-13 08:00–13:00"
     },
     {
       "id": 2,

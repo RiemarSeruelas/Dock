@@ -65,7 +65,7 @@ const NAV_ITEMS: { id: View; label: string; description: string; icon: Icon; rol
   { id: "monitoring", label: "Monitoring", description: "Every delivery status", icon: Activity },
   { id: "schedule", label: "Schedule", description: "Calendar and arrivals", icon: CalendarDays },
   { id: "management", label: "Management", description: "Imports and approvals", icon: ClipboardCheck, roles: ["admin", "planner"] },
-  { id: "operations", label: "Gate & dock", description: "Arrival to receiving", icon: ScanLine },
+  { id: "operations", label: "Scan", description: "Trip and receiving scans", icon: ScanLine },
   { id: "history", label: "History", description: "Past delivery records", icon: History },
   { id: "reports", label: "Reports", description: "Supplier performance", icon: BarChart3, roles: ["admin", "planner", "warehouse", "supplier"] },
   { id: "admin", label: "Administration", description: "Master data and access", icon: Settings, roles: ["admin"] },
@@ -420,7 +420,7 @@ export default function DockFlowApp() {
     const timer = window.setTimeout(() => {
       try {
         const saved = JSON.parse(localStorage.getItem("dockflow-session") || "null") as { user: SessionUser; token: string } | null;
-        if (saved && saved.token.split(".").length === 3) { setUser(saved.user); setToken(saved.token); }
+        if (saved && saved.token.split(".").length === 3) { setUser(saved.user); setToken(saved.token); if (saved.user.role === "supplier") setView("schedule"); }
         else localStorage.removeItem("dockflow-session");
       } catch { localStorage.removeItem("dockflow-session"); }
       if (localStorage.getItem("dockflow-theme") === "dark") setDark(true);
@@ -444,7 +444,7 @@ export default function DockFlowApp() {
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 3500); return () => clearTimeout(timer); }, [toast]);
 
   const handleLogin = (nextUser: SessionUser, nextToken: string) => {
-    setUser(nextUser); setToken(nextToken); setView("overview");
+    setUser(nextUser); setToken(nextToken); setView(nextUser.role === "supplier" ? "schedule" : "overview");
     localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token: nextToken }));
   };
   const logout = () => { setUser(null); setToken(""); setData(EMPTY_DATA); localStorage.removeItem("dockflow-session"); };
@@ -477,6 +477,7 @@ export default function DockFlowApp() {
     await persist(slot.id ? `/api/availability/${slot.id}` : "/api/availability", slot.id ? "PATCH" : "POST", body, `${formatDate(slot.date, "short")}, ${slot.startTime}–${slot.endTime} saved for booking.`);
   };
   const deleteAvailability = async (id: number) => persist(`/api/availability/${id}`, "DELETE", undefined, "Availability window removed.");
+  const moveShipment = async (shipment: Shipment, scheduledDate: string, scheduledTime: string, scheduledEndTime: string) => persist(`/api/shipments/${shipment.id}/schedule`, "PATCH", { scheduledDate, scheduledTime, scheduledEndTime }, `${shipment.shipmentNumber} moved to ${formatDate(scheduledDate, "short")}, ${scheduledTime}–${scheduledEndTime}.`);
   const approveBooking = async (shipment: Shipment, decision: "APPROVE" | "REJECT", reason?: string) => persist(`/api/shipments/${shipment.id}/booking-approval`, "PATCH", { decision, reason }, `${shipment.shipmentNumber} ${decision === "APPROVE" ? "approved" : "rejected"}.`);
   const addMaterial = async (form: Record<string, string | number>) => persist("/api/materials", "POST", form, `${form.name} added to material master.`);
   const addUser = async (form: Record<string, string | number>) => persist("/api/users", "POST", form, `${form.name} added as ${ROLE_LABELS[String(form.role) as Role]}.`);
@@ -489,14 +490,14 @@ export default function DockFlowApp() {
   };
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
-  const visibleNav = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(user.role));
+  const visibleNav = NAV_ITEMS.filter(item => user.role === "supplier" ? ["schedule", "operations"].includes(item.id) : !item.roles || item.roles.includes(user.role));
   const RoleIcon = ROLE_ICONS[user.role];
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b><small>{item.description}</small></div></button>; })}</nav><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{ROLE_LABELS[user.role]}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
-    <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><span className="role-badge"><RoleIcon size={15} /> {ROLE_LABELS[user.role]}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="user-mini" onClick={logout}><span>{initials(user.name)}</span><ChevronDown size={15} /></button></div></header>
-      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={setSelectedShipment} />}{view === "schedule" && <FlexibleSchedulePage data={data} user={user} onOpenShipment={setSelectedShipment} onSaveAvailability={saveAvailability} onDeleteAvailability={deleteAvailability} />}{view === "management" && <ManagementPage data={data} onImportExcel={() => setExcelImport(true)} onApproveBooking={approveBooking} />}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onOpenShipment={setSelectedShipment} />}{view === "history" && <HistoryPage data={data} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} user={user} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} onSaveSupplierPresets={saveSupplierPresets} />}</div>
+    <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><span className="role-badge"><RoleIcon size={15} /> {ROLE_LABELS[user.role]}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><span className="user-mini profile-only" aria-label={`${user.name} profile`} title={user.name}><span>{initials(user.name)}</span></span></div></header>
+      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={setSelectedShipment} onNewRds={() => setNewRds(true)} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={setSelectedShipment} />}{view === "schedule" && <FlexibleSchedulePage data={data} user={user} onOpenShipment={setSelectedShipment} onSaveAvailability={saveAvailability} onDeleteAvailability={deleteAvailability} onMoveShipment={moveShipment} onNewRequest={() => setNewRds(true)} />}{view === "management" && <ManagementPage data={data} onImportExcel={() => setExcelImport(true)} onApproveBooking={approveBooking} />}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onOpenShipment={setSelectedShipment} />}{view === "history" && <HistoryPage data={data} onOpenShipment={setSelectedShipment} />}{view === "reports" && <ReportsPage data={data} user={user} />}{view === "admin" && <AdminPage data={data} onSaveSettings={saveSettings} onAddMaterial={addMaterial} onAddUser={addUser} onSaveSupplierPresets={saveSupplierPresets} />}</div>
     </main>
     {loading && <div className="loading-line" />}{toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
     {selectedShipment && <ShipmentModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} onDownloadPdf={downloadBookingPdf} />}{newRds && data.suppliers[0] && <NewRdsModal supplier={data.suppliers[0]} availableSlots={data.settings.availableSlots} shipments={data.shipments} onClose={() => setNewRds(false)} onSubmit={createRds} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}

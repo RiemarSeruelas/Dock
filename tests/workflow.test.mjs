@@ -93,6 +93,13 @@ test("supplier booking, approval, PDF, and QR journey", async (context) => {
   const approved = await call(`/api/shipments/${pending.id}/booking-approval`, { token: admin.token, method: "PATCH", body: { decision: "APPROVE" } });
   assert.equal(approved.response.status, 200);
 
+  const supplierMove = await call(`/api/shipments/${pending.id}/schedule`, { token: supplier.token, method: "PATCH", body: { scheduledDate: "2026-08-14", scheduledTime: "10:15", scheduledEndTime: "12:15" } });
+  assert.equal(supplierMove.response.status, 403);
+  const moved = await call(`/api/shipments/${pending.id}/schedule`, { token: admin.token, method: "PATCH", body: { scheduledDate: "2026-08-14", scheduledTime: "10:15", scheduledEndTime: "12:15" } });
+  assert.equal(moved.response.status, 200);
+  assert.equal(moved.result.shipment.scheduledTime, "10:15");
+  assert.equal(moved.result.shipment.availabilitySlotId, null);
+
   const pdf = await call(`/api/shipments/${pending.id}/booking.pdf`, { token: supplier.token });
   assert.equal(pdf.response.status, 200);
   assert.equal(pdf.result.subarray(0, 4).toString(), "%PDF");

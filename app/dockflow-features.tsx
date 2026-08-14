@@ -1,10 +1,9 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, FileSpreadsheet, History, Maximize2, Minimize2, Search, ShieldCheck, Truck, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, FileSpreadsheet, History, Maximize2, Minimize2, Plus, Search, ShieldCheck, Trash2, Truck, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AvailabilityEditor } from "./availability-calendar";
 import { localDate } from "./date-utils";
-import type { AppData, AvailabilityInput, SessionUser, Shipment, ShipmentStatus } from "./types";
+import type { AppData, AvailabilityInput, AvailabilitySlot, SessionUser, Shipment, ShipmentStatus } from "./types";
 
 const STATUS_META: Record<ShipmentStatus, { label: string; color: string }> = {
   BOOKED: { label: "Booking", color: "slate" }, IN_TRANSIT: { label: "Trip", color: "blue" }, GATE_IN: { label: "Gate in", color: "amber" },
@@ -22,28 +21,189 @@ const colorFor = (shipment: Shipment) => (`${shipment.supplierId || ""}${shipmen
 
 function StatusPill({ status }: { status: ShipmentStatus }) { const meta = STATUS_META[status]; return <span className={`status-pill status-${meta.color}`}><span />{meta.label}</span>; }
 
-function ScheduleTimeline({ shipments, availableSlots, anchorDate, mode, onOpenShipment }: { shipments: Shipment[]; availableSlots: AppData["settings"]["availableSlots"]; anchorDate: string; mode: "day" | "week"; onOpenShipment: (shipment: Shipment) => void }) {
-  const dayStart = 6 * 60, dayEnd = 22 * 60;
-  const days = mode === "day" ? [anchorDate] : Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchorDate), index));
-  const hours = Array.from({ length: 17 }, (_, index) => `${String(index + 6).padStart(2, "0")}:00`);
-  const positionDay = (date: string) => {
-    const endByLane: number[] = [];
-    const positioned = shipments.filter((shipment) => shipment.scheduledDate === date && shipment.status !== "REJECTED").sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime)).map((shipment) => {
-      const start = toMinutes(shipment.scheduledTime), end = Math.max(start + 30, toMinutes(shipment.scheduledEndTime || shipment.scheduledTime) || start + 30);
-      let lane = endByLane.findIndex((laneEnd) => laneEnd <= start); if (lane < 0) lane = endByLane.length; endByLane[lane] = end; return { shipment, lane, start, end };
+type PositionedBooking = { shipment: Shipment; lane: number; lanes: number; start: number; end: number };
+
+const layoutDayBookings = (shipments: Shipment[], date: string): PositionedBooking[] => {
+  const bookings = shipments
+    .filter((shipment) => shipment.scheduledDate === date && shipment.status !== "REJECTED")
+    .map((shipment) => {
+      const start = toMinutes(shipment.scheduledTime);
+      const scheduledEnd = toMinutes(shipment.scheduledEndTime || shipment.scheduledTime);
+      const end = shipment.scheduledEndTime ? (scheduledEnd > start ? scheduledEnd : scheduledEnd + 1440) : start + 30;
+      return { shipment, start, end: Math.max(start + 30, end) };
+    })
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const positioned: PositionedBooking[] = [];
+  let cluster: typeof bookings = [];
+  let clusterEnd = -1;
+  const placeCluster = () => {
+    if (!cluster.length) return;
+    const laneEnds: number[] = [];
+    const assigned = cluster.map((booking) => {
+      let lane = laneEnds.findIndex((end) => end <= booking.start);
+      if (lane < 0) lane = laneEnds.length;
+      laneEnds[lane] = booking.end;
+      return { ...booking, lane };
     });
-    const lanes = Math.max(1, endByLane.length); return positioned.map((row) => ({ ...row, lanes }));
+    const lanes = Math.max(1, laneEnds.length);
+    positioned.push(...assigned.map((booking) => ({ ...booking, lanes })));
+    cluster = [];
   };
-  return <div className={`schedule-timeline mode-${mode}`}><div className="schedule-time-corner"><Clock3 size={15} /></div>{days.map((day) => <div className={`schedule-day-title ${day === localDate() ? "today" : ""}`} key={day}><small>{new Intl.DateTimeFormat("en-PH", { weekday: "short" }).format(new Date(`${day}T12:00:00`))}</small><b>{new Date(`${day}T12:00:00`).getDate()}</b></div>)}<div className="schedule-time-axis">{hours.map((hour, index) => <span style={{ top: `${index / 16 * 100}%` }} key={hour}>{hour}</span>)}</div>{days.map((day) => <div className="schedule-day-lane" key={day}>{hours.slice(0, -1).map((hour, index) => <i style={{ top: `${index / 16 * 100}%` }} key={hour} />)}{availableSlots.filter((slot) => slot.date === day).map((slot) => <div className="schedule-open-window" style={{ top: `${Math.max(0, toMinutes(slot.startTime) - dayStart) / (dayEnd - dayStart) * 100}%`, height: `${Math.max(2, (Math.min(dayEnd, toMinutes(slot.endTime)) - Math.max(dayStart, toMinutes(slot.startTime))) / (dayEnd - dayStart) * 100)}%` }} key={slot.id}><span>{slot.startTime}–{slot.endTime}</span></div>)}{positionDay(day).map(({ shipment, lane, lanes, start, end }) => <button className={`schedule-entry ${shipment.bookingStatus === "PENDING_APPROVAL" ? "pending" : ""}`} style={{ "--event-hue": colorFor(shipment), top: `${Math.max(0, start - dayStart) / (dayEnd - dayStart) * 100}%`, height: `${Math.max(3.5, (Math.min(dayEnd, end) - Math.max(dayStart, start)) / (dayEnd - dayStart) * 100)}%`, left: `calc(${lane / lanes * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)` } as CSSProperties} key={shipment.id} onClick={() => onOpenShipment(shipment)}><b>{shipment.scheduledTime}–{shipment.scheduledEndTime || shipment.scheduledTime}</b><span>{shipment.truckPlate}</span><small>{shipment.supplier}</small></button>)}</div>)}</div>;
+  bookings.forEach((booking) => {
+    if (cluster.length && booking.start >= clusterEnd) placeCluster();
+    cluster.push(booking);
+    clusterEnd = Math.max(booking.end, cluster.length === 1 ? booking.end : clusterEnd);
+  });
+  placeCluster();
+  return positioned;
+};
+
+type CalendarDrag = { kind: "booking"; shipment: Shipment; duration: number } | { kind: "availability"; slot: AvailabilitySlot; duration: number };
+
+const minutesToTime = (minutes: number) => {
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
+};
+const clockLabel = (hour: number) => hour === 0 || hour === 24 ? "12 AM" : hour === 12 ? "12 PM" : hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
+
+function CustomDatePicker({ value, onChange, label = "Choose date" }: { value: string; onChange: (value: string) => void; label?: string }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [month, setMonth] = useState(value.slice(0, 7));
+  const [year, monthNumber] = month.split("-").map(Number);
+  const firstOffset = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7;
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(year, monthNumber - 1, index - firstOffset + 1);
+    return {
+      date: `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`,
+      day: day.getDate(),
+      outside: day.getMonth() !== monthNumber - 1,
+    };
+  });
+  const moveMonth = (direction: number) => {
+    const next = new Date(year, monthNumber - 1 + direction, 1);
+    setMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`);
+  };
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, []);
+  return <div className="custom-date-picker" ref={rootRef}>
+    <button type="button" className={`custom-date-trigger ${open ? "open" : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setMonth(value.slice(0, 7)); setOpen((current) => !current); }}>
+      <CalendarDays size={16} /><span><small>{label}</small><b>{formatDate(value, true)}</b></span>
+    </button>
+    {open && <div className="custom-calendar-popover" role="dialog" aria-label={label}>
+      <div className="custom-calendar-head"><button type="button" onClick={() => moveMonth(-1)} aria-label="Previous month"><ArrowLeft size={16} /></button><strong>{new Intl.DateTimeFormat("en-PH", { month: "long", year: "numeric" }).format(new Date(year, monthNumber - 1, 1))}</strong><button type="button" onClick={() => moveMonth(1)} aria-label="Next month"><ArrowRight size={16} /></button></div>
+      <div className="custom-calendar-weekdays">{["M", "T", "W", "T", "F", "S", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
+      <div className="custom-calendar-grid">{cells.map((cell) => <button type="button" className={`${cell.outside ? "outside" : ""} ${cell.date === localDate() ? "today" : ""} ${cell.date === value ? "selected" : ""}`} aria-pressed={cell.date === value} key={cell.date} onClick={() => { onChange(cell.date); setOpen(false); }}>{cell.day}</button>)}</div>
+      <div className="custom-calendar-foot"><button type="button" onClick={() => { const today = localDate(); onChange(today); setMonth(today.slice(0, 7)); setOpen(false); }}>Today</button></div>
+    </div>}
+  </div>;
 }
 
-export function FlexibleSchedulePage({ data, user, onOpenShipment, onSaveAvailability, onDeleteAvailability }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void; onSaveAvailability: (slot: AvailabilityInput) => Promise<void> | void; onDeleteAvailability: (id: number) => Promise<void> | void }) {
+function ScheduleTimeline({ variant, shipments, availableSlots, anchorDate, mode, editable, onOpenShipment, onMoveShipment, onMoveAvailability }: { variant: "availability" | "bookings"; shipments: Shipment[]; availableSlots: AppData["settings"]["availableSlots"]; anchorDate: string; mode: "day" | "week"; editable: boolean; onOpenShipment: (shipment: Shipment) => void; onMoveShipment: (shipment: Shipment, date: string, startTime: string, endTime: string) => Promise<void> | void; onMoveAvailability: (slot: AvailabilityInput) => Promise<void> | void }) {
+  const dayStart = 0, dayEnd = 24 * 60;
+  const [dragging, setDragging] = useState<CalendarDrag | null>(null);
+  const [dropDay, setDropDay] = useState<string | null>(null);
+  const days = mode === "day" ? [anchorDate] : Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchorDate), index));
+  const hours = Array.from({ length: 25 }, (_, index) => index);
+  const drop = (event: React.DragEvent<HTMLDivElement>, date: string) => {
+    event.preventDefault();
+    if (!dragging) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerMinutes = Math.round(Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) * 1440 / 15) * 15;
+    const maxStart = dragging.kind === "availability" ? Math.max(0, 1439 - dragging.duration) : Math.max(0, 1440 - dragging.duration);
+    const start = Math.min(maxStart, pointerMinutes);
+    const end = start + dragging.duration;
+    if (dragging.kind === "booking") void onMoveShipment(dragging.shipment, date, minutesToTime(start), minutesToTime(end));
+    else void onMoveAvailability({ ...dragging.slot, date, startTime: minutesToTime(start), endTime: minutesToTime(end) });
+    setDragging(null); setDropDay(null);
+  };
+  const startBookingDrag = (event: React.DragEvent<HTMLButtonElement>, shipment: Shipment) => {
+    const start = toMinutes(shipment.scheduledTime), rawEnd = toMinutes(shipment.scheduledEndTime || shipment.scheduledTime);
+    const duration = shipment.scheduledEndTime ? Math.max(30, rawEnd > start ? rawEnd - start : rawEnd + 1440 - start) : 30;
+    event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", shipment.shipmentNumber);
+    setDragging({ kind: "booking", shipment, duration });
+  };
+  const startAvailabilityDrag = (event: React.DragEvent<HTMLButtonElement>, slot: AvailabilitySlot) => {
+    event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `availability-${slot.id}`);
+    setDragging({ kind: "availability", slot, duration: Math.max(15, toMinutes(slot.endTime) - toMinutes(slot.startTime)) });
+  };
+  return <div className={`schedule-timeline mode-${mode} variant-${variant} ${dragging ? "is-dragging" : ""}`}>
+    <div className="schedule-time-corner"><Clock3 size={15} /></div>
+    {days.map((day) => <div className={`schedule-day-title ${day === localDate() ? "today" : ""}`} key={day}><small>{new Intl.DateTimeFormat("en-PH", { weekday: "short" }).format(new Date(`${day}T12:00:00`))}</small><b>{new Date(`${day}T12:00:00`).getDate()}</b></div>)}
+    <div className="schedule-time-axis">{hours.map((hour) => <span style={{ top: `${hour / 24 * 100}%` }} key={hour}>{clockLabel(hour)}</span>)}</div>
+    {days.map((day) => <div className={`schedule-day-lane ${dropDay === day ? "drop-target" : ""}`} key={day} onDragOver={(event) => { if (!dragging) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropDay(day); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropDay(null); }} onDrop={(event) => drop(event, day)}>
+      {hours.slice(0, -1).map((hour) => <i style={{ top: `${hour / 24 * 100}%` }} key={hour} />)}
+      {variant === "availability" && availableSlots.filter((slot) => slot.date === day).map((slot) => <button type="button" draggable={editable} className={`schedule-open-window ${editable ? "draggable" : ""}`} style={{ top: `${toMinutes(slot.startTime) / 1440 * 100}%`, height: `${Math.max(2.1, (toMinutes(slot.endTime) - toMinutes(slot.startTime)) / 1440 * 100)}%` }} key={slot.id} title={`${slot.startTime}–${slot.endTime} · ${slot.label}`} onDragStart={(event) => startAvailabilityDrag(event, slot)} onDragEnd={() => { setDragging(null); setDropDay(null); }}><b>{slot.startTime}–{slot.endTime}</b><span>{slot.label || "Available for booking"}</span>{editable && <small>Drag to reschedule</small>}</button>)}
+      {variant === "bookings" && layoutDayBookings(shipments, day).map(({ shipment, lane, lanes, start, end }) => {
+        const canDrag = editable && shipment.status === "BOOKED";
+        return <button type="button" draggable={canDrag} className={`schedule-entry ${shipment.bookingStatus === "PENDING_APPROVAL" ? "pending" : ""} ${canDrag ? "draggable" : ""}`} style={{ "--event-hue": colorFor(shipment), top: `${Math.max(dayStart, start) / dayEnd * 100}%`, height: `${Math.max(2.1, (Math.min(dayEnd, end) - Math.max(dayStart, start)) / dayEnd * 100)}%`, left: `calc(${lane / lanes * 100}% + 4px)`, width: `calc(${100 / lanes}% - 8px)` } as CSSProperties} key={shipment.id} onDragStart={(event) => startBookingDrag(event, shipment)} onDragEnd={() => { setDragging(null); setDropDay(null); }} onClick={() => onOpenShipment(shipment)}><b>{shipment.scheduledTime}–{shipment.scheduledEndTime || "+30 min"}</b><span>{shipment.truckPlate}</span><small>{shipment.supplier}</small></button>;
+      })}
+    </div>)}
+  </div>;
+}
+
+function ReceivingHoursControl({ date, slots, onSave, onDelete }: { date: string; slots: AvailabilitySlot[]; onSave: (slot: AvailabilityInput) => Promise<void> | void; onDelete: (id: number) => Promise<void> | void }) {
+  const daySlots = slots.filter((slot) => slot.date === date).sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const initial = daySlots[0];
+  const [selectedId, setSelectedId] = useState<number | null>(initial?.id || null);
+  const [startTime, setStartTime] = useState(initial?.startTime || "08:00");
+  const [endTime, setEndTime] = useState(initial?.endTime || "10:00");
+  const [label, setLabel] = useState(initial?.label || "Open receiving window");
+  const [saving, setSaving] = useState(false);
+  const valid = startTime < endTime;
+  const reset = () => { setSelectedId(null); setStartTime("08:00"); setEndTime("10:00"); setLabel("Open receiving window"); };
+  const select = (id: number | null) => {
+    if (!id) return reset();
+    const slot = daySlots.find((item) => item.id === id);
+    if (!slot) return reset();
+    setSelectedId(slot.id); setStartTime(slot.startTime); setEndTime(slot.endTime); setLabel(slot.label || "Open receiving window");
+  };
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!valid || saving) return;
+    setSaving(true);
+    try { await onSave({ id: selectedId || undefined, date, startTime, endTime, label }); reset(); }
+    finally { setSaving(false); }
+  };
+  return <form className="receiving-hours-control" onSubmit={save}>
+    <div className="receiving-hours-copy"><span className="settings-icon"><Clock3 size={18} /></span><div><b>Available time</b><small>{formatDate(date, true)} · add, edit, or drag a saved window</small></div></div>
+    <label>Saved window<select value={selectedId || ""} onChange={(event) => select(event.target.value ? Number(event.target.value) : null)}><option value="">+ New window</option>{daySlots.map((slot) => <option value={slot.id} key={slot.id}>{slot.startTime}–{slot.endTime} · {slot.label}</option>)}</select></label>
+    <label>From<input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required /></label>
+    <label>To<input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required /></label>
+    <label className="receiving-label">Label<input value={label} onChange={(event) => setLabel(event.target.value)} /></label>
+    <div className="receiving-hours-actions">{selectedId && <button type="button" className="button danger compact" onClick={async () => { await onDelete(selectedId); reset(); }}><Trash2 size={14} /> Remove</button>}<button className="button primary compact" disabled={!valid || saving}>{selectedId ? <Check size={14} /> : <Plus size={14} />}{saving ? "Saving" : selectedId ? "Update" : "Add"}</button></div>
+    {!valid && <small className="receiving-hours-error">The end time must be later than the start time.</small>}
+  </form>;
+}
+
+export function FlexibleSchedulePage({ data, user, onOpenShipment, onSaveAvailability, onDeleteAvailability, onMoveShipment, onNewRequest }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void; onSaveAvailability: (slot: AvailabilityInput) => Promise<void> | void; onDeleteAvailability: (id: number) => Promise<void> | void; onMoveShipment: (shipment: Shipment, date: string, startTime: string, endTime: string) => Promise<void> | void; onNewRequest: () => void }) {
   const [date, setDate] = useState(data.settings.availableDates.find((item) => item >= localDate()) || localDate());
   const [mode, setMode] = useState<"day" | "week">("week");
+  const [section, setSection] = useState<"availability" | "bookings">("availability");
+  const canEdit = ["admin", "planner"].includes(user.role);
   const move = (direction: number) => setDate(addDays(date, direction * (mode === "day" ? 1 : 7)));
   const visibleDates = mode === "day" ? [date] : Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(date), index));
-  const visibleCount = data.shipments.filter((shipment) => visibleDates.includes(shipment.scheduledDate) && shipment.status !== "REJECTED").length;
-  return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">Scheduling center</span><h1>Delivery schedule</h1><p>Overlapping bookings appear side by side and use supplier colors so every truck remains distinct.</p></div><div className="schedule-view-controls"><div className="view-toggle"><button className={mode === "day" ? "active" : ""} onClick={() => setMode("day")}>Day</button><button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>Week</button></div><div className="date-stepper"><button onClick={() => move(-1)} aria-label={`Previous ${mode}`}><ArrowLeft size={17} /></button><label><CalendarDays size={17} /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><button onClick={() => move(1)} aria-label={`Next ${mode}`}><ArrowRight size={17} /></button></div></div></section>{["admin", "planner"].includes(user.role) && <section className="panel schedule-availability-panel"><div className="panel-head"><div><span className="eyebrow">Receiving hours</span><h2>Set supplier booking windows</h2><p>Drag to create or move the receiving hours suppliers may request. These windows no longer have a booking-count limit.</p></div></div><AvailabilityEditor compact slots={data.settings.availableSlots} shipments={data.shipments} anchorDate={date} onAnchorDateChange={setDate} onSave={onSaveAvailability} onDelete={onDeleteAvailability} /></section>}<section className="panel schedule-board overlap-schedule"><div className="panel-head"><div><span className="eyebrow">{mode === "day" ? formatDate(date) : `${formatDate(startOfWeek(date), true)} – ${formatDate(addDays(startOfWeek(date), 6), true)}`}</span><h2>{visibleCount} booking{visibleCount === 1 ? "" : "s"} shown</h2></div><span className="policy-chip"><Clock3 size={14} /> Manila time · GMT+8</span></div><ScheduleTimeline shipments={data.shipments} availableSlots={data.settings.availableSlots} anchorDate={date} mode={mode} onOpenShipment={onOpenShipment} /></section></div>;
+  const bookingCount = data.shipments.filter((shipment) => visibleDates.includes(shipment.scheduledDate) && shipment.status !== "REJECTED").length;
+  const availabilityCount = data.settings.availableSlots.filter((slot) => visibleDates.includes(slot.date)).length;
+  const period = mode === "day" ? formatDate(date) : `${formatDate(startOfWeek(date), true)} – ${formatDate(addDays(startOfWeek(date), 6), true)}`;
+  return <div className="page-stack">
+    <section className="hero-row"><div><span className="eyebrow">Scheduling center</span><h1>Delivery schedule</h1><p>Create bookable time separately, then review actual deliveries without overlapping the two.</p></div><div className="schedule-hero-actions">{user.role === "supplier" && <button className="button primary" onClick={onNewRequest}><Plus size={16} /> Request delivery</button>}<div className="schedule-view-controls"><div className="view-toggle"><button className={mode === "day" ? "active" : ""} onClick={() => setMode("day")}>Day</button><button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>Week</button></div><div className="date-stepper"><button type="button" onClick={() => move(-1)} aria-label={`Previous ${mode}`}><ArrowLeft size={17} /></button><CustomDatePicker value={date} onChange={setDate} label="Schedule date" /><button type="button" onClick={() => move(1)} aria-label={`Next ${mode}`}><ArrowRight size={17} /></button></div></div></div></section>
+    <section className="schedule-section-tabs" aria-label="Schedule workspace">
+      <button className={section === "availability" ? "active" : ""} onClick={() => setSection("availability")}><span className="schedule-tab-icon availability"><Clock3 size={18} /></span><span><b>{user.role === "supplier" ? "Available times" : "Booking setup"}</b><small>{user.role === "supplier" ? "Times open for a delivery request" : "Create and move bookable time windows"}</small></span><strong>{availabilityCount}</strong></button>
+      <button className={section === "bookings" ? "active" : ""} onClick={() => setSection("bookings")}><span className="schedule-tab-icon bookings"><Truck size={18} /></span><span><b>{user.role === "supplier" ? "My bookings" : "Booked deliveries"}</b><small>{user.role === "supplier" ? "Your requested and confirmed deliveries" : "Actual trucks, imports, and approved requests"}</small></span><strong>{bookingCount}</strong></button>
+    </section>
+    <section className={`panel schedule-board overlap-schedule schedule-section-panel ${section}`}>
+      <div className="panel-head"><div><span className="eyebrow">{period}</span><h2>{section === "availability" ? (canEdit ? "Create booking availability" : "Times available to book") : "Booked delivery calendar"}</h2><p>{section === "availability" ? (canEdit ? "Add a window below or drag an existing block to another 15-minute position." : "Choose one of these windows when you request a delivery.") : "Bookings that share time are placed beside each other so every truck stays visible."}</p></div><span className="policy-chip"><Clock3 size={14} /> Manila time · GMT+8</span></div>
+      {section === "availability" && canEdit && <ReceivingHoursControl key={`${date}-${data.settings.availableSlots.filter((slot) => slot.date === date).map((slot) => `${slot.id}:${slot.startTime}:${slot.endTime}`).join("|")}`} date={date} slots={data.settings.availableSlots} onSave={onSaveAvailability} onDelete={onDeleteAvailability} />}
+      <div className="schedule-calendar-summary"><span className={section}><i />{section === "availability" ? `${availabilityCount} available window${availabilityCount === 1 ? "" : "s"}` : `${bookingCount} booked deliver${bookingCount === 1 ? "y" : "ies"}`}</span><small>{section === "availability" ? "Availability only—delivery bookings are hidden in this view." : "Booked deliveries only—availability blocks are hidden in this view."}</small></div>
+      <ScheduleTimeline variant={section} shipments={data.shipments} availableSlots={data.settings.availableSlots} anchorDate={date} mode={mode} editable={canEdit} onOpenShipment={onOpenShipment} onMoveShipment={onMoveShipment} onMoveAvailability={onSaveAvailability} />
+    </section>
+  </div>;
 }
 
 export function ManagementPage({ data, onImportExcel, onApproveBooking }: { data: AppData; onImportExcel: () => void; onApproveBooking: (shipment: Shipment, decision: "APPROVE" | "REJECT", reason?: string) => Promise<void> | void }) {
@@ -60,7 +220,26 @@ export function MonitoringPage({ data, onOpenShipment }: { data: AppData; onOpen
   const enterFullscreen = async () => { setFullscreen(true); await fullscreenRef.current?.requestFullscreen?.().catch(() => undefined); }, exitFullscreen = async () => { if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined); setFullscreen(false); };
   const active = useMemo(() => data.shipments.filter((shipment) => !["GATE_OUT", "REJECTED"].includes(shipment.status)), [data.shipments]);
   const rows = useMemo(() => active.filter((shipment) => dateMode === "ALL" || shipment.scheduledDate === date).filter((shipment) => status === "ALL" || shipment.status === status).filter((shipment) => `${shipment.shipmentNumber} ${shipment.bookingReceipt} ${shipment.supplier} ${shipment.truckPlate} ${shipment.driverName} ${shipment.driverPhone} ${shipment.items.map((item) => item.materialName).join(" ")}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => { if (dateMode === "ALL") { const group = (value: string) => value === localDate() ? 0 : value > localDate() ? 1 : 2; const difference = group(a.scheduledDate) - group(b.scheduledDate); if (difference) return difference; } const dateDifference = a.scheduledDate.localeCompare(b.scheduledDate); if (dateDifference) return dateDifference; const rankDifference = processRank[b.status] - processRank[a.status]; return rankDifference || a.scheduledTime.localeCompare(b.scheduledTime); }), [active, dateMode, date, status, query]);
-  return <div ref={fullscreenRef} className={`page-stack monitoring-page ${fullscreen ? "tv-mode" : ""}`}>{!fullscreen && <section className="hero-row"><div><span className="eyebrow">Truck movement board</span><h1>Delivery monitoring</h1><p>One card per truck, including every product on that delivery and its latest process.</p></div><div className="hero-actions"><span className="operation-live"><span className="live-dot" /> Live status</span><button className="icon-button fullscreen-trigger" onClick={enterFullscreen} aria-label="Open fullscreen monitoring" title="Fullscreen"><Maximize2 size={19} /></button></div></section>}{fullscreen && <button className="monitor-tv-exit" onClick={exitFullscreen} aria-label="Exit fullscreen" title="Exit fullscreen"><Minimize2 size={19} /></button>}{!fullscreen && <section className="monitor-status-strip">{statusOrder.filter((item) => !["GATE_OUT", "REJECTED"].includes(item)).map((item) => <button key={item} className={status === item ? "active" : ""} onClick={() => setStatus(status === item ? "ALL" : item)}><StatusPill status={item} /><b>{active.filter((shipment) => shipment.status === item).length}</b></button>)}</section>}<section className="panel monitoring-panel">{!fullscreen && <div className="monitor-toolbar"><label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search truck, delivery, supplier, driver or product" /></label><div className="monitor-date-system"><div className="view-toggle"><button className={dateMode === "ALL" ? "active" : ""} onClick={() => setDateMode("ALL")}>See all</button><button className={dateMode === "DATE" ? "active" : ""} onClick={() => setDateMode("DATE")}>Specific date</button></div>{dateMode === "DATE" && <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />}</div></div>}{!fullscreen && <div className="monitor-count"><b>{rows.length}</b> truck{rows.length === 1 ? "" : "s"} shown{dateMode === "ALL" ? " · today first, then ascending dates" : ` · ${formatDate(date)}`}</div>}<div className="monitor-grid">{rows.map((shipment) => { const position = journeyPosition[shipment.status]; return <button className={`monitor-delivery-card monitor-tone-${STATUS_META[shipment.status].color}`} key={shipment.id} onClick={() => !fullscreen && onOpenShipment(shipment)}><span className="monitor-card-head"><span><small>{formatDate(shipment.scheduledDate)}</small><b>{shipment.scheduledTime} – {shipment.scheduledEndTime || shipment.scheduledTime}</b></span>{shipment.bookingStatus === "PENDING_APPROVAL" ? <span className="approval-chip pending">Approval pending</span> : <StatusPill status={shipment.status} />}</span><span className="monitor-card-shipment"><span className="truck-tile"><Truck size={19} /></span><span><b>{shipment.truckPlate}</b><small>{shipment.supplier}</small></span><ArrowRight size={17} /></span><span className="monitor-card-facts"><span><small>Delivery</small><b>{shipment.shipmentNumber}</b></span><span><small>Driver</small><b>{shipment.driverName}</b></span><span><small>Phone</small><b>{shipment.driverPhone || "—"}</b></span><span><small>Products</small><b>{shipment.items.length}</b></span></span><span className="monitor-card-material"><b>{shipment.items.map((item) => item.materialName).join(", ") || "Products pending"}</b><small>{shipment.items.map((item) => `${item.quantity.toLocaleString()} ${item.uom}`).join(" · ")}</small></span><span className={`monitor-progress ${shipment.status === "REJECTED" ? "rejected" : ""}`}>{journeySteps.map((step, index) => { const stepNumber = index + 1; return <span className={position > stepNumber ? "complete" : position === stepNumber ? "current" : ""} key={step}><i>{position > stepNumber ? "✓" : stepNumber}</i><small>{step}</small></span>; })}</span></button>; })}</div>{!rows.length && <div className="feature-empty"><CalendarDays size={24} /><strong>No matching trucks</strong><span>Change the date or filters to view another delivery.</span></div>}</section></div>;
+  return <div ref={fullscreenRef} className={`page-stack monitoring-page ${fullscreen ? "tv-mode" : ""}`}>
+    {!fullscreen && <section className="hero-row"><div><span className="eyebrow">Truck movement board</span><h1>Delivery monitoring</h1><p>One card per truck, including every product on that delivery and its latest process.</p></div><div className="hero-actions"><span className="operation-live"><span className="live-dot" /> Live status</span><button className="icon-button fullscreen-trigger" onClick={enterFullscreen} aria-label="Open fullscreen monitoring" title="Fullscreen"><Maximize2 size={19} /></button></div></section>}
+    {fullscreen && <button className="monitor-tv-exit" onClick={exitFullscreen} aria-label="Exit fullscreen" title="Exit fullscreen"><Minimize2 size={19} /></button>}
+    {!fullscreen && <section className="monitor-status-strip">{statusOrder.filter((item) => !["GATE_OUT", "REJECTED"].includes(item)).map((item) => <button key={item} className={status === item ? "active" : ""} onClick={() => setStatus(status === item ? "ALL" : item)}><StatusPill status={item} /><b>{active.filter((shipment) => shipment.status === item).length}</b></button>)}</section>}
+    <section className="panel monitoring-panel">
+      {!fullscreen && <div className="monitor-toolbar">
+        <label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search truck, delivery, supplier, driver or product" /></label>
+        <div className="monitor-date-system">
+          <div className={`monitor-date-slot ${dateMode === "ALL" ? "all" : ""}`}>{dateMode === "DATE" ? <CustomDatePicker value={date} onChange={setDate} label="Monitoring date" /> : <span><CalendarDays size={16} /><span><small>Date range</small><b>All dates</b></span></span>}</div>
+          <div className="view-toggle"><button className={dateMode === "ALL" ? "active" : ""} onClick={() => setDateMode("ALL")}>See all</button><button className={dateMode === "DATE" ? "active" : ""} onClick={() => setDateMode("DATE")}>Specific date</button></div>
+        </div>
+      </div>}
+      {!fullscreen && <div className="monitor-count"><b>{rows.length}</b> truck{rows.length === 1 ? "" : "s"} shown{dateMode === "ALL" ? " · today first, then ascending dates" : ` · ${formatDate(date)}`}</div>}
+      <div className="monitor-grid">{rows.map((shipment) => {
+        const position = journeyPosition[shipment.status];
+        return <button className={`monitor-delivery-card monitor-tone-${STATUS_META[shipment.status].color}`} key={shipment.id} onClick={() => !fullscreen && onOpenShipment(shipment)}><span className="monitor-card-head"><span><small>{formatDate(shipment.scheduledDate)}</small><b>{shipment.scheduledTime} – {shipment.scheduledEndTime || shipment.scheduledTime}</b></span>{shipment.bookingStatus === "PENDING_APPROVAL" ? <span className="approval-chip pending">Approval pending</span> : <StatusPill status={shipment.status} />}</span><span className="monitor-card-shipment"><span className="truck-tile"><Truck size={19} /></span><span><b>{shipment.truckPlate}</b><small>{shipment.supplier}</small></span><ArrowRight size={17} /></span><span className="monitor-card-facts"><span><small>Delivery</small><b>{shipment.shipmentNumber}</b></span><span><small>Driver</small><b>{shipment.driverName}</b></span><span><small>Phone</small><b>{shipment.driverPhone || "—"}</b></span><span><small>Products</small><b>{shipment.items.length}</b></span></span><span className="monitor-card-material"><b>{shipment.items.map((item) => item.materialName).join(", ") || "Products pending"}</b><small>{shipment.items.map((item) => `${item.quantity.toLocaleString()} ${item.uom}`).join(" · ")}</small></span><span className={`monitor-progress ${shipment.status === "REJECTED" ? "rejected" : ""}`}>{journeySteps.map((step, index) => { const stepNumber = index + 1; return <span className={position > stepNumber ? "complete" : position === stepNumber ? "current" : ""} key={step}><i>{position > stepNumber ? "✓" : stepNumber}</i><small>{step}</small></span>; })}</span></button>;
+      })}</div>
+      {!rows.length && <div className="feature-empty"><CalendarDays size={24} /><strong>No matching trucks</strong><span>Change the date or filters to view another delivery.</span></div>}
+    </section>
+  </div>;
 }
 
 export function HistoryPage({ data, onOpenShipment }: { data: AppData; onOpenShipment: (shipment: Shipment) => void }) {
