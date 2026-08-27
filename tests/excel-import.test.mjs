@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 import { importHelpers, parseDeliveryWorkbook } from "../server/excel-import.js";
 
 test("detects RM/PM schedules, enriches PO data, and accepts every nonblank row", async () => {
@@ -63,4 +64,22 @@ test("accepts repeated-looking rows, different materials, different dates, and m
   assert.equal(preview.rows[3].deliveryTime, "12:00");
   assert.equal(preview.rows[3].uom, "N/A");
   assert.match(preview.rows[3].message, /placeholders/i);
+});
+
+test("accepts legacy Excel and delimited spreadsheet formats", async () => {
+  const sourceRows = [
+    ["Supplier", "Material Code", "Description", "UOM", "Quantity", "Delivery Date", "Delivery Time"],
+    ["Legacy Supplier", "LEG-001", "Legacy product", "KG", 25, "26-Aug-2026", "13:45"],
+  ];
+  const legacyWorkbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.aoa_to_sheet(sourceRows), "Schedule");
+  const legacy = await parseDeliveryWorkbook(XLSX.write(legacyWorkbook, { type: "buffer", bookType: "biff8" }), "legacy.xls", { fallbackDate: "2026-08-26" });
+  assert.equal(legacy.summary.readyRows, 1);
+  assert.equal(legacy.rows[0].materialCode, "LEG-001");
+  assert.equal(legacy.rows[0].deliveryTime, "13:45");
+
+  const csv = Buffer.from("Supplier,Material Code,Description,UOM,Quantity,Delivery Date,Delivery Time\nCSV Supplier,CSV-001,CSV product,PC,12,27-Aug-2026,09:20\n");
+  const delimited = await parseDeliveryWorkbook(csv, "schedule.csv", { fallbackDate: "2026-08-27" });
+  assert.equal(delimited.summary.readyRows, 1);
+  assert.equal(delimited.rows[0].supplier, "CSV Supplier");
 });

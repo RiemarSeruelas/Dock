@@ -6,13 +6,13 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "concurrently -k -n API,WEB -c magenta,cyan \"node --watch server/index.js\" \"next dev -H 127.0.0.1\"",
+    "dev": "concurrently -k -n API,WEB -c magenta,cyan \"node --env-file-if-exists=.env --watch server/index.js\" \"next dev -H 127.0.0.1\"",
     "dev:web": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
     "test": "node --test tests/excel-import.test.mjs tests/workflow.test.mjs && npm run build",
     "lint": "eslint . --ignore-pattern .next",
-    "api": "node server/index.js"
+    "api": "node --env-file-if-exists=.env server/index.js"
   },
   "dependencies": {
     "@types/pdfkit": "^0.17.6",
@@ -20,24 +20,28 @@
     "cors": "^2.8.5",
     "exceljs": "4.4.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.6.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.468.0",
     "multer": "^2.0.2",
     "next": "16.2.6",
+    "nodemailer": "^7.0.13",
     "pdfkit": "^0.19.1",
+    "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "concurrently": "^9.2.1",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
-    "concurrently": "^9.2.1",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3"
   },

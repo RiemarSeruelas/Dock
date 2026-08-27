@@ -1,5 +1,7 @@
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 import { createHash } from "node:crypto";
+import { extname } from "node:path";
 
 const HEADER_ALIASES = {
   week: ["week", "wk"],
@@ -135,9 +137,27 @@ const sourceKeyFor = (row) => hashParts([
   row.uom,
 ]);
 
-export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
+const OPEN_XML_EXTENSIONS = new Set([".xlsx", ".xlsm", ".xltx", ".xltm"]);
+
+const loadWorkbook = async (buffer, fileName) => {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  const extension = extname(String(fileName || "")).toLowerCase();
+  if (OPEN_XML_EXTENSIONS.has(extension)) {
+    await workbook.xlsx.load(buffer);
+    return workbook;
+  }
+
+  const source = XLSX.read(buffer, { type: "buffer", cellDates: true, raw: true });
+  for (const sheetName of source.SheetNames) {
+    const worksheet = workbook.addWorksheet(String(sheetName || "Sheet").slice(0, 31));
+    const rows = XLSX.utils.sheet_to_json(source.Sheets[sheetName], { header: 1, defval: "", raw: true });
+    rows.forEach((row) => worksheet.addRow(Array.isArray(row) ? row : []));
+  }
+  return workbook;
+};
+
+export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
+  const workbook = await loadWorkbook(buffer, fileName);
   const now = options.now || new Date();
   const detectedSheets = [];
   const scheduleSheets = [];

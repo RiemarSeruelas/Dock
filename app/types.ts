@@ -1,4 +1,4 @@
-export type Role = "admin" | "planner" | "supplier" | "driver" | "security" | "warehouse";
+export type Role = "admin" | "planner" | "production" | "supplier" | "driver" | "security" | "warehouse";
 
 export type ShipmentStatus =
   | "BOOKED"
@@ -9,7 +9,7 @@ export type ShipmentStatus =
   | "GATE_OUT"
   | "REJECTED";
 
-export type BookingStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type BookingStatus = "PENDING_SUPPLIER" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
 export type ScanStage = "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
 
 export interface AvailabilitySlot {
@@ -28,6 +28,7 @@ export interface SessionUser {
   username: string;
   role: Role;
   supplierId?: number | null;
+  email?: string;
 }
 
 export interface ShipmentItem {
@@ -63,6 +64,7 @@ export interface Shipment {
   supplier: string;
   supplierId?: number | null;
   dppNumber?: string;
+  deliveryCode?: string | null;
   vendorCode: string;
   scheduledDate: string;
   scheduledTime: string;
@@ -87,7 +89,20 @@ export interface Shipment {
   unloadingAt?: string | null;
   receivedAt?: string | null;
   gateOutAt?: string | null;
+  estimatedArrivalAt?: string | null;
+  estimatedTravelMinutes?: number | null;
+  estimatedTravelDistanceKm?: number | null;
   rejectionReason?: string | null;
+  supplierResponse?: "ACCEPTED" | "ALTERNATIVE_PROPOSED" | null;
+  supplierResponseReason?: string | null;
+  supplierRespondedAt?: string | null;
+  alternativeDate?: string | null;
+  alternativeTime?: string | null;
+  alternativeEndTime?: string | null;
+  loadConfirmedAt?: string | null;
+  finalDecisionAt?: string | null;
+  finalDecisionBy?: string | null;
+  sdsProposalId?: number | null;
   importBatchId?: number | null;
   importSource?: string | null;
   items: ShipmentItem[];
@@ -110,7 +125,8 @@ export interface RdsRequest {
 
 export interface SupplierPreset {
   id: number;
-  name: string;
+  materialCode: string;
+  name?: string;
   uom: string;
   defaultAmount: number;
 }
@@ -120,6 +136,12 @@ export interface SupplierAccount {
   vendorCode: string;
   name: string;
   productPresets: SupplierPreset[];
+  originAddress?: string;
+  originCoordinates?: { lat: number; lon: number } | null;
+  routeDistanceKm?: number | null;
+  routeDurationMinutes?: number | null;
+  routeCalculatedAt?: string | null;
+  routeProvider?: string | null;
 }
 
 export interface Material {
@@ -159,6 +181,9 @@ export interface AppData {
     deliveryCount: number;
     createdAt: string;
     completedAt?: string | null;
+    notificationStatus?: string;
+    notificationsSent?: number;
+    notificationsFailed?: number;
   }[];
   settings: {
     flexibleScheduling: boolean;
@@ -166,6 +191,8 @@ export interface AppData {
     dockCount: number;
     graceMinutes: number;
     siteName: string;
+    siteAddress?: string;
+    siteCoordinates?: { lat: number; lon: number } | null;
     availableDates: string[];
     availableSlots: AvailabilitySlot[];
   };

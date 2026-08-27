@@ -20,7 +20,32 @@ services:
     environment:
       API_PORT: 3001
       JWT_SECRET: ${JWT_SECRET:-replace-this-secret-before-production}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-replace-this-access-secret-before-production}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-replace-this-refresh-secret-before-production}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-7}
+      REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-dockflow_refresh}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5059}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5059}
+      API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
+      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}
+      LOGIN_RATE_LIMIT_WINDOW_MS: ${LOGIN_RATE_LIMIT_WINDOW_MS:-900000}
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
+      REFRESH_RATE_LIMIT_WINDOW_MS: ${REFRESH_RATE_LIMIT_WINDOW_MS:-900000}
+      REFRESH_RATE_LIMIT_MAX: ${REFRESH_RATE_LIMIT_MAX:-30}
+      GEOCODING_API_URL: ${GEOCODING_API_URL:-https://nominatim.openstreetmap.org/search}
+      ROUTING_API_URL: ${ROUTING_API_URL:-https://router.project-osrm.org/route/v1/driving}
+      ETA_USER_AGENT: ${ETA_USER_AGENT:-DockFlow/0.1}
+      ETA_API_TIMEOUT_MS: ${ETA_API_TIMEOUT_MS:-10000}
+      DB_ENABLED: "false"
+      EMAIL_NOTIFICATIONS_ENABLED: ${EMAIL_NOTIFICATIONS_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
       DATA_FILE: /app/data/trial-data.json
       UPLOAD_DIR: /app/uploads
       TZ: ${TZ:-Asia/Manila}

@@ -1,22 +1,20 @@
 import assert from "node:assert/strict";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
 import test from "node:test";
+import ExcelJS from "exceljs";
 
 const freePort = () => new Promise((resolve, reject) => {
   const server = createServer();
   server.once("error", reject);
-  server.listen(0, "127.0.0.1", () => {
-    const address = server.address();
-    server.close(() => resolve(address.port));
-  });
+  server.listen(0, "127.0.0.1", () => { const address = server.address(); server.close(() => resolve(address.port)); });
 });
 
-test("supplier booking, approval, PDF, and QR journey", async (context) => {
-  const testDirectory = await mkdtemp(join(tmpdir(), "dockflow-workflow-"));
+test("SDS import, supplier truck allocation, final approval, and scan journey", async (context) => {
+  const testDirectory = await mkdtemp(join(tmpdir(), "dockflow-sds-"));
   const dataFile = join(testDirectory, "trial-data.json");
   await copyFile(new URL("../data/trial-data.json", import.meta.url), dataFile);
   const port = await freePort();
@@ -24,31 +22,21 @@ test("supplier booking, approval, PDF, and QR journey", async (context) => {
   let serverOutput = "";
   const apiProcess = spawn(process.execPath, ["server/index.js"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila" },
+    env: { ...process.env, DB_ENABLED: "false", EMAIL_NOTIFICATIONS_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   apiProcess.stdout.on("data", (chunk) => { serverOutput += chunk; });
   apiProcess.stderr.on("data", (chunk) => { serverOutput += chunk; });
-  context.after(async () => {
-    apiProcess.kill("SIGTERM");
-    await rm(testDirectory, { recursive: true, force: true });
-  });
+  context.after(async () => { apiProcess.kill("SIGTERM"); await rm(testDirectory, { recursive: true, force: true }); });
 
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    try {
-      const health = await fetch(`${baseUrl}/api/health`);
-      if (health.ok) break;
-    } catch {}
+    try { if ((await fetch(`${baseUrl}/api/health`)).ok) break; } catch {}
     await new Promise((resolve) => setTimeout(resolve, 50));
     if (attempt === 79) assert.fail(`API did not start:\n${serverOutput}`);
   }
 
-  const call = async (path, { token, method = "GET", body } = {}) => {
-    const response = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+  const call = async (path, { token, method = "GET", body, headers = {} } = {}) => {
+    const response = await fetch(`${baseUrl}${path}`, { method, headers: { ...headers, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const contentType = response.headers.get("content-type") || "";
     const result = contentType.includes("application/json") ? await response.json() : Buffer.from(await response.arrayBuffer());
     return { response, result };
@@ -56,82 +44,109 @@ test("supplier booking, approval, PDF, and QR journey", async (context) => {
   const login = async (username, password) => {
     const { response, result } = await call("/api/auth/login", { method: "POST", body: { username, password } });
     assert.equal(response.status, 200);
-    return result;
+    return { ...result, refreshCookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
 
   const supplier = await login("supplier", "supplier123");
   const admin = await login("admin", "admin123");
+  const production = await login("production", "production123");
   const security = await login("security", "security123");
   const warehouse = await login("warehouse", "warehouse123");
 
-  const supplierBootstrap = await call("/api/bootstrap", { token: supplier.token });
-  assert.equal(supplierBootstrap.result.suppliers.length, 1);
-  assert.ok(supplierBootstrap.result.suppliers[0].productPresets.some((preset) => preset.name === "Eggs"));
-  assert.ok(supplierBootstrap.result.shipments.every((shipment) => shipment.supplierId === supplier.user.supplierId));
-  assert.equal(supplierBootstrap.result.users.length, 0);
+  assert.equal((await call("/api/rds", { token: supplier.token, method: "POST", body: {} })).response.status, 410);
+  const refreshed = await call("/api/auth/refresh", { method: "POST", headers: { Cookie: admin.refreshCookie } });
+  assert.equal(refreshed.response.status, 200);
+  assert.notEqual(refreshed.result.accessToken, admin.token);
 
-  const requestBody = {
-    dppNumber: "DPP-WORKFLOW-001",
-    scheduledDate: "2026-08-14",
-    scheduledTime: "08:30",
-    scheduledEndTime: "10:30",
-    truckPlate: "UAT 1101",
-    driverName: "Workflow Driver",
-    driverPhone: "09171234567",
-    products: [{ presetId: 1, amount: 425 }, { presetId: 2, amount: 175 }],
-  };
-  const created = await call("/api/rds", { token: supplier.token, method: "POST", body: requestBody });
-  assert.equal(created.response.status, 201);
-  const duplicate = await call("/api/rds", { token: supplier.token, method: "POST", body: requestBody });
-  assert.equal(duplicate.response.status, 409);
+  const supplierBefore = await call("/api/bootstrap", { token: supplier.token });
+  assert.ok(supplierBefore.result.suppliers[0].productPresets.every((preset) => preset.materialCode));
+  assert.equal(supplierBefore.result.users.length, 0);
+  assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.supplierId === supplier.user.supplierId));
+  assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item) && !("poNumber" in item))));
 
-  const adminBootstrap = await call("/api/bootstrap", { token: admin.token });
-  const pending = adminBootstrap.result.shipments.find((shipment) => shipment.id === created.result.id);
-  assert.equal(pending.bookingStatus, "PENDING_APPROVAL");
-  assert.equal(pending.items.length, 2);
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("SDS Schedule");
+  sheet.addRow(["Supplier", "Material Code", "Description", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time"]);
+  sheet.addRow(["Trial Ingredients Supplier", "SDS-1001", "Protected ingredient A", "KG", 500, "28-Aug-2026", "09:00", "11:00"]);
+  sheet.addRow(["Trial Ingredients Supplier", "SDS-1002", "Protected ingredient B", "KG", 300, "28-Aug-2026", "09:00", "11:00"]);
+  const form = new FormData();
+  form.append("file", new Blob([Buffer.from(await workbook.xlsx.writeBuffer())]), "supplier-sds.xlsx");
+  const previewResponse = await fetch(`${baseUrl}/api/imports/excel/preview`, { method: "POST", headers: { Authorization: `Bearer ${admin.token}` }, body: form });
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.equal(preview.summary.readyRows, 2);
+  const committed = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: preview.previewToken } });
+  assert.equal(committed.response.status, 201);
+  assert.equal(committed.result.deliveryCount, 1);
+  assert.equal(committed.result.notification.status, "DISABLED");
 
-  const approved = await call(`/api/shipments/${pending.id}/booking-approval`, { token: admin.token, method: "PATCH", body: { decision: "APPROVE" } });
-  assert.equal(approved.response.status, 200);
+  const supplierAfterImport = await call("/api/bootstrap", { token: supplier.token });
+  const proposal = supplierAfterImport.result.shipments.find((shipment) => shipment.importBatchId === committed.result.batchId);
+  assert.equal(proposal.bookingStatus, "PENDING_SUPPLIER");
+  assert.equal(proposal.deliveryCode, null);
+  assert.equal("dppNumber" in proposal, false);
+  assert.deepEqual(proposal.items.map((item) => item.materialCode).sort(), ["SDS-1001", "SDS-1002"]);
+  assert.equal((await call(`/api/shipments/${proposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
 
-  const supplierMove = await call(`/api/shipments/${pending.id}/schedule`, { token: supplier.token, method: "PATCH", body: { scheduledDate: "2026-08-14", scheduledTime: "10:15", scheduledEndTime: "12:15" } });
-  assert.equal(supplierMove.response.status, 403);
-  const moved = await call(`/api/shipments/${pending.id}/schedule`, { token: admin.token, method: "PATCH", body: { scheduledDate: "2026-08-14", scheduledTime: "10:15", scheduledEndTime: "12:15" } });
-  assert.equal(moved.response.status, 200);
-  assert.equal(moved.result.shipment.scheduledTime, "10:15");
-  assert.equal(moved.result.shipment.availabilitySlotId, null);
+  const incompleteAlternative = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", itemIds: proposal.items.map((item) => item.id) }] } });
+  assert.equal(incompleteAlternative.response.status, 400);
 
-  const pdf = await call(`/api/shipments/${pending.id}/booking.pdf`, { token: supplier.token });
+  const supplierResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
+    decision: "PROPOSE_ALTERNATIVE",
+    reason: "Two trucks must be loaded on the following shift",
+    alternativeDate: "2026-08-29",
+    alternativeTime: "13:00",
+    alternativeEndTime: "15:00",
+    loadConfirmed: true,
+    trucks: [
+      { truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "09170000001", itemIds: [proposal.items[0].id] },
+      { truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "09170000002", itemIds: [proposal.items[1].id] },
+    ],
+  } });
+  assert.equal(supplierResponse.response.status, 200);
+  assert.equal(supplierResponse.result.deliveries.length, 2);
+  assert.ok(supplierResponse.result.deliveries.every((delivery) => /^DLV-/.test(delivery.deliveryCode)));
+
+  const productionQueue = await call("/api/bootstrap", { token: production.token });
+  const group = productionQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
+  assert.equal(group.length, 2);
+  assert.ok(group.every((shipment) => shipment.bookingStatus === "SUPPLIER_ALTERNATIVE"));
+  assert.ok(group.every((shipment) => shipment.supplierResponseReason));
+  const final = await call(`/api/shipments/${proposal.id}/final-decision`, { token: production.token, method: "PATCH", body: { decision: "APPROVE" } });
+  assert.equal(final.response.status, 200);
+  assert.equal(final.result.deliveryCount, 2);
+
+  const approvedBootstrap = await call("/api/bootstrap", { token: supplier.token });
+  const approvedGroup = approvedBootstrap.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
+  assert.ok(approvedGroup.every((shipment) => shipment.bookingStatus === "APPROVED" && shipment.scheduledDate === "2026-08-29"));
+  const first = approvedGroup[0];
+  const qr = await call(`/api/shipments/${first.id}/qr.svg`, { token: supplier.token });
+  assert.equal(qr.response.status, 200);
+  assert.match(qr.response.headers.get("content-type") || "", /image\/svg\+xml/);
+  const pdf = await call(`/api/shipments/${first.id}/booking.pdf`, { token: supplier.token });
   assert.equal(pdf.response.status, 200);
   assert.equal(pdf.result.subarray(0, 4).toString(), "%PDF");
   assert.equal((pdf.result.toString("latin1").match(/\/Type\s*\/Page\b/g) || []).length, 1);
 
-  const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: pending.shipmentNumber, stage } });
+  const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage } });
   assert.equal((await scan(supplier.token, "TRIP")).result.shipment.status, "IN_TRANSIT");
   assert.equal((await scan(security.token, "GATE")).result.shipment.status, "GATE_IN");
   assert.equal((await scan(warehouse.token, "UNLOADING")).result.shipment.status, "UNLOADING");
   assert.equal((await scan(warehouse.token, "RECEIVED")).result.shipment.status, "RECEIVED");
-  const completed = await scan(security.token, "GATE");
-  assert.equal(completed.result.shipment.status, "GATE_OUT");
-  assert.ok(completed.result.shipment.tripAt);
-  assert.ok(completed.result.shipment.gateInAt);
-  assert.ok(completed.result.shipment.unloadingAt);
-  assert.ok(completed.result.shipment.receivedAt);
-  assert.ok(completed.result.shipment.gateOutAt);
+  assert.equal((await scan(security.token, "GATE")).result.shipment.status, "GATE_OUT");
 
-  const second = await call("/api/rds", { token: supplier.token, method: "POST", body: { ...requestBody, dppNumber: "DPP-WORKFLOW-002", scheduledTime: "09:00", scheduledEndTime: "11:00", truckPlate: "UAT 1102" } });
-  assert.equal(second.response.status, 201);
-  const missingReason = await call(`/api/shipments/${second.result.id}/booking-approval`, { token: admin.token, method: "PATCH", body: { decision: "REJECT" } });
-  assert.equal(missingReason.response.status, 400);
-  const rejected = await call(`/api/shipments/${second.result.id}/booking-approval`, { token: admin.token, method: "PATCH", body: { decision: "REJECT", reason: "Requested receiving crew is unavailable" } });
-  assert.equal(rejected.response.status, 200);
+  const report = await call("/api/reports/export.xlsx?supplierId=1", { token: admin.token });
+  assert.equal(report.response.status, 200);
+  const reportWorkbook = new ExcelJS.Workbook();
+  await reportWorkbook.xlsx.load(report.result);
+  assert.equal(reportWorkbook.getWorksheet("Delivery Details").getCell("I7").value, "Delivery code");
+  assert.ok(reportWorkbook.getWorksheet("Delivery Details").getColumn("R").values.some((value) => /SDS-/.test(String(value || ""))));
 
-  const newAccount = await call("/api/users", { token: admin.token, method: "POST", body: { name: "Fresh Farm User", username: "freshfarm", password: "freshfarm123", role: "supplier", supplierName: "Fresh Farm Supplier" } });
-  assert.equal(newAccount.response.status, 201);
-  const presetUpdate = await call(`/api/suppliers/${newAccount.result.supplierId}/presets`, { token: admin.token, method: "PATCH", body: { presets: [{ name: "Fresh Eggs", uom: "KG", defaultAmount: 250 }] } });
-  assert.equal(presetUpdate.response.status, 200);
-  const freshFarm = await login("freshfarm", "freshfarm123");
-  const freshBootstrap = await call("/api/bootstrap", { token: freshFarm.token });
-  assert.equal(freshBootstrap.result.suppliers.length, 1);
-  assert.equal(freshBootstrap.result.suppliers[0].productPresets[0].name, "Fresh Eggs");
-  assert.equal(freshBootstrap.result.shipments.length, 0);
+  const missingEmail = await call("/api/users", { token: admin.token, method: "POST", body: { name: "No Email", username: "noemail", password: "password123", role: "supplier", supplierName: "No Email Supplier" } });
+  assert.equal(missingEmail.response.status, 400);
+  const created = await call("/api/users", { token: admin.token, method: "POST", body: { name: "Fresh Farm", username: "freshfarm", email: "fresh@example.com", password: "freshfarm123", role: "supplier", supplierName: "Fresh Farm Supplier" } });
+  assert.equal(created.response.status, 201);
+  const presets = await call(`/api/suppliers/${created.result.supplierId}/presets`, { token: admin.token, method: "PATCH", body: { presets: [{ materialCode: "FRESH-001", uom: "KG", defaultAmount: 250 }] } });
+  assert.equal(presets.response.status, 200);
+  assert.equal(presets.result.presets[0].materialCode, "FRESH-001");
 });

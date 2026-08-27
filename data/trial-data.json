@@ -3,11 +3,12 @@
     "Stop the api container before editing this file so a running write does not replace your changes.",
     "Dates use YYYY-MM-DD and times use 24-hour HH:MM.",
     "IDs may be omitted on new users, supplier products, materials, shipments, items, and availability windows; DockFlow assigns them at startup.",
-    "Supplier accounts need role supplier and a supplierId. Configure their selectable products in suppliers[].productPresets.",
-    "Bookings may overlap and have no dock-capacity limit; Management approves or rejects every request once.",
-    "A manually added user may use a plain password field once; DockFlow replaces it with passwordHash on startup."
+    "Supplier accounts need role supplier, a supplierId, and an email. Configure their allowed material codes in suppliers[].productPresets.",
+    "Normal delivery proposals should be added by importing an SDS spreadsheet in Schedule; every material row is kept.",
+    "Imported proposals start at PENDING_SUPPLIER. The supplier confirms truck plates and material allocation once, then Planner or Production makes the final decision.",
+    "A manually added user may use a plain password field once; DockFlow replaces it with passwordHash on startup. Never place Gmail or SMTP passwords in this JSON file."
   ],
-  "version": 6,
+  "version": 8,
   "settings": {
     "siteName": "Cavite Foods Receiving · Trial",
     "dockCount": 2,
@@ -22,8 +23,8 @@
       {
         "id": 1,
         "date": "2026-08-13",
-        "startTime": "07:15",
-        "endTime": "12:15",
+        "startTime": "07:00",
+        "endTime": "12:00",
         "label": "Open receiving window"
       },
       {
@@ -54,7 +55,9 @@
         "endTime": "16:00",
         "label": "Open receiving window"
       }
-    ]
+    ],
+    "siteAddress": "",
+    "siteCoordinates": null
   },
   "users": [
     {
@@ -63,7 +66,8 @@
       "username": "admin",
       "role": "admin",
       "supplierId": null,
-      "passwordHash": "$2b$10$MDbDX2ponccnkqEhLmKvueGOgNOE7rXOZgAD.5MNI26AlNAyV1HUe"
+      "passwordHash": "$2b$10$MDbDX2ponccnkqEhLmKvueGOgNOE7rXOZgAD.5MNI26AlNAyV1HUe",
+      "email": "admin@dockflow.local"
     },
     {
       "id": 2,
@@ -71,7 +75,8 @@
       "username": "planner",
       "role": "planner",
       "supplierId": null,
-      "passwordHash": "$2b$10$rG5PUAy4/k0goLCUGbPAaeJYNNNOn.NXXVgYWeZZYJSbwbaoye5KK"
+      "passwordHash": "$2b$10$rG5PUAy4/k0goLCUGbPAaeJYNNNOn.NXXVgYWeZZYJSbwbaoye5KK",
+      "email": "planner@dockflow.local"
     },
     {
       "id": 3,
@@ -79,7 +84,8 @@
       "username": "supplier",
       "role": "supplier",
       "supplierId": 1,
-      "passwordHash": "$2b$10$1k/SF5ruKyRIRXJ8ZW8SROGtOOFDp/HeRKQxmO8r1Hx4mx.6CSyxu"
+      "passwordHash": "$2b$10$1k/SF5ruKyRIRXJ8ZW8SROGtOOFDp/HeRKQxmO8r1Hx4mx.6CSyxu",
+      "email": "supplier@dockflow.local"
     },
     {
       "id": 4,
@@ -87,7 +93,8 @@
       "username": "driver",
       "role": "driver",
       "supplierId": null,
-      "passwordHash": "$2b$10$XGtCvTUktq6yWD.GmuNx5eU9xOzqw7Cxt.K1Ijh.amU5SgZ.dA7t6"
+      "passwordHash": "$2b$10$XGtCvTUktq6yWD.GmuNx5eU9xOzqw7Cxt.K1Ijh.amU5SgZ.dA7t6",
+      "email": "driver@dockflow.local"
     },
     {
       "id": 5,
@@ -95,7 +102,8 @@
       "username": "security",
       "role": "security",
       "supplierId": null,
-      "passwordHash": "$2b$10$KDCyVERwvtxnmgFp9QO8.u7piHzfc8BYVY54la2glRmkxSyZQnoSG"
+      "passwordHash": "$2b$10$KDCyVERwvtxnmgFp9QO8.u7piHzfc8BYVY54la2glRmkxSyZQnoSG",
+      "email": "security@dockflow.local"
     },
     {
       "id": 6,
@@ -103,7 +111,17 @@
       "username": "warehouse",
       "role": "warehouse",
       "supplierId": null,
-      "passwordHash": "$2b$10$Pbo9Y5.b28Rs.FWgbUE6NuR9xye3yuSQLSvcUmGQQwzlvK88FwVs6"
+      "passwordHash": "$2b$10$Pbo9Y5.b28Rs.FWgbUE6NuR9xye3yuSQLSvcUmGQQwzlvK88FwVs6",
+      "email": "warehouse@dockflow.local"
+    },
+    {
+      "id": 7,
+      "name": "Production User",
+      "username": "production",
+      "email": "production@dockflow.local",
+      "passwordHash": "$2b$10$L4SkPm2/tFZKBLJw4V4ja.PaPX2HlE7PSfk01Wlp00Lsr7bL6SMT6",
+      "role": "production",
+      "supplierId": null
     }
   ],
   "suppliers": [
@@ -114,17 +132,23 @@
       "productPresets": [
         {
           "id": 1,
-          "name": "Eggs",
+          "materialCode": "EGGS",
           "uom": "KG",
           "defaultAmount": 300
         },
         {
           "id": 2,
-          "name": "Mayonnaise",
+          "materialCode": "MAYONNAISE",
           "uom": "KG",
           "defaultAmount": 500
         }
-      ]
+      ],
+      "originAddress": "",
+      "originCoordinates": null,
+      "routeDistanceKm": null,
+      "routeDurationMinutes": null,
+      "routeCalculatedAt": null,
+      "routeProvider": null
     },
     {
       "id": 2,
@@ -133,11 +157,17 @@
       "productPresets": [
         {
           "id": 3,
-          "name": "Delta Cap 470/700/940 ML",
+          "materialCode": "DELTA CAP 470/700/940 ML",
           "uom": "PC",
           "defaultAmount": 18480
         }
-      ]
+      ],
+      "originAddress": "",
+      "originCoordinates": null,
+      "routeDistanceKm": null,
+      "routeDurationMinutes": null,
+      "routeCalculatedAt": null,
+      "routeProvider": null
     }
   ],
   "materials": [
@@ -168,13 +198,12 @@
       "supplier": "Trial Ingredients Supplier",
       "supplierId": 1,
       "vendorCode": "TRIAL-001",
-      "dppNumber": "DPP-TRIAL-001",
       "scheduledDate": "2026-08-13",
       "scheduledTime": "08:15",
       "scheduledEndTime": "10:00",
       "availabilitySlotId": 1,
       "status": "BOOKED",
-      "bookingStatus": "PENDING_APPROVAL",
+      "bookingStatus": "PENDING_SUPPLIER",
       "truckPlate": "ABC 1234",
       "driverName": "Driver User",
       "driverPhone": "09170000001",
@@ -214,14 +243,27 @@
       "unloadingAt": null,
       "receivedAt": null,
       "gateOutAt": null,
-      "lastProcessAt": null
+      "lastProcessAt": null,
+      "deliveryCode": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedArrivalAt": null,
+      "supplierResponse": null,
+      "supplierResponseReason": null,
+      "supplierRespondedAt": null,
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 1
     },
     {
       "id": 2,
       "supplier": "Trial Packaging Supplier",
       "supplierId": 2,
       "vendorCode": "TRIAL-002",
-      "dppNumber": "DPP-TRIAL-002",
       "scheduledDate": "2026-08-13",
       "scheduledTime": "09:00",
       "scheduledEndTime": "11:00",
@@ -267,14 +309,27 @@
       "unloadingAt": null,
       "receivedAt": null,
       "gateOutAt": null,
-      "lastProcessAt": "2026-08-13T02:25:00.000Z"
+      "lastProcessAt": "2026-08-13T02:25:00.000Z",
+      "deliveryCode": "DLV-20260813-002",
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedArrivalAt": null,
+      "supplierResponse": "ACCEPTED",
+      "supplierResponseReason": null,
+      "supplierRespondedAt": null,
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 2
     },
     {
       "id": 3,
       "supplier": "Trial Ingredients Supplier",
       "supplierId": 1,
       "vendorCode": "TRIAL-001",
-      "dppNumber": "DPP-TRIAL-003",
       "scheduledDate": "2026-08-13",
       "scheduledTime": "14:00",
       "scheduledEndTime": "16:30",
@@ -320,14 +375,27 @@
       "shift": "Flexible date",
       "receivedAt": null,
       "gateOutAt": null,
-      "lastProcessAt": "2026-08-13T06:05:00.000Z"
+      "lastProcessAt": "2026-08-13T06:05:00.000Z",
+      "deliveryCode": "DLV-20260813-003",
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedArrivalAt": null,
+      "supplierResponse": "ACCEPTED",
+      "supplierResponseReason": null,
+      "supplierRespondedAt": null,
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 3
     },
     {
       "id": 4,
       "supplier": "Trial Packaging Supplier",
       "supplierId": 2,
       "vendorCode": "TRIAL-002",
-      "dppNumber": "DPP-TRIAL-004",
       "scheduledDate": "2026-08-12",
       "scheduledTime": "09:00",
       "scheduledEndTime": "11:00",
@@ -374,14 +442,27 @@
       "palletsTotal": 1,
       "timeSlot": "09:00 - 11:00",
       "shift": "Flexible date",
-      "lastProcessAt": "2026-08-12T03:15:00.000Z"
+      "lastProcessAt": "2026-08-12T03:15:00.000Z",
+      "deliveryCode": "DLV-20260812-004",
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedArrivalAt": null,
+      "supplierResponse": "ACCEPTED",
+      "supplierResponseReason": null,
+      "supplierRespondedAt": null,
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 4
     },
     {
       "id": 5,
       "supplier": "Trial Ingredients Supplier",
       "supplierId": 1,
       "vendorCode": "TRIAL-001",
-      "dppNumber": "DPP-TRIAL-005",
       "scheduledDate": "2026-08-11",
       "scheduledTime": "15:30",
       "scheduledEndTime": "17:00",
@@ -427,140 +508,25 @@
       "unloadingAt": null,
       "receivedAt": null,
       "gateOutAt": null,
-      "lastProcessAt": null
+      "lastProcessAt": null,
+      "deliveryCode": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedArrivalAt": null,
+      "supplierResponse": null,
+      "supplierResponseReason": null,
+      "supplierRespondedAt": null,
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 5
     }
   ],
-  "rdsRequests": [
-    {
-      "id": 1,
-      "rdsNumber": "RDS-TRIAL-001",
-      "dppNumber": "DPP-TRIAL-001",
-      "supplier": "Trial Packaging Supplier",
-      "supplierId": 2,
-      "requestedDate": "2026-08-14",
-      "requestedTime": "09:30",
-      "requestedEndTime": "11:30",
-      "availabilitySlotId": 3,
-      "status": "PENDING",
-      "notes": "Example request waiting for confirmation",
-      "items": [
-        {
-          "id": 6,
-          "presetId": null,
-          "poNumber": "450000201",
-          "materialCode": "65013743",
-          "materialName": "Delta Cap 470/700/940 ML",
-          "quantity": 12000,
-          "uom": "PC",
-          "palletCount": 2,
-          "dnNumber": "",
-          "batchNumber": "",
-          "sourceSheet": null,
-          "sourceRow": null,
-          "sourceFile": null,
-          "deliverySite": null,
-          "deliveryWeek": null,
-          "poBalance": null,
-          "poQuantity": null,
-          "stillToBeDelivered": null,
-          "remarks": null
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "rdsNumber": "RDS-TRIAL-002",
-      "dppNumber": "DPP-TRIAL-002",
-      "supplier": "Trial Ingredients Supplier",
-      "supplierId": 1,
-      "requestedDate": "2026-08-14",
-      "requestedTime": "15:00",
-      "requestedEndTime": "19:00",
-      "availabilitySlotId": 4,
-      "status": "CONFIRMED",
-      "notes": "Example request ready to book",
-      "items": [
-        {
-          "id": 7,
-          "presetId": null,
-          "poNumber": "450000202",
-          "materialCode": "65013575",
-          "materialName": "Aspartame Powder",
-          "quantity": 500,
-          "uom": "KG",
-          "palletCount": 1,
-          "dnNumber": "",
-          "batchNumber": "",
-          "sourceSheet": null,
-          "sourceRow": null,
-          "sourceFile": null,
-          "deliverySite": null,
-          "deliveryWeek": null,
-          "poBalance": null,
-          "poQuantity": null,
-          "stillToBeDelivered": null,
-          "remarks": null
-        }
-      ]
-    }
-  ],
+  "rdsRequests": [],
   "audit": [
-    {
-      "id": 10,
-      "at": "2026-08-14T08:16:31.266Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_REMOVED",
-      "detail": "2026-08-14 from 05:30 to 07:30 was closed"
-    },
-    {
-      "id": 9,
-      "at": "2026-08-14T08:16:29.672Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_UPDATED",
-      "detail": "2026-08-14 06:30–08:30 moved to 2026-08-14 05:30–07:30"
-    },
-    {
-      "id": 8,
-      "at": "2026-08-14T08:16:28.639Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_UPDATED",
-      "detail": "2026-08-14 08:00–10:00 moved to 2026-08-14 06:30–08:30"
-    },
-    {
-      "id": 7,
-      "at": "2026-08-14T08:16:23.183Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_ADDED",
-      "detail": "2026-08-14 from 08:00 to 10:00 opened for booking"
-    },
-    {
-      "id": 6,
-      "at": "2026-08-14T08:16:21.155Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_UPDATED",
-      "detail": "2026-08-14 08:00–11:30 moved to 2026-08-14 08:00–11:30"
-    },
-    {
-      "id": 5,
-      "at": "2026-08-14T08:16:18.967Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_UPDATED",
-      "detail": "2026-08-13 05:15–10:15 moved to 2026-08-13 07:15–12:15"
-    },
-    {
-      "id": 4,
-      "at": "2026-08-14T08:16:18.257Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_UPDATED",
-      "detail": "2026-08-13 08:00–13:00 moved to 2026-08-13 05:15–10:15"
-    },
-    {
-      "id": 3,
-      "at": "2026-08-14T08:16:17.661Z",
-      "actor": "System Administrator",
-      "action": "AVAILABILITY_UPDATED",
-      "detail": "2026-08-13 07:00–12:00 moved to 2026-08-13 08:00–13:00"
-    },
     {
       "id": 2,
       "at": "2026-08-13T02:30:00.000Z",
