@@ -1,32 +1,73 @@
-# DockFlow Delivery Scheduling
+# DockFlow User Guide
 
-DockFlow coordinates SDS delivery schedules, supplier truck loading, approvals, QR scanning, monitoring, history, and reports in Manila time (GMT+8).
+DockFlow manages SDS delivery schedules, supplier truck confirmations, approvals, QR scanning, monitoring, history, and reports in Manila time (GMT+8).
 
 ## Trial accounts
 
 | Account | Username | Password | Main use |
 |---|---|---|---|
-| Administrator | `admin` | `admin123` | Accounts, supplier catalogs, ETA, and all company views |
+| Administrator | `admin` | `admin123` | Accounts, supplier catalogs, ETA routes, and company views |
 | Planner | `planner` | `planner123` | Import SDS schedules and make final decisions |
-| Production | `production` | `production123` | Review supplier responses and make final decisions |
-| Supplier | `supplier` | `supplier123` | Respond to assigned SDS proposals, confirm trucks, view entries, and scan Trip |
+| Production | `production` | `production123` | Import SDS schedules and make final decisions |
+| Supplier | `supplier` | `supplier123` | Confirm truck loads, view entries, and scan Trip |
 | Security | `security` | `security123` | Scan Gate in and Gate out |
 | Warehouse | `warehouse` | `warehouse123` | Scan Unloading and Received |
 
 Change every trial password before using the system outside a controlled demo.
 
-## Delivery workflow
+## Before importing an SDS
 
-1. Planner, Production, or Administrator opens **Schedule** and selects **Import SDS**.
-2. DockFlow accepts every nonblank material row from Excel, OpenDocument, CSV, or TSV files. Missing cells receive trial placeholders instead of being skipped.
-3. The assigned supplier sees the proposal in **Schedule**. Only material codes, quantities, and units are shown to the supplier.
-4. The supplier either accepts the proposed date and time or provides one rejection reason and one alternative date and time.
-5. The supplier decides whether one or several trucks are needed, enters one plate per truck, assigns every material code to exactly one truck, and confirms the load.
-6. DockFlow creates one delivery code per truck.
-7. Planner or Production makes the final approve/reject decision. There is no repeated negotiation loop.
-8. QR, PDF, monitoring, and report access become available only after final approval.
+Each supplier in the spreadsheet must have a directly linked supplier account.
 
-Overlapping approved deliveries appear beside one another on the calendar. Schedule blocks can be dragged by Planner, Production, or Administrator while the delivery has not started.
+1. Open **Administration → Accounts**.
+2. Select **Add account**.
+3. Choose **Supplier account** as the role.
+4. Enter the supplier company exactly as it appears in the spreadsheet.
+5. Add the supplier email, username, and initial password.
+
+One supplier company can have one active supplier account. Deleting its account keeps its delivery records, but new spreadsheet deliveries for that supplier are blocked until an account is linked again.
+
+## Importing an SDS
+
+Open **Schedule → Import SDS** and choose an Excel, OpenDocument, CSV, or TSV file.
+
+The main spreadsheet details are:
+
+- Week
+- Site, such as Dressings or Savory
+- Supplier
+- Material code
+- UOM
+- Quantity for delivery
+- Date
+- Time
+
+The preview shows whether every supplier account is linked. A missing account is displayed in red and prevents the import.
+
+DockFlow compares each import with existing records:
+
+- An identical proposal remains unchanged.
+- A changed proposal that is still waiting for the supplier is updated.
+- A confirmed or completed delivery is preserved as a record.
+- A genuinely new proposal is created.
+
+## Supplier truck confirmation
+
+The supplier opens **Schedule** and selects a proposal.
+
+1. Accept the proposed time, or reject it with a reason and one alternative date and time.
+2. Enter one truck plate, driver name, and numeric phone number.
+3. Select all material codes carried by that truck.
+4. Confirm the truck.
+5. If material codes remain, open the proposal again and confirm the next truck.
+
+A delivery code is reserved for every confirmed truck. Planner or Production can make the final decision only after every material code has been assigned to a truck.
+
+## Monitoring and history
+
+**Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan and uses the saved supplier route.
+
+**History** is one total-record view for previous deliveries and rejected proposals. The Outcome column still shows what happened to every record.
 
 ## Scan flow
 
@@ -34,26 +75,14 @@ The approved delivery follows this order:
 
 `Booking → Trip → Gate in → Unloading → Received → Gate out`
 
-- Supplier scans **Trip** before leaving.
-- Security scans the same QR for **Gate in**, then again for **Gate out** after receipt.
+- Supplier scans **Trip**.
+- Security scans **Gate in**, then **Gate out**.
 - Warehouse scans **Unloading** and **Received**.
-- DockFlow records every timestamp in Manila time and calculates the time between stages.
-
-## Supplier accounts and notifications
-
-Create supplier logins under **Administration → Accounts**. Each account needs an email and must be linked to its supplier company. Configure the material codes it may use under **Supplier catalogs**.
-
-When Gmail notifications are enabled, an assigned supplier receives an email after a new SDS is committed. The Gmail app password belongs only in the server `.env` file. It is never stored in the JSON trial data or sent to the browser.
+- Roles without a scan station do not see the Scan page.
 
 ## Trial storage
 
-This version intentionally runs without PostgreSQL. Business data is stored in:
-
-`data/trial-data.json`
-
-Stop the API or Docker containers before editing the file. Dates use `YYYY-MM-DD` and times use 24-hour `HH:MM`. The `_howToEdit` section at the top of the JSON file lists the safe editing rules.
-
-Refresh sessions are kept in memory, so users sign in again after the API restarts. Back up `data/trial-data.json` before replacing the project or clearing Docker data.
+This trial runs without PostgreSQL. Business data is stored in `data/trial-data.json`. Stop the API or Docker containers before manually editing the file, and back it up before replacing the project.
 
 ## Run with Docker
 
@@ -67,13 +96,11 @@ docker compose ps
 
 Open `http://localhost:5059`.
 
-To stop the app:
+To stop DockFlow:
 
 ```powershell
 docker compose down
 ```
-
-Do not add `-v` unless you intentionally want to remove Docker-managed upload data.
 
 ## Run with npm
 
@@ -83,14 +110,18 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-Open `http://127.0.0.1:3000`. Both the website and local API start from the same command.
+Open `http://127.0.0.1:3000`.
 
-## Optional Gmail setup
+## Optional Gmail notices
 
-For an offline trial, leave this disabled:
+For an offline trial, keep this in `.env`:
 
 ```env
 EMAIL_NOTIFICATIONS_ENABLED=false
 ```
 
-When internet access and a dedicated Gmail account are available, set the SMTP values in `.env`, use a Google App Password rather than the normal Gmail password, then change the setting to `true`. If email sending fails, the SDS import is still saved and the import history shows the notification result.
+When internet access and a dedicated Gmail account are available, use a Google App Password in the server `.env` values and enable notifications. The Gmail password is never stored in trial JSON or sent to the browser.
+
+## Replacing the truck image
+
+The shared top-view truck image is `public/uploads/truck.png`. Replace that file with another PNG using the same filename to update the dock, schedule, entry, and monitoring truck visuals.

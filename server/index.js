@@ -51,6 +51,10 @@ const toMinutes = (value) => {
 const toTime = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 const nextId = (rows) => Math.max(0, ...rows.map((row) => Number(row.id) || 0)) + 1;
 const nextCode = (prefix, id, date = localDate()) => `${prefix}-${String(date).replaceAll("-", "")}-${String(id).padStart(3, "0")}`;
+const issueDeliveryCode = (state, date) => {
+  state.settings.deliveryCodeSequence = Number(state.settings.deliveryCodeSequence || 0) + 1;
+  return nextCode("DLV", state.settings.deliveryCodeSequence, date);
+};
 const scheduleLabel = (start, end) => end ? `${start} - ${end}` : start;
 const durationMinutes = (start, end) => {
   if (!start || !end) return null;
@@ -145,6 +149,7 @@ const addAudit = (state, actor, action, detail, shipmentNumber) => state.audit.u
 });
 const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", role: user.role, supplierId: user.supplierId ?? null });
 const canAccessShipment = (user, shipment) => user.role !== "supplier" || Number(user.supplierId) === Number(shipment.supplierId);
+const supplierHasAccount = (state, supplierId) => state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplierId));
 const supplierSafeShipment = (shipment) => ({
   ...shipment,
   dppNumber: undefined,
@@ -154,6 +159,10 @@ const supplierSafeShipment = (shipment) => ({
     quantity: item.quantity,
     uom: item.uom,
     palletCount: item.palletCount,
+    deliverySite: item.deliverySite || null,
+    deliveryWeek: item.deliveryWeek || null,
+    supplierApprovedAt: item.supplierApprovedAt || null,
+    assignedTruckPlate: item.assignedTruckPlate || null,
   })),
 });
 const ensureSupplier = (state, name) => {
@@ -185,6 +194,8 @@ const makeItem = (id, data) => ({
   poQuantity: data.poQuantity ?? null,
   stillToBeDelivered: data.stillToBeDelivered ?? null,
   remarks: data.remarks || null,
+  supplierApprovedAt: data.supplierApprovedAt || null,
+  assignedTruckPlate: data.assignedTruckPlate || null,
 });
 
 async function createInitialState() {
@@ -265,7 +276,7 @@ const store = new JsonStore(DATA_FILE, createInitialState);
 await mkdir(UPLOAD_DIR, { recursive: true });
 await store.initialize();
 await store.update(async (state) => {
-  state.version = 8;
+  state.version = 9;
   state.settings ||= {};
   state.shipments = Array.isArray(state.shipments) ? state.shipments : [];
   state.rdsRequests = Array.isArray(state.rdsRequests) ? state.rdsRequests : [];
@@ -293,6 +304,7 @@ await store.update(async (state) => {
   state.settings.dockCount = 2;
   state.settings.flexibleScheduling = true;
   state.settings.graceMinutes = Number(state.settings.graceMinutes ?? 30);
+  state.settings.deliveryCodeSequence = Number(state.settings.deliveryCodeSequence || Math.max(0, ...state.shipments.map((shipment) => Number(String(shipment.deliveryCode || "").split("-").at(-1)) || 0)));
   state.settings.siteName = String(state.settings.siteName || "Cavite Foods Receiving · Trial");
   state.settings.siteAddress = String(state.settings.siteAddress || "");
   state.settings.siteCoordinates = validCoordinates(state.settings.siteCoordinates) ? { lat: Number(state.settings.siteCoordinates.lat), lon: Number(state.settings.siteCoordinates.lon) } : null;
@@ -368,6 +380,9 @@ await store.update(async (state) => {
     shipment.finalDecisionAt ||= null;
     shipment.finalDecisionBy ||= null;
     shipment.sdsProposalId = Number(shipment.sdsProposalId) || shipment.id;
+    shipment.confirmedTruckLoads = Array.isArray(shipment.confirmedTruckLoads) ? shipment.confirmedTruckLoads : [];
+    shipment.sdsImportIdentity ||= null;
+    shipment.sdsImportFingerprint ||= null;
     if (shipment.tripAt && !shipment.estimatedArrivalAt) applyShipmentEta(state, shipment, shipment.tripAt);
     if (legacyStatus === "RECEIVED" && shipment.completedAt) shipment.status = "GATE_OUT";
     shipment.lastProcessAt ||= shipment.gateOutAt || shipment.receivedAt || shipment.unloadingAt || shipment.gateInAt || shipment.tripAt || null;
@@ -508,7 +523,10 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const shipments = supplierOnly ? state.shipments.filter((shipment) => Number(shipment.supplierId) === Number(_request.user.supplierId)) : state.shipments;
   const shipmentNumbers = new Set(shipments.map((shipment) => shipment.shipmentNumber));
   response.json({
-    shipments: shipments.map((shipment) => supplierOnly ? supplierSafeShipment(shipment) : shipment).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
+    shipments: shipments.map((shipment) => {
+      const linked = supplierHasAccount(state, shipment.supplierId);
+      return supplierOnly ? { ...supplierSafeShipment(shipment), supplierAccountLinked: linked } : { ...shipment, supplierAccountLinked: linked };
+    }).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
     rdsRequests: supplierOnly ? [] : state.rdsRequests,
     materials: supplierOnly ? [] : state.materials,
     suppliers: supplierOnly ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : state.suppliers,
@@ -544,7 +562,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   if (!["ACCEPT", "PROPOSE_ALTERNATIVE"].includes(decision)) return response.status(400).json({ message: "Accept the proposed time or propose one alternative" });
   if (!request.body?.loadConfirmed) return response.status(400).json({ message: "Confirm that the material load is correctly divided between the trucks" });
   if (decision === "PROPOSE_ALTERNATIVE" && (!reason || !validDate(alternativeDate) || !validTime(alternativeTime) || !validTime(alternativeEndTime) || toMinutes(alternativeEndTime) <= toMinutes(alternativeTime))) return response.status(400).json({ message: "A reason, alternative date, start time, and later end time are required" });
-  if (!trucks.length) return response.status(400).json({ message: "Add at least one truck plate and assign every material code" });
+  if (!trucks.length) return response.status(400).json({ message: "Add a truck plate and select at least one material code" });
   const normalizedTrucks = trucks.map((truck) => ({
     truckPlate: String(truck?.truckPlate || "").trim().toUpperCase(),
     driverName: String(truck?.driverName || "").trim() || "To be assigned",
@@ -559,44 +577,68 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
     if (!proposal) return null;
     if (!canAccessShipment(request.user, proposal)) return { forbidden: true };
     if (proposal.bookingStatus !== "PENDING_SUPPLIER") return { alreadyResponded: true };
-    const expectedIds = proposal.items.map((item) => Number(item.id)).sort((a, b) => a - b);
-    const assignedIds = normalizedTrucks.flatMap((truck) => truck.itemIds).sort((a, b) => a - b);
-    if (assignedIds.length !== expectedIds.length || assignedIds.some((id, index) => id !== expectedIds[index])) return { invalidAssignment: true };
+    const expectedIds = new Set(proposal.items.map((item) => Number(item.id)));
+    const existingLoads = Array.isArray(proposal.confirmedTruckLoads) ? proposal.confirmedTruckLoads : [];
+    const alreadyAssignedIds = new Set(existingLoads.flatMap((truck) => truck.itemIds).map(Number));
+    const assignedIds = normalizedTrucks.flatMap((truck) => truck.itemIds);
+    if (new Set(assignedIds).size !== assignedIds.length || assignedIds.some((id) => !expectedIds.has(id) || alreadyAssignedIds.has(id))) return { invalidAssignment: true };
+    if (normalizedTrucks.some((truck) => existingLoads.some((saved) => saved.truckPlate === truck.truckPlate))) return { duplicatePlate: true };
     const respondedAt = new Date().toISOString();
     const proposalId = proposal.id;
+    if (!existingLoads.length) {
+      proposal.supplierResponse = decision === "ACCEPT" ? "ACCEPTED" : "ALTERNATIVE_PROPOSED";
+      proposal.supplierResponseReason = decision === "PROPOSE_ALTERNATIVE" ? reason : null;
+      proposal.supplierRespondedAt = respondedAt;
+      proposal.alternativeDate = decision === "PROPOSE_ALTERNATIVE" ? alternativeDate : null;
+      proposal.alternativeTime = decision === "PROPOSE_ALTERNATIVE" ? alternativeTime : null;
+      proposal.alternativeEndTime = decision === "PROPOSE_ALTERNATIVE" ? alternativeEndTime : null;
+    }
+    const newLoads = normalizedTrucks.map((truck, index) => ({ id: existingLoads.length + index + 1, deliveryCode: issueDeliveryCode(state, proposal.scheduledDate), ...truck, confirmedAt: respondedAt }));
+    proposal.confirmedTruckLoads = [...existingLoads, ...newLoads];
+    for (const load of newLoads) for (const item of proposal.items.filter((row) => load.itemIds.includes(Number(row.id)))) {
+      item.supplierApprovedAt = respondedAt;
+      item.assignedTruckPlate = load.truckPlate;
+    }
+    proposal.loadConfirmedAt = respondedAt;
+    const allLoads = proposal.confirmedTruckLoads;
+    const remainingItemIds = proposal.items.map((item) => Number(item.id)).filter((id) => !allLoads.some((load) => load.itemIds.includes(id)));
+    for (const load of newLoads) addAudit(state, request.user, "SDS_TRUCK_CONFIRMED", `${load.deliveryCode} reserved for ${load.truckPlate} with ${load.itemIds.length} material code(s)`, proposal.shipmentNumber);
+    if (remainingItemIds.length) return { partial: true, confirmedLoads: allLoads, remainingMaterialCount: remainingItemIds.length, bookingStatus: proposal.bookingStatus };
+
     const baseItems = proposal.items.map((item) => ({ ...item }));
     const deliveries = [];
-    normalizedTrucks.forEach((truck, index) => {
+    allLoads.forEach((load, index) => {
       const delivery = index === 0 ? proposal : { ...proposal, id: nextId(state.shipments), items: [], palletIds: [] };
-      delivery.items = baseItems.filter((item) => truck.itemIds.includes(Number(item.id))).map((item) => ({ ...item }));
+      delivery.items = baseItems.filter((item) => load.itemIds.includes(Number(item.id))).map((item) => ({ ...item }));
       delivery.shipmentNumber = nextCode("SHP", delivery.id, proposal.scheduledDate);
       delivery.bookingReceipt = nextCode("BKG", delivery.id, proposal.scheduledDate);
-      delivery.deliveryCode = nextCode("DLV", delivery.id, proposal.scheduledDate);
-      delivery.truckPlate = truck.truckPlate;
-      delivery.driverName = truck.driverName;
-      delivery.driverPhone = truck.driverPhone;
+      delivery.deliveryCode = load.deliveryCode;
+      delivery.truckPlate = load.truckPlate;
+      delivery.driverName = load.driverName;
+      delivery.driverPhone = load.driverPhone;
       delivery.sdsProposalId = proposalId;
-      delivery.supplierResponse = decision === "ACCEPT" ? "ACCEPTED" : "ALTERNATIVE_PROPOSED";
-      delivery.supplierResponseReason = decision === "PROPOSE_ALTERNATIVE" ? reason : null;
-      delivery.supplierRespondedAt = respondedAt;
-      delivery.loadConfirmedAt = respondedAt;
-      delivery.alternativeDate = decision === "PROPOSE_ALTERNATIVE" ? alternativeDate : null;
-      delivery.alternativeTime = decision === "PROPOSE_ALTERNATIVE" ? alternativeTime : null;
-      delivery.alternativeEndTime = decision === "PROPOSE_ALTERNATIVE" ? alternativeEndTime : null;
-      delivery.bookingStatus = decision === "ACCEPT" ? "SUPPLIER_CONFIRMED" : "SUPPLIER_ALTERNATIVE";
+      delivery.supplierResponse = proposal.supplierResponse;
+      delivery.supplierResponseReason = proposal.supplierResponseReason;
+      delivery.supplierRespondedAt = proposal.supplierRespondedAt;
+      delivery.loadConfirmedAt = load.confirmedAt;
+      delivery.alternativeDate = proposal.alternativeDate;
+      delivery.alternativeTime = proposal.alternativeTime;
+      delivery.alternativeEndTime = proposal.alternativeEndTime;
+      delivery.bookingStatus = proposal.supplierResponse === "ALTERNATIVE_PROPOSED" ? "SUPPLIER_ALTERNATIVE" : "SUPPLIER_CONFIRMED";
       delivery.status = "BOOKED";
+      delivery.confirmedTruckLoads = [];
       delivery.materialWeightKg = delivery.items.reduce((sum, item) => sum + (item.uom === "KG" ? item.quantity : item.uom === "MT" ? item.quantity * 1000 : 0), 0);
       delivery.palletsTotal = delivery.items.reduce((sum, item) => sum + Number(item.palletCount || 0), 0);
       if (index > 0) state.shipments.push(delivery);
       deliveries.push({ id: delivery.id, shipmentNumber: delivery.shipmentNumber, deliveryCode: delivery.deliveryCode, truckPlate: delivery.truckPlate });
-      addAudit(state, request.user, "SDS_SUPPLIER_RESPONSE", `${delivery.deliveryCode} assigned to ${delivery.truckPlate}; ${decision === "ACCEPT" ? "proposed time accepted" : "alternative time proposed"}`, delivery.shipmentNumber);
     });
-    return { deliveries, bookingStatus: proposal.bookingStatus };
+    return { partial: false, deliveries, remainingMaterialCount: 0, bookingStatus: proposal.bookingStatus };
   });
   if (!result) return response.status(404).json({ message: "SDS proposal not found" });
   if (result.forbidden) return response.status(403).json({ message: "This SDS proposal belongs to another supplier" });
   if (result.alreadyResponded) return response.status(409).json({ message: "This SDS proposal already has a supplier response" });
-  if (result.invalidAssignment) return response.status(400).json({ message: "Assign every material code exactly once; a material cannot be placed on two trucks" });
+  if (result.invalidAssignment) return response.status(400).json({ message: "Select unconfirmed material codes only; a material can belong to one truck" });
+  if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
   response.json(result);
 }));
 
@@ -789,6 +831,11 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   const state = await store.read();
   const fallbackDate = state.settings.availableDates[0] || localDate(1);
   const preview = await parseDeliveryWorkbook(request.file.buffer, request.file.originalname, { fallbackDate });
+  const accountBySupplier = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplierHasAccount(state, supplier.id)]));
+  const missingSupplierAccounts = [...new Set(preview.rows.filter((row) => !accountBySupplier.get(row.supplier.trim().toLowerCase())).map((row) => row.supplier))].sort();
+  preview.rows = preview.rows.map((row) => ({ ...row, supplierAccountLinked: Boolean(accountBySupplier.get(row.supplier.trim().toLowerCase())) }));
+  preview.missingSupplierAccounts = missingSupplierAccounts;
+  preview.summary.missingSupplierAccounts = missingSupplierAccounts.length;
   const previewToken = randomUUID();
   const expiresAt = Date.now() + 30 * 60 * 1000;
   for (const [key, cached] of importPreviews) if (cached.expiresAt < Date.now()) importPreviews.delete(key);
@@ -796,12 +843,32 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   response.json({ ...preview, previewToken });
 }));
 
+const importHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const importGroupIdentity = (rows) => importHash({
+  supplier: rows[0].supplier.trim().toLowerCase(),
+  site: rows[0].site.trim().toLowerCase(),
+  week: String(rows[0].week || "").trim().toLowerCase(),
+  materialCodes: rows.map((row) => row.materialCode.trim().toUpperCase()).sort(),
+});
+const importGroupFingerprint = (rows) => importHash(rows.map((row) => ({
+  week: String(row.week || "").trim(),
+  site: row.site.trim().toLowerCase(),
+  supplier: row.supplier.trim().toLowerCase(),
+  materialCode: row.materialCode.trim().toUpperCase(),
+  uom: row.uom.trim().toUpperCase(),
+  quantity: Number(row.quantity || 0),
+  date: row.deliveryDate,
+  time: row.deliveryTime,
+  endTime: row.endTime || null,
+})).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))));
+
 app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(async (request, response) => {
   const token = String(request.body?.previewToken || "");
   const cached = importPreviews.get(token);
   if (!cached || cached.userId !== request.user.id || cached.expiresAt < Date.now()) return response.status(410).json({ message: "The import preview expired. Upload the workbook again." });
   const readyRows = cached.preview.rows.filter((row) => row.status === "ready");
   if (!readyRows.length) return response.status(400).json({ message: "No nonblank rows were found to import" });
+  if (cached.preview.missingSupplierAccounts?.length) return response.status(409).json({ message: `Create and link a supplier account before importing: ${cached.preview.missingSupplierAccounts.join(", ")}` });
   const result = await store.update((state) => {
     const groups = new Map();
     for (const row of readyRows) {
@@ -809,95 +876,106 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(row);
     }
+    const supplierByName = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplier]));
+    const missingAccounts = [...new Set([...groups.values()].filter((rows) => {
+      const supplier = supplierByName.get(rows[0].supplier.trim().toLowerCase());
+      return !supplier || !supplierHasAccount(state, supplier.id);
+    }).map((rows) => rows[0].supplier))];
+    if (missingAccounts.length) return { missingAccounts };
+
     const batchId = nextId(state.importBatches);
     let shipmentId = nextId(state.shipments);
-    let itemId = Math.max(0, ...state.shipments.flatMap((shipment) => shipment.items).map((item) => item.id)) + 1;
+    let itemId = Math.max(0, ...state.shipments.flatMap((shipment) => shipment.items || []).map((item) => Number(item.id) || 0)) + 1;
+    let createdProposals = 0, updatedProposals = 0, unchangedProposals = 0, importedRows = 0, unchangedRows = 0;
+    const notifiedSupplierIds = new Set();
+
+    const buildItems = (rows, previousItems = []) => {
+      const reusedIds = new Set();
+      return rows.map((row) => {
+      const previous = previousItems.find((item) => item.materialCode === row.materialCode && !reusedIds.has(item.id));
+      if (previous) reusedIds.add(previous.id);
+      if (!state.materials.some((material) => material.code === row.materialCode)) state.materials.push({ id: nextId(state.materials), code: row.materialCode, name: row.materialName, type: row.materialType || "RM", uom: row.uom, shelfLifeDays: 0, unitsPerPallet: 0, storageZone: "To review" });
+      return makeItem(previous?.id || itemId++, {
+        poNumber: row.poNumber,
+        materialCode: row.materialCode,
+        materialName: row.materialName,
+        quantity: row.quantity,
+        uom: row.uom,
+        palletCount: 0,
+        deliverySite: row.site,
+        deliveryWeek: row.week,
+        poBalance: row.poBalance,
+        poQuantity: row.poQuantity,
+        stillToBeDelivered: row.stillToBeDelivered,
+        remarks: row.remarks,
+      });
+    });
+    };
+
     for (const rows of groups.values()) {
       const first = rows[0];
-      const supplier = ensureSupplier(state, first.supplier);
+      const supplier = supplierByName.get(first.supplier.trim().toLowerCase());
+      const identity = importGroupIdentity(rows);
+      const fingerprint = importGroupFingerprint(rows);
+      const exact = state.shipments.find((shipment) => shipment.sdsImportFingerprint === fingerprint);
+      if (exact) { unchangedProposals += 1; unchangedRows += rows.length; continue; }
+      const editableMatches = state.shipments.filter((shipment) => shipment.sdsImportIdentity === identity && shipment.bookingStatus === "PENDING_SUPPLIER" && Number(shipment.sdsProposalId || shipment.id) === Number(shipment.id) && !(shipment.confirmedTruckLoads || []).length);
+      const existing = editableMatches.length === 1 ? editableMatches[0] : null;
       const availabilitySlot = ensureAvailabilityForTime(state, first.deliveryDate, first.deliveryTime);
-      const items = rows.map((row) => {
-        if (!state.materials.some((material) => material.code === row.materialCode)) state.materials.push({ id: nextId(state.materials), code: row.materialCode, name: row.materialName, type: row.materialType || "RM", uom: row.uom, shelfLifeDays: 0, unitsPerPallet: 0, storageZone: "To review" });
-        return makeItem(itemId++, {
-          poNumber: row.poNumber,
-          materialCode: row.materialCode,
-          materialName: row.materialName,
-          quantity: row.quantity,
-          uom: row.uom,
-          palletCount: 0,
-          sourceSheet: row.sheet,
-          sourceRow: row.sourceRow,
-          sourceFile: cached.preview.fileName,
-          deliverySite: row.site,
-          deliveryWeek: row.week,
-          poBalance: row.poBalance,
-          poQuantity: row.poQuantity,
-          stillToBeDelivered: row.stillToBeDelivered,
-          remarks: row.remarks,
-        });
-      });
+      const items = buildItems(rows, existing?.items || []);
+      supplier.productPresets ||= [];
+      for (const row of rows) {
+        const preset = supplier.productPresets.find((item) => item.materialCode.toUpperCase() === row.materialCode.toUpperCase());
+        if (preset) { preset.uom = row.uom; preset.defaultAmount = row.quantity; }
+        else supplier.productPresets.push({ id: Math.max(0, ...state.suppliers.flatMap((item) => item.productPresets || []).map((item) => Number(item.id) || 0)) + 1, materialCode: row.materialCode, uom: row.uom, defaultAmount: row.quantity });
+      }
+
+      if (existing) {
+        existing.scheduledDate = first.deliveryDate;
+        existing.scheduledTime = first.deliveryTime;
+        existing.scheduledEndTime = first.endTime || null;
+        existing.availabilitySlotId = availabilitySlot.id;
+        existing.expectedDurationMinutes = first.endTime ? durationMinutes(first.deliveryTime, first.endTime) : null;
+        existing.timeSlot = scheduleLabel(first.deliveryTime, first.endTime);
+        existing.items = items;
+        existing.materialWeightKg = rows.reduce((sum, row) => sum + (row.uom === "KG" ? row.quantity : row.uom === "MT" ? row.quantity * 1000 : 0), 0);
+        existing.importBatchId = batchId;
+        existing.sdsImportFingerprint = fingerprint;
+        existing.confirmedTruckLoads = [];
+        updatedProposals += 1;
+        importedRows += rows.length;
+        notifiedSupplierIds.add(supplier.id);
+        addAudit(state, request.user, "SDS_UPDATED", `${existing.shipmentNumber} updated after spreadsheet comparison`, existing.shipmentNumber);
+        continue;
+      }
+
       const currentShipmentId = shipmentId++;
       const shipmentNumber = nextCode("SHP", currentShipmentId, first.deliveryDate);
-      const bookingStatus = "PENDING_SUPPLIER";
       state.shipments.push({
-        id: currentShipmentId,
-        shipmentNumber,
-        bookingReceipt: nextCode("BKG", currentShipmentId, first.deliveryDate),
-        supplier: supplier.name,
-        supplierId: supplier.id,
-        deliveryCode: null,
-        vendorCode: supplier.vendorCode,
-        scheduledDate: first.deliveryDate,
-        scheduledTime: first.deliveryTime,
-        scheduledEndTime: first.endTime || null,
-        availabilitySlotId: availabilitySlot.id,
-        expectedDurationMinutes: first.endTime ? durationMinutes(first.deliveryTime, first.endTime) : null,
-        timeSlot: scheduleLabel(first.deliveryTime, first.endTime),
-        shift: "Flexible date",
-        bookingStatus,
-        status: "BOOKED",
-        truckPlate: "TO BE ASSIGNED",
-        driverName: "To be assigned",
-        driverPhone: "",
-        materialWeightKg: rows.reduce((sum, row) => sum + (row.uom === "KG" ? row.quantity : row.uom === "MT" ? row.quantity * 1000 : 0), 0),
-        dock: null,
-        arrivalTime: null,
-        startedAt: null,
-        completedAt: null,
-        lastProcessAt: null,
-        tripAt: null,
-        gateInAt: null,
-        unloadingAt: null,
-        receivedAt: null,
-        gateOutAt: null,
-        rejectionReason: null,
-        supplierResponse: null,
-        supplierResponseReason: null,
-        supplierRespondedAt: null,
-        alternativeDate: null,
-        alternativeTime: null,
-        alternativeEndTime: null,
-        loadConfirmedAt: null,
-        finalDecisionAt: null,
-        finalDecisionBy: null,
-        sdsProposalId: currentShipmentId,
-        importBatchId: batchId,
-        importSource: cached.preview.fileName,
-        items,
-        palletsScanned: 0,
-        palletsTotal: 0,
-        palletIds: [],
+        id: currentShipmentId, shipmentNumber, bookingReceipt: nextCode("BKG", currentShipmentId, first.deliveryDate), supplier: supplier.name, supplierId: supplier.id,
+        deliveryCode: null, vendorCode: supplier.vendorCode, scheduledDate: first.deliveryDate, scheduledTime: first.deliveryTime, scheduledEndTime: first.endTime || null,
+        availabilitySlotId: availabilitySlot.id, expectedDurationMinutes: first.endTime ? durationMinutes(first.deliveryTime, first.endTime) : null,
+        timeSlot: scheduleLabel(first.deliveryTime, first.endTime), shift: "Flexible date", bookingStatus: "PENDING_SUPPLIER", status: "BOOKED",
+        truckPlate: "TO BE ASSIGNED", driverName: "To be assigned", driverPhone: "", materialWeightKg: rows.reduce((sum, row) => sum + (row.uom === "KG" ? row.quantity : row.uom === "MT" ? row.quantity * 1000 : 0), 0),
+        dock: null, arrivalTime: null, startedAt: null, completedAt: null, lastProcessAt: null, tripAt: null, gateInAt: null, unloadingAt: null, receivedAt: null, gateOutAt: null,
+        rejectionReason: null, supplierResponse: null, supplierResponseReason: null, supplierRespondedAt: null, alternativeDate: null, alternativeTime: null, alternativeEndTime: null,
+        loadConfirmedAt: null, finalDecisionAt: null, finalDecisionBy: null, sdsProposalId: currentShipmentId, importBatchId: batchId, importSource: null,
+        sdsImportIdentity: identity, sdsImportFingerprint: fingerprint, confirmedTruckLoads: [], items, palletsScanned: 0, palletsTotal: 0, palletIds: [],
       });
-      addAudit(state, request.user, "SDS_IMPORTED", `${shipmentNumber} created from ${cached.preview.fileName}; waiting for the supplier's one-time response`, shipmentNumber);
+      createdProposals += 1;
+      importedRows += rows.length;
+      notifiedSupplierIds.add(supplier.id);
+      addAudit(state, request.user, "SDS_IMPORTED", `${shipmentNumber} created and linked to ${supplier.name}`, shipmentNumber);
     }
     syncAvailableDates(state);
-    const batch = { id: batchId, fileName: cached.preview.fileName, status: "IMPORTED", totalRows: cached.preview.summary.totalRows, importedRows: readyRows.length, skippedRows: 0, deliveryCount: groups.size, createdAt: new Date().toISOString(), completedAt: new Date().toISOString(), notificationStatus: "PENDING", notificationsSent: 0, notificationsFailed: 0 };
+    const deliveryCount = createdProposals + updatedProposals;
+    const batch = { id: batchId, fileName: cached.preview.fileName, status: deliveryCount ? "IMPORTED" : "UNCHANGED", totalRows: cached.preview.summary.totalRows, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, createdAt: new Date().toISOString(), completedAt: new Date().toISOString(), notificationStatus: "PENDING", notificationsSent: 0, notificationsFailed: 0 };
     state.importBatches.unshift(batch);
-    addAudit(state, request.user, "SDS_IMPORT_COMPLETED", `${groups.size} supplier proposals and ${readyRows.length} material rows imported from ${cached.preview.fileName}`);
-    const supplierIds = [...new Set([...groups.values()].map((rows) => ensureSupplier(state, rows[0].supplier).id))];
-    const recipients = state.users.filter((user) => user.role === "supplier" && supplierIds.includes(Number(user.supplierId))).map((user) => user.email).filter(Boolean);
-    return { batchId, importedRows: readyRows.length, skippedRows: 0, deliveryCount: groups.size, recipients };
+    addAudit(state, request.user, "SDS_IMPORT_COMPLETED", `${createdProposals} created, ${updatedProposals} updated, ${unchangedProposals} unchanged after spreadsheet comparison`);
+    const recipients = state.users.filter((user) => user.role === "supplier" && notifiedSupplierIds.has(Number(user.supplierId))).map((user) => user.email).filter(Boolean);
+    return { batchId, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, recipients };
   });
+  if (result.missingAccounts) return response.status(409).json({ message: `Create and link a supplier account before importing: ${result.missingAccounts.join(", ")}` });
   importPreviews.delete(token);
   let notification;
   try { notification = await emailNotifications.sendNewSds({ recipients: result.recipients, fileName: cached.preview.fileName, proposalCount: result.deliveryCount }); }
@@ -931,6 +1009,7 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
     if (request.body.role === "supplier") {
       const existing = state.suppliers.find((supplier) => supplier.id === Number(request.body.supplierId));
       const supplier = existing || ensureSupplier(state, request.body.supplierName || request.body.name);
+      if (state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplier.id))) return { supplierAlreadyLinked: true };
       supplier.productPresets ||= [];
       supplierId = supplier.id;
     }
@@ -940,6 +1019,7 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
     return { id, supplierId };
   });
   if (result.duplicate) return response.status(409).json({ message: "That username already exists" });
+  if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active supplier account" });
   activeAccountRoles.set(Number(result.id), request.body.role);
   response.status(201).json(result);
 }));

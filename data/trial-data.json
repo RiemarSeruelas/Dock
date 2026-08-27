@@ -3,16 +3,17 @@
     "Stop the api container before editing this file so a running write does not replace your changes.",
     "Dates use YYYY-MM-DD and times use 24-hour HH:MM.",
     "IDs may be omitted on new users, supplier products, materials, shipments, items, and availability windows; DockFlow assigns them at startup.",
-    "Supplier accounts need role supplier, a supplierId, and an email. Configure their allowed material codes in suppliers[].productPresets.",
-    "Normal delivery proposals should be added by importing an SDS spreadsheet in Schedule; every material row is kept.",
-    "Imported proposals start at PENDING_SUPPLIER. The supplier confirms truck plates and material allocation once, then Planner or Production makes the final decision.",
+    "Supplier accounts need role supplier, a supplierId, and an email. One active supplier account must link directly to one suppliers[] record.",
+    "Normal delivery proposals should be added by importing an SDS spreadsheet in Schedule. Identical proposals remain unchanged and changed pending proposals are updated.",
+    "Imported proposals start at PENDING_SUPPLIER. The supplier confirms one truck and its material codes at a time until every code has a truck.",
     "A manually added user may use a plain password field once; DockFlow replaces it with passwordHash on startup. Never place Gmail or SMTP passwords in this JSON file."
   ],
-  "version": 8,
+  "version": 9,
   "settings": {
     "siteName": "Cavite Foods Receiving · Trial",
     "dockCount": 2,
     "graceMinutes": 30,
+    "deliveryCodeSequence": 4,
     "flexibleScheduling": true,
     "availableDates": [
       "2026-08-13",

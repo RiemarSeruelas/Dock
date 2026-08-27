@@ -69,43 +69,86 @@ test("SDS import, supplier truck allocation, final approval, and scan journey", 
   sheet.addRow(["Supplier", "Material Code", "Description", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time"]);
   sheet.addRow(["Trial Ingredients Supplier", "SDS-1001", "Protected ingredient A", "KG", 500, "28-Aug-2026", "09:00", "11:00"]);
   sheet.addRow(["Trial Ingredients Supplier", "SDS-1002", "Protected ingredient B", "KG", 300, "28-Aug-2026", "09:00", "11:00"]);
-  const form = new FormData();
-  form.append("file", new Blob([Buffer.from(await workbook.xlsx.writeBuffer())]), "supplier-sds.xlsx");
-  const previewResponse = await fetch(`${baseUrl}/api/imports/excel/preview`, { method: "POST", headers: { Authorization: `Bearer ${admin.token}` }, body: form });
+  const uploadPreview = async (sourceWorkbook, fileName = "supplier-sds.xlsx") => {
+    const form = new FormData();
+    form.append("file", new Blob([Buffer.from(await sourceWorkbook.xlsx.writeBuffer())]), fileName);
+    const response = await fetch(`${baseUrl}/api/imports/excel/preview`, { method: "POST", headers: { Authorization: `Bearer ${admin.token}` }, body: form });
+    return { response, result: await response.json() };
+  };
+  const { response: previewResponse, result: preview } = await uploadPreview(workbook);
   assert.equal(previewResponse.status, 200);
-  const preview = await previewResponse.json();
   assert.equal(preview.summary.readyRows, 2);
+  assert.equal(preview.summary.missingSupplierAccounts, 0);
   const committed = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: preview.previewToken } });
   assert.equal(committed.response.status, 201);
   assert.equal(committed.result.deliveryCount, 1);
   assert.equal(committed.result.notification.status, "DISABLED");
 
+  const duplicatePreview = await uploadPreview(workbook, "same-data-renamed.xlsx");
+  const duplicateCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: duplicatePreview.result.previewToken } });
+  assert.equal(duplicateCommit.response.status, 201);
+  assert.equal(duplicateCommit.result.deliveryCount, 0);
+  assert.equal(duplicateCommit.result.unchangedProposals, 1);
+
+  sheet.getRow(2).getCell(5).value = 550;
+  const changedPreview = await uploadPreview(workbook, "changed-data.xlsx");
+  const changedCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: changedPreview.result.previewToken } });
+  assert.equal(changedCommit.response.status, 201);
+  assert.equal(changedCommit.result.updatedProposals, 1);
+
+  const missingAccountWorkbook = new ExcelJS.Workbook();
+  const missingSheet = missingAccountWorkbook.addWorksheet("SDS Schedule");
+  missingSheet.addRow(["Week", "Site", "Supplier", "Code", "UOM", "Qty for delivery", "Date", "Time"]);
+  missingSheet.addRow([30, "Dressings", "Supplier Without Account", "NO-ACCOUNT-1", "KG", 10, "28-Aug-2026", "09:00"]);
+  const missingPreview = await uploadPreview(missingAccountWorkbook, "missing-account.xlsx");
+  assert.deepEqual(missingPreview.result.missingSupplierAccounts, ["Supplier Without Account"]);
+  const missingCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: missingPreview.result.previewToken } });
+  assert.equal(missingCommit.response.status, 409);
+
   const supplierAfterImport = await call("/api/bootstrap", { token: supplier.token });
-  const proposal = supplierAfterImport.result.shipments.find((shipment) => shipment.importBatchId === committed.result.batchId);
+  const proposal = supplierAfterImport.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-1001"));
   assert.equal(proposal.bookingStatus, "PENDING_SUPPLIER");
   assert.equal(proposal.deliveryCode, null);
   assert.equal("dppNumber" in proposal, false);
   assert.deepEqual(proposal.items.map((item) => item.materialCode).sort(), ["SDS-1001", "SDS-1002"]);
+  assert.equal(proposal.items.find((item) => item.materialCode === "SDS-1001").quantity, 550);
   assert.equal((await call(`/api/shipments/${proposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
 
   const incompleteAlternative = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", itemIds: proposal.items.map((item) => item.id) }] } });
   assert.equal(incompleteAlternative.response.status, 400);
 
-  const supplierResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
+  const firstTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
     decision: "PROPOSE_ALTERNATIVE",
     reason: "Two trucks must be loaded on the following shift",
     alternativeDate: "2026-08-29",
     alternativeTime: "13:00",
     alternativeEndTime: "15:00",
     loadConfirmed: true,
-    trucks: [
-      { truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "09170000001", itemIds: [proposal.items[0].id] },
-      { truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "09170000002", itemIds: [proposal.items[1].id] },
-    ],
+    trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "09170000001", itemIds: [proposal.items[0].id] }],
   } });
-  assert.equal(supplierResponse.response.status, 200);
-  assert.equal(supplierResponse.result.deliveries.length, 2);
-  assert.ok(supplierResponse.result.deliveries.every((delivery) => /^DLV-/.test(delivery.deliveryCode)));
+  assert.equal(firstTruckResponse.response.status, 200);
+  assert.equal(firstTruckResponse.result.partial, true);
+  assert.equal(firstTruckResponse.result.remainingMaterialCount, 1);
+  assert.match(firstTruckResponse.result.confirmedLoads[0].deliveryCode, /^DLV-/);
+
+  const partialBootstrap = await call("/api/bootstrap", { token: supplier.token });
+  const partialProposal = partialBootstrap.result.shipments.find((shipment) => shipment.id === proposal.id);
+  assert.equal(partialProposal.bookingStatus, "PENDING_SUPPLIER");
+  assert.equal(partialProposal.items.filter((item) => item.supplierApprovedAt).length, 1);
+
+  const secondTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
+    decision: "PROPOSE_ALTERNATIVE",
+    reason: "Two trucks must be loaded on the following shift",
+    alternativeDate: "2026-08-29",
+    alternativeTime: "13:00",
+    alternativeEndTime: "15:00",
+    loadConfirmed: true,
+    trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "09170000002", itemIds: [proposal.items[1].id] }],
+  } });
+  assert.equal(secondTruckResponse.response.status, 200);
+  assert.equal(secondTruckResponse.result.partial, false);
+  assert.equal(secondTruckResponse.result.deliveries.length, 2);
+  assert.ok(secondTruckResponse.result.deliveries.every((delivery) => /^DLV-/.test(delivery.deliveryCode)));
 
   const productionQueue = await call("/api/bootstrap", { token: production.token });
   const group = productionQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);

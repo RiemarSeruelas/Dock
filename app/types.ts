@@ -55,6 +55,18 @@ export interface ShipmentItem {
   poQuantity?: number | null;
   stillToBeDelivered?: number | null;
   remarks?: string | null;
+  supplierApprovedAt?: string | null;
+  assignedTruckPlate?: string | null;
+}
+
+export interface ConfirmedTruckLoad {
+  id: number;
+  deliveryCode: string;
+  truckPlate: string;
+  driverName: string;
+  driverPhone: string;
+  itemIds: number[];
+  confirmedAt: string;
 }
 
 export interface Shipment {
@@ -105,6 +117,10 @@ export interface Shipment {
   sdsProposalId?: number | null;
   importBatchId?: number | null;
   importSource?: string | null;
+  supplierAccountLinked?: boolean;
+  confirmedTruckLoads?: ConfirmedTruckLoad[];
+  sdsImportIdentity?: string | null;
+  sdsImportFingerprint?: string | null;
   items: ShipmentItem[];
   palletsScanned: number;
   palletsTotal: number;
