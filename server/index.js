@@ -276,7 +276,7 @@ const store = new JsonStore(DATA_FILE, createInitialState);
 await mkdir(UPLOAD_DIR, { recursive: true });
 await store.initialize();
 await store.update(async (state) => {
-  state.version = 9;
+  state.version = 10;
   state.settings ||= {};
   state.shipments = Array.isArray(state.shipments) ? state.shipments : [];
   state.rdsRequests = Array.isArray(state.rdsRequests) ? state.rdsRequests : [];
@@ -314,6 +314,11 @@ await store.update(async (state) => {
   for (const slot of state.settings.availableSlots) { slot.id ||= nextSlotId++; slot.label = String(slot.label || "Open receiving window"); }
   let nextSupplierId = nextId(state.suppliers);
   let nextPresetId = Math.max(0, ...state.suppliers.flatMap((supplier) => supplier.productPresets || []).map((preset) => Number(preset.id) || 0)) + 1;
+  const legacyPresetCodes = new Map([
+    ["EGGS", "65013575"],
+    ["MAYONNAISE", "65013507"],
+    ["DELTA CAP 470/700/940 ML", "65013743"],
+  ]);
   for (const supplier of state.suppliers) {
     supplier.id ||= nextSupplierId++;
     supplier.name = String(supplier.name || "Supplier to assign");
@@ -324,7 +329,7 @@ await store.update(async (state) => {
     supplier.routeDurationMinutes = Number(supplier.routeDurationMinutes || 0) || null;
     supplier.routeCalculatedAt = supplier.routeCalculatedAt || null;
     supplier.routeProvider = supplier.routeProvider || null;
-    supplier.productPresets = Array.isArray(supplier.productPresets) ? supplier.productPresets.map((preset) => ({ id: Number(preset.id) || nextPresetId++, materialCode: String(preset.materialCode || preset.name || `CODE-${nextPresetId}`).trim().toUpperCase(), uom: String(preset.uom || "KG"), defaultAmount: Number(preset.defaultAmount || 0) })) : [];
+    supplier.productPresets = Array.isArray(supplier.productPresets) ? supplier.productPresets.map((preset) => { const rawCode = String(preset.materialCode || preset.name || `CODE-${nextPresetId}`).trim().toUpperCase(); return { id: Number(preset.id) || nextPresetId++, materialCode: legacyPresetCodes.get(rawCode) || rawCode, uom: String(preset.uom || "KG"), defaultAmount: Number(preset.defaultAmount || 0) }; }) : [];
     if (!supplier.productPresets.length) {
       const matchingMaterials = state.shipments.filter((shipment) => shipment.supplier === supplier.name).flatMap((shipment) => shipment.items || []);
       const seen = new Set();
@@ -345,6 +350,15 @@ await store.update(async (state) => {
     const statusMigration = { PLANNED: "BOOKED", ARRIVED: "GATE_IN", VERIFIED: "GATE_IN", PARKING: "GATE_IN", AT_DOCK: "UNLOADING" };
     shipment.status = statusMigration[legacyStatus] || (["BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"].includes(legacyStatus) ? legacyStatus : "BOOKED");
     if (shipment.bookingStatus === "PENDING_APPROVAL") shipment.bookingStatus = "PENDING_SUPPLIER";
+    if (shipment.bookingStatus === "SUPPLIER_ALTERNATIVE" && validDate(shipment.alternativeDate) && validTime(shipment.alternativeTime)) {
+      shipment.scheduledDate = shipment.alternativeDate;
+      shipment.scheduledTime = shipment.alternativeTime;
+      shipment.scheduledEndTime = validTime(shipment.alternativeEndTime) ? shipment.alternativeEndTime : shipment.scheduledEndTime;
+    }
+    if (["SUPPLIER_CONFIRMED", "SUPPLIER_ALTERNATIVE"].includes(shipment.bookingStatus)) {
+      shipment.bookingStatus = "APPROVED";
+      if (shipment.status !== "REJECTED") shipment.status = "BOOKED";
+    }
     shipment.bookingStatus ||= shipment.status === "REJECTED" ? "REJECTED" : "APPROVED";
     shipment.shipmentNumber ||= nextCode("SHP", shipment.id, shipment.scheduledDate);
     shipment.bookingReceipt ||= nextCode("BKG", shipment.id, shipment.scheduledDate);
@@ -525,10 +539,10 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   response.json({
     shipments: shipments.map((shipment) => {
       const linked = supplierHasAccount(state, shipment.supplierId);
-      return supplierOnly ? { ...supplierSafeShipment(shipment), supplierAccountLinked: linked } : { ...shipment, supplierAccountLinked: linked };
+      return { ...supplierSafeShipment(shipment), supplierAccountLinked: linked };
     }).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
     rdsRequests: supplierOnly ? [] : state.rdsRequests,
-    materials: supplierOnly ? [] : state.materials,
+    materials: [],
     suppliers: supplierOnly ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : state.suppliers,
     users: _request.user.role === "admin" ? state.users.map(publicUser) : [],
     audit: supplierOnly ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : state.audit,
@@ -624,12 +638,23 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
       delivery.alternativeDate = proposal.alternativeDate;
       delivery.alternativeTime = proposal.alternativeTime;
       delivery.alternativeEndTime = proposal.alternativeEndTime;
-      delivery.bookingStatus = proposal.supplierResponse === "ALTERNATIVE_PROPOSED" ? "SUPPLIER_ALTERNATIVE" : "SUPPLIER_CONFIRMED";
+      if (proposal.supplierResponse === "ALTERNATIVE_PROPOSED") {
+        delivery.scheduledDate = proposal.alternativeDate;
+        delivery.scheduledTime = proposal.alternativeTime;
+        delivery.scheduledEndTime = proposal.alternativeEndTime;
+        delivery.timeSlot = scheduleLabel(delivery.scheduledTime, delivery.scheduledEndTime);
+        delivery.expectedDurationMinutes = durationMinutes(delivery.scheduledTime, delivery.scheduledEndTime);
+        delivery.availabilitySlotId = ensureAvailabilityForTime(state, delivery.scheduledDate, delivery.scheduledTime).id;
+      }
+      delivery.bookingStatus = "APPROVED";
       delivery.status = "BOOKED";
+      delivery.finalDecisionAt = load.confirmedAt;
+      delivery.finalDecisionBy = request.user.name;
       delivery.confirmedTruckLoads = [];
       delivery.materialWeightKg = delivery.items.reduce((sum, item) => sum + (item.uom === "KG" ? item.quantity : item.uom === "MT" ? item.quantity * 1000 : 0), 0);
       delivery.palletsTotal = delivery.items.reduce((sum, item) => sum + Number(item.palletCount || 0), 0);
       if (index > 0) state.shipments.push(delivery);
+      addAudit(state, request.user, "SUPPLIER_BOOKING_CONFIRMED", `${delivery.deliveryCode} confirmed for ${delivery.truckPlate}`, delivery.shipmentNumber);
       deliveries.push({ id: delivery.id, shipmentNumber: delivery.shipmentNumber, deliveryCode: delivery.deliveryCode, truckPlate: delivery.truckPlate });
     });
     return { partial: false, deliveries, remainingMaterialCount: 0, bookingStatus: proposal.bookingStatus };
@@ -642,40 +667,6 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   response.json(result);
 }));
 
-app.patch("/api/shipments/:id/final-decision", auth, allow(...planningRoles), asyncRoute(async (request, response) => {
-  const decision = String(request.body?.decision || "").toUpperCase();
-  const reason = String(request.body?.reason || "").trim();
-  if (!["APPROVE", "REJECT"].includes(decision)) return response.status(400).json({ message: "Choose approve or reject" });
-  if (decision === "REJECT" && !reason) return response.status(400).json({ message: "Enter the final rejection reason" });
-  const result = await store.update((state) => {
-    const selected = state.shipments.find((shipment) => shipment.id === Number(request.params.id));
-    if (!selected) return null;
-    const proposalId = Number(selected.sdsProposalId || selected.id);
-    const group = state.shipments.filter((shipment) => Number(shipment.sdsProposalId || shipment.id) === proposalId);
-    if (!group.every((shipment) => ["SUPPLIER_CONFIRMED", "SUPPLIER_ALTERNATIVE"].includes(shipment.bookingStatus))) return { notReady: true };
-    const decidedAt = new Date().toISOString();
-    for (const shipment of group) {
-      if (decision === "APPROVE" && shipment.bookingStatus === "SUPPLIER_ALTERNATIVE") {
-        shipment.scheduledDate = shipment.alternativeDate;
-        shipment.scheduledTime = shipment.alternativeTime;
-        shipment.scheduledEndTime = shipment.alternativeEndTime;
-        shipment.timeSlot = scheduleLabel(shipment.scheduledTime, shipment.scheduledEndTime);
-        shipment.expectedDurationMinutes = durationMinutes(shipment.scheduledTime, shipment.scheduledEndTime);
-      }
-      shipment.bookingStatus = decision === "APPROVE" ? "APPROVED" : "REJECTED";
-      shipment.status = decision === "APPROVE" ? "BOOKED" : "REJECTED";
-      shipment.rejectionReason = decision === "REJECT" ? reason : null;
-      shipment.finalDecisionAt = decidedAt;
-      shipment.finalDecisionBy = request.user.name;
-      addAudit(state, request.user, decision === "APPROVE" ? "SDS_FINAL_APPROVAL" : "SDS_FINAL_REJECTION", `${shipment.deliveryCode} ${decision === "APPROVE" ? "approved" : `rejected: ${reason}`}`, shipment.shipmentNumber);
-    }
-    return { ok: true, bookingStatus: group[0].bookingStatus, deliveryCount: group.length };
-  });
-  if (!result) return response.status(404).json({ message: "Delivery proposal not found" });
-  if (result.notReady) return response.status(409).json({ message: "The supplier must confirm the truck load and proposed or alternative time first" });
-  response.json(result);
-}));
-
 app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRoute(async (request, response) => {
   const scheduledDate = String(request.body?.scheduledDate || "");
   const scheduledTime = String(request.body?.scheduledTime || "").slice(0, 5);
@@ -685,14 +676,14 @@ app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRou
     const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
     if (!shipment) return null;
     if (shipment.status !== "BOOKED") return { locked: true };
-    const previous = `${shipment.scheduledDate} ${shipment.scheduledTime}–${shipment.scheduledEndTime || shipment.scheduledTime}`;
+    const previous = `${shipment.scheduledDate} ${shipment.scheduledTime}`;
     shipment.scheduledDate = scheduledDate;
     shipment.scheduledTime = scheduledTime;
     shipment.scheduledEndTime = scheduledEndTime;
     shipment.expectedDurationMinutes = durationMinutes(scheduledTime, scheduledEndTime);
     shipment.timeSlot = scheduleLabel(scheduledTime, scheduledEndTime);
     shipment.availabilitySlotId = matchingAvailability(state, scheduledDate, scheduledTime, scheduledEndTime)?.id || null;
-    addAudit(state, request.user, "BOOKING_RESCHEDULED", `${shipment.shipmentNumber} moved from ${previous} to ${scheduledDate} ${scheduledTime}–${scheduledEndTime}`, shipment.shipmentNumber);
+    addAudit(state, request.user, "BOOKING_RESCHEDULED", `${shipment.shipmentNumber} moved from ${previous} to ${scheduledDate} ${scheduledTime}`, shipment.shipmentNumber);
     return { ok: true, shipment };
   });
   if (!result) return response.status(404).json({ message: "Shipment not found" });
@@ -836,6 +827,24 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   preview.rows = preview.rows.map((row) => ({ ...row, supplierAccountLinked: Boolean(accountBySupplier.get(row.supplier.trim().toLowerCase())) }));
   preview.missingSupplierAccounts = missingSupplierAccounts;
   preview.summary.missingSupplierAccounts = missingSupplierAccounts.length;
+  const conflicts = [];
+  for (const rows of groupImportRows(preview.rows.filter((row) => row.status === "ready")).values()) {
+    const fingerprint = importGroupFingerprint(rows);
+    if (state.shipments.some((shipment) => shipment.sdsImportFingerprint === fingerprint)) continue;
+    const identity = importGroupIdentity(rows);
+    const editableMatches = state.shipments.filter((shipment) => shipment.sdsImportIdentity === identity && shipment.bookingStatus === "PENDING_SUPPLIER" && Number(shipment.sdsProposalId || shipment.id) === Number(shipment.id) && !(shipment.confirmedTruckLoads || []).length);
+    if (editableMatches.length !== 1) continue;
+    const existing = editableMatches[0];
+    const first = rows[0];
+    const changes = [];
+    if (existing.scheduledDate !== first.deliveryDate) changes.push("date");
+    if (existing.scheduledTime !== first.deliveryTime) changes.push("time");
+    if ((existing.scheduledEndTime || null) !== (first.endTime || null)) changes.push("duration");
+    if (JSON.stringify(existing.items.map((item) => [item.materialCode, Number(item.quantity || 0), item.uom]).sort()) !== JSON.stringify(rows.map((row) => [row.materialCode, Number(row.quantity || 0), row.uom]).sort())) changes.push("material quantities");
+    conflicts.push({ key: fingerprint, shipmentNumber: existing.shipmentNumber, supplier: first.supplier, materialCodes: rows.map((row) => row.materialCode), currentDate: existing.scheduledDate, currentTime: existing.scheduledTime, proposedDate: first.deliveryDate, proposedTime: first.deliveryTime, changes });
+  }
+  preview.conflicts = conflicts;
+  preview.summary.conflicts = conflicts.length;
   const previewToken = randomUUID();
   const expiresAt = Date.now() + 30 * 60 * 1000;
   for (const [key, cached] of importPreviews) if (cached.expiresAt < Date.now()) importPreviews.delete(key);
@@ -843,14 +852,14 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   response.json({ ...preview, previewToken });
 }));
 
-const importHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const importGroupIdentity = (rows) => importHash({
+function importHash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
+function importGroupIdentity(rows) { return importHash({
   supplier: rows[0].supplier.trim().toLowerCase(),
   site: rows[0].site.trim().toLowerCase(),
   week: String(rows[0].week || "").trim().toLowerCase(),
   materialCodes: rows.map((row) => row.materialCode.trim().toUpperCase()).sort(),
-});
-const importGroupFingerprint = (rows) => importHash(rows.map((row) => ({
+}); }
+function importGroupFingerprint(rows) { return importHash(rows.map((row) => ({
   week: String(row.week || "").trim(),
   site: row.site.trim().toLowerCase(),
   supplier: row.supplier.trim().toLowerCase(),
@@ -860,28 +869,42 @@ const importGroupFingerprint = (rows) => importHash(rows.map((row) => ({
   date: row.deliveryDate,
   time: row.deliveryTime,
   endTime: row.endTime || null,
-})).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))));
+})).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))); }
+function groupImportRows(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = row.placeholderFields?.length ? `${row.sheet}|${row.sourceRow}` : `${row.supplier.toLowerCase()}|${row.deliveryDate}|${row.deliveryTime}|${row.endTime || ""}|${row.site.toLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+}
 
 app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(async (request, response) => {
   const token = String(request.body?.previewToken || "");
   const cached = importPreviews.get(token);
   if (!cached || cached.userId !== request.user.id || cached.expiresAt < Date.now()) return response.status(410).json({ message: "The import preview expired. Upload the workbook again." });
   const readyRows = cached.preview.rows.filter((row) => row.status === "ready");
+  const conflictDecisions = request.body?.conflictDecisions && typeof request.body.conflictDecisions === "object" ? request.body.conflictDecisions : {};
   if (!readyRows.length) return response.status(400).json({ message: "No nonblank rows were found to import" });
   if (cached.preview.missingSupplierAccounts?.length) return response.status(409).json({ message: `Create and link a supplier account before importing: ${cached.preview.missingSupplierAccounts.join(", ")}` });
   const result = await store.update((state) => {
-    const groups = new Map();
-    for (const row of readyRows) {
-      const key = row.placeholderFields?.length ? `${row.sheet}|${row.sourceRow}` : `${row.supplier.toLowerCase()}|${row.deliveryDate}|${row.deliveryTime}|${row.endTime || ""}|${row.site.toLowerCase()}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(row);
-    }
+    const groups = groupImportRows(readyRows);
     const supplierByName = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplier]));
     const missingAccounts = [...new Set([...groups.values()].filter((rows) => {
       const supplier = supplierByName.get(rows[0].supplier.trim().toLowerCase());
       return !supplier || !supplierHasAccount(state, supplier.id);
     }).map((rows) => rows[0].supplier))];
     if (missingAccounts.length) return { missingAccounts };
+    const unresolvedConflicts = [];
+    for (const rows of groups.values()) {
+      const fingerprint = importGroupFingerprint(rows);
+      if (state.shipments.some((shipment) => shipment.sdsImportFingerprint === fingerprint)) continue;
+      const identity = importGroupIdentity(rows);
+      const editableMatches = state.shipments.filter((shipment) => shipment.sdsImportIdentity === identity && shipment.bookingStatus === "PENDING_SUPPLIER" && Number(shipment.sdsProposalId || shipment.id) === Number(shipment.id) && !(shipment.confirmedTruckLoads || []).length);
+      if (editableMatches.length === 1 && !["UPDATE", "KEEP"].includes(String(conflictDecisions[fingerprint] || "").toUpperCase())) unresolvedConflicts.push({ key: fingerprint, shipmentNumber: editableMatches[0].shipmentNumber });
+    }
+    if (unresolvedConflicts.length) return { conflictDecisionRequired: unresolvedConflicts };
 
     const batchId = nextId(state.importBatches);
     let shipmentId = nextId(state.shipments);
@@ -921,6 +944,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       if (exact) { unchangedProposals += 1; unchangedRows += rows.length; continue; }
       const editableMatches = state.shipments.filter((shipment) => shipment.sdsImportIdentity === identity && shipment.bookingStatus === "PENDING_SUPPLIER" && Number(shipment.sdsProposalId || shipment.id) === Number(shipment.id) && !(shipment.confirmedTruckLoads || []).length);
       const existing = editableMatches.length === 1 ? editableMatches[0] : null;
+      if (existing && String(conflictDecisions[fingerprint]).toUpperCase() === "KEEP") { unchangedProposals += 1; unchangedRows += rows.length; continue; }
       const availabilitySlot = ensureAvailabilityForTime(state, first.deliveryDate, first.deliveryTime);
       const items = buildItems(rows, existing?.items || []);
       supplier.productPresets ||= [];
@@ -976,6 +1000,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     return { batchId, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, recipients };
   });
   if (result.missingAccounts) return response.status(409).json({ message: `Create and link a supplier account before importing: ${result.missingAccounts.join(", ")}` });
+  if (result.conflictDecisionRequired) return response.status(409).json({ message: "Choose whether to keep or update every conflicting proposal before importing", conflicts: result.conflictDecisionRequired });
   importPreviews.delete(token);
   let notification;
   try { notification = await emailNotifications.sendNewSds({ recipients: result.recipients, fileName: cached.preview.fileName, proposalCount: result.deliveryCount }); }
@@ -1102,10 +1127,12 @@ app.patch("/api/suppliers/:id/route", auth, allow("admin"), asyncRoute(async (re
 }));
 
 app.patch("/api/suppliers/:id/presets", auth, allow("admin"), asyncRoute(async (request, response) => {
+  const requestedPresets = Array.isArray(request.body?.presets) ? request.body.presets : [];
+  if (requestedPresets.some((preset) => !/^[A-Za-z0-9._/-]+$/.test(String(preset.materialCode || "").trim()))) return response.status(400).json({ message: "Material codes may contain letters, numbers, dots, slashes, underscores, or hyphens only—do not enter material descriptions" });
   const result = await store.update((state) => {
     const supplier = state.suppliers.find((row) => row.id === Number(request.params.id));
     if (!supplier) return null;
-    const presets = Array.isArray(request.body?.presets) ? request.body.presets : [];
+    const presets = requestedPresets;
     let presetId = Math.max(0, ...state.suppliers.flatMap((row) => row.productPresets || []).map((preset) => Number(preset.id) || 0)) + 1;
     supplier.productPresets = presets.map((preset) => ({
       id: Number(preset.id) || presetId++,
@@ -1204,7 +1231,7 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "supplier"), asyncRoute
   const generated = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: TIME_ZONE }).format(new Date());
   titleSheet(summary, "DockFlow Delivery Performance Report", `${selectedSupplier}  •  Generated ${generated}  •  Asia/Manila (GMT+8)`, "F");
   const completedCount = shipments.filter((shipment) => shipment.status === "GATE_OUT").length;
-  const kpis = [["APPROVED DELIVERIES", shipments.length], ["GATE-OUT COMPLETE", completedCount], ["AVG UNLOADING", `${average(shipments.map((shipment) => duration(shipment.unloadingAt, shipment.receivedAt)))} min`]];
+  const kpis = [["CONFIRMED DELIVERIES", shipments.length], ["GATE-OUT COMPLETE", completedCount], ["AVG UNLOADING", `${average(shipments.map((shipment) => duration(shipment.unloadingAt, shipment.receivedAt)))} min`]];
   kpis.forEach(([label, value], index) => {
     const start = index * 2 + 1;
     summary.mergeCells(4, start, 4, start + 1);
@@ -1217,7 +1244,7 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "supplier"), asyncRoute
   });
   summary.getRow(4).height = 42;
   const summaryHeader = summary.getRow(7);
-  ["Supplier", "Approved deliveries", "Gate-out complete", "Trip to gate (min)", "Unload (min)", "Site turnaround (min)"].forEach((value, index) => { summaryHeader.getCell(index + 1).value = value; });
+  ["Supplier", "Confirmed deliveries", "Gate-out complete", "Trip to gate (min)", "Unload (min)", "Site turnaround (min)"].forEach((value, index) => { summaryHeader.getCell(index + 1).value = value; });
   summaryHeader.eachCell((cell) => { cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: blue } }; cell.alignment = { vertical: "middle" }; cell.border = thinBorder; });
   summaryHeader.height = 25;
   summaryRows.forEach((row, index) => {
@@ -1229,7 +1256,7 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "supplier"), asyncRoute
 
   const details = workbook.addWorksheet("Delivery Details", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
   details.columns = [18, 18, 26, 14, 12, 18, 18, 18, 18, 18, 14, 18, 18, 18, 18, 18, 18, 42].map((width) => ({ width }));
-  titleSheet(details, "Approved Delivery Details", `${selectedSupplier}  •  ${shipments.length} approved delivery record${shipments.length === 1 ? "" : "s"}`, "R");
+  titleSheet(details, "Confirmed Delivery Details", `${selectedSupplier}  •  ${shipments.length} confirmed delivery record${shipments.length === 1 ? "" : "s"}`, "R");
   const detailHeaders = ["Booking", "Shipment", "Supplier", "Date", "Time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "ETA (min)", "Trip scan", "Gate in", "Unloading", "Received", "Gate out", "Site time (min)", "Material codes / quantities"];
   const detailHeader = details.getRow(7);
   detailHeaders.forEach((value, index) => { detailHeader.getCell(index + 1).value = value; });
@@ -1237,7 +1264,7 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "supplier"), asyncRoute
   detailHeader.height = 28;
   shipments.sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)).forEach((shipment, index) => {
     const output = details.addRow([
-      shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, `${shipment.scheduledTime}–${shipment.scheduledEndTime || shipment.scheduledTime}`,
+      shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime,
       shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), shipment.estimatedTravelMinutes || "—",
       shipment.tripAt || "—", shipment.gateInAt || "—", shipment.unloadingAt || "—", shipment.receivedAt || "—", shipment.gateOutAt || "—", duration(shipment.gateInAt, shipment.gateOutAt) ?? "—",
       shipment.items.map((item) => `${item.materialCode}: ${Number(item.quantity || 0).toLocaleString("en-PH")} ${item.uom || ""}`.trim()).join(" | "),
@@ -1259,7 +1286,7 @@ app.get("/api/shipments/:id/booking.pdf", auth, asyncRoute(async (request, respo
   const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
   if (!shipment) return response.status(404).json({ message: "Shipment not found" });
   if (!canAccessShipment(request.user, shipment)) return response.status(403).json({ message: "This account cannot download that booking" });
-  if (shipment.bookingStatus !== "APPROVED") return response.status(409).json({ message: "The booking PDF and QR code are created only after approval" });
+  if (shipment.bookingStatus !== "APPROVED") return response.status(409).json({ message: "The booking PDF and QR code are created after supplier confirmation" });
   const qr = await QRCode.toBuffer(`${APP_ORIGIN}/?shipment=${encodeURIComponent(shipment.shipmentNumber)}`, { margin: 3, width: 320, color: { dark: "#0b1e38", light: "#ffffff" } });
   response.setHeader("Content-Type", "application/pdf");
   response.setHeader("Content-Disposition", `attachment; filename="${shipment.bookingReceipt}.pdf"`);
@@ -1267,26 +1294,26 @@ app.get("/api/shipments/:id/booking.pdf", auth, asyncRoute(async (request, respo
   document.pipe(response);
   document.fillColor("#0b1e38").fontSize(23).font("Helvetica-Bold").text("DockFlow", 42, 38);
   document.fontSize(9).font("Helvetica").fillColor("#607089").text("DELIVERY BOOKING RECEIPT", 42, 68);
-  document.roundedRect(424, 30, 126, 126, 10).fillAndStroke("#ffffff", "#d8e1ed");
-  document.image(qr, 435, 41, { width: 104, height: 104 });
-  document.roundedRect(42, 174, 508, 74, 8).fill("#f1f6ff");
-  document.fillColor("#0b1e38").font("Helvetica-Bold").fontSize(15).text(shipment.truckPlate, 58, 190);
-  document.font("Helvetica").fontSize(10).fillColor("#44556f").text(`${shipment.supplier} · ${shipment.driverName}`, 58, 215);
-  document.font("Helvetica-Bold").fillColor("#1d65f5").text(shipment.bookingStatus === "APPROVED" ? "APPROVED" : shipment.bookingStatus === "REJECTED" ? "REJECTED" : "PENDING APPROVAL", 395, 200, { width: 135, align: "right" });
+  document.roundedRect(446, 28, 104, 104, 9).fillAndStroke("#ffffff", "#d8e1ed");
+  document.image(qr, 454, 36, { width: 88, height: 88 });
+  document.roundedRect(42, 144, 508, 64, 8).fill("#f1f6ff");
+  document.fillColor("#0b1e38").font("Helvetica-Bold").fontSize(15).text(shipment.truckPlate, 58, 159);
+  document.font("Helvetica").fontSize(10).fillColor("#44556f").text(`${shipment.supplier} · ${shipment.driverName}`, 58, 183);
+  document.font("Helvetica-Bold").fillColor("#1d65f5").text(shipment.bookingStatus === "APPROVED" ? "CONFIRMED" : shipment.bookingStatus === "REJECTED" ? "REJECTED" : "PENDING", 395, 168, { width: 135, align: "right" });
   const details = [
     ["Booking", shipment.bookingReceipt], ["Shipment", shipment.shipmentNumber], ["Delivery code", shipment.deliveryCode || "—"],
-    ["Delivery date", shipment.scheduledDate], ["Scheduled time", `${shipment.scheduledTime}–${shipment.scheduledEndTime || shipment.scheduledTime}`], ["Driver phone", shipment.driverPhone || "—"],
+    ["Delivery date", shipment.scheduledDate], ["Entrance time", shipment.scheduledTime], ["Driver phone", shipment.driverPhone || "—"],
   ];
   details.forEach(([label, value], index) => {
     const column = index % 3;
     const row = Math.floor(index / 3);
     const x = 42 + column * 169;
-    const y = 272 + row * 50;
+    const y = 226 + row * 46;
     document.font("Helvetica").fontSize(8).fillColor("#7b8799").text(label.toUpperCase(), x, y);
     document.font("Helvetica-Bold").fontSize(10).fillColor("#17263d").text(String(value), x, y + 14, { width: 155 });
   });
-  let y = 383;
-  document.font("Helvetica-Bold").fontSize(12).fillColor("#17263d").text("Delivery products", 42, y);
+  let y = 328;
+  document.font("Helvetica-Bold").fontSize(12).fillColor("#17263d").text("Material codes", 42, y);
   y += 24;
   document.roundedRect(42, y, 508, 24, 4).fill("#0b1e38");
   document.fillColor("#ffffff").fontSize(8).text("MATERIAL CODE", 54, y + 8).text("AMOUNT", 385, y + 8).text("UOM", 490, y + 8);
@@ -1301,7 +1328,7 @@ app.get("/api/shipments/:id/booking.pdf", auth, asyncRoute(async (request, respo
   });
   y += 18;
   if (shipment.rejectionReason) document.fillColor("#b42318").font("Helvetica-Bold").fontSize(9).text(`Rejection reason: ${shipment.rejectionReason}`, 42, y, { width: 508 });
-  document.font("Helvetica").fontSize(8).fillColor("#7b8799").text("Times are recorded in Asia/Manila (GMT+8). Present this QR at every process station.", 42, 790, { width: 508, align: "center" });
+  document.font("Helvetica").fontSize(8).fillColor("#7b8799").text("Present this QR at every process station.", 42, 790, { width: 508, align: "center" });
   document.end();
 }));
 
@@ -1310,7 +1337,7 @@ app.get("/api/shipments/:id/qr.svg", auth, asyncRoute(async (request, response) 
   const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
   if (!shipment) return response.status(404).end();
   if (!canAccessShipment(request.user, shipment)) return response.status(403).json({ message: "You cannot access another supplier's QR code" });
-  if (shipment.bookingStatus !== "APPROVED") return response.status(409).json({ message: "The QR code is created only after Planner or Production gives final approval" });
+  if (shipment.bookingStatus !== "APPROVED") return response.status(409).json({ message: "The QR code is created after the supplier confirms the delivery" });
   response.type("image/svg+xml").send(await QRCode.toString(`${APP_ORIGIN}/?shipment=${encodeURIComponent(shipment.shipmentNumber)}`, { type: "svg", margin: 1, width: 240, color: { dark: "#0b1e38", light: "#ffffff" } }));
 }));
 

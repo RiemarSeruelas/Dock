@@ -13,7 +13,7 @@ const freePort = () => new Promise((resolve, reject) => {
   server.listen(0, "127.0.0.1", () => { const address = server.address(); server.close(() => resolve(address.port)); });
 });
 
-test("SDS import, supplier truck allocation, final approval, and scan journey", async (context) => {
+test("SDS import, conflict review, supplier confirmation, and scan journey", async (context) => {
   const testDirectory = await mkdtemp(join(tmpdir(), "dockflow-sds-"));
   const dataFile = join(testDirectory, "trial-data.json");
   await copyFile(new URL("../data/trial-data.json", import.meta.url), dataFile);
@@ -92,7 +92,10 @@ test("SDS import, supplier truck allocation, final approval, and scan journey", 
 
   sheet.getRow(2).getCell(5).value = 550;
   const changedPreview = await uploadPreview(workbook, "changed-data.xlsx");
-  const changedCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: changedPreview.result.previewToken } });
+  assert.equal(changedPreview.result.conflicts.length, 1);
+  const unresolvedCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: changedPreview.result.previewToken } });
+  assert.equal(unresolvedCommit.response.status, 409);
+  const changedCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: changedPreview.result.previewToken, conflictDecisions: { [changedPreview.result.conflicts[0].key]: "UPDATE" } } });
   assert.equal(changedCommit.response.status, 201);
   assert.equal(changedCommit.result.updatedProposals, 1);
 
@@ -154,13 +157,13 @@ test("SDS import, supplier truck allocation, final approval, and scan journey", 
   assert.ok(secondTruckResponse.result.deliveries.every((delivery) => /^DLV-/.test(delivery.deliveryCode)));
 
   const productionQueue = await call("/api/bootstrap", { token: production.token });
+  assert.ok(productionQueue.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item))));
+  assert.equal(productionQueue.result.materials.length, 0);
   const group = productionQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
   assert.equal(group.length, 2);
-  assert.ok(group.every((shipment) => shipment.bookingStatus === "SUPPLIER_ALTERNATIVE"));
+  assert.ok(group.every((shipment) => shipment.bookingStatus === "APPROVED"));
   assert.ok(group.every((shipment) => shipment.supplierResponseReason));
-  const final = await call(`/api/shipments/${proposal.id}/final-decision`, { token: production.token, method: "PATCH", body: { decision: "APPROVE" } });
-  assert.equal(final.response.status, 200);
-  assert.equal(final.result.deliveryCount, 2);
+  assert.equal((await call(`/api/shipments/${proposal.id}/final-decision`, { token: production.token, method: "PATCH", body: { decision: "APPROVE" } })).response.status, 404);
 
   const approvedBootstrap = await call("/api/bootstrap", { token: supplier.token });
   const approvedGroup = approvedBootstrap.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);

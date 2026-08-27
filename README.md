@@ -1,14 +1,14 @@
 # DockFlow User Guide
 
-DockFlow manages SDS delivery schedules, supplier truck confirmations, approvals, QR scanning, monitoring, history, and reports in Manila time (GMT+8).
+DockFlow manages SDS delivery schedules, supplier truck confirmations, QR scanning, monitoring, history, and reports in Manila time (GMT+8).
 
 ## Trial accounts
 
 | Account | Username | Password | Main use |
 |---|---|---|---|
 | Administrator | `admin` | `admin123` | Accounts, supplier catalogs, ETA routes, and company views |
-| Planner | `planner` | `planner123` | Import SDS schedules and make final decisions |
-| Production | `production` | `production123` | Import SDS schedules and make final decisions |
+| Planner | `planner` | `planner123` | Import and compare SDS schedules |
+| Production | `production` | `production123` | Import and compare SDS schedules |
 | Supplier | `supplier` | `supplier123` | Confirm truck loads, view entries, and scan Trip |
 | Security | `security` | `security123` | Scan Gate in and Gate out |
 | Warehouse | `warehouse` | `warehouse123` | Scan Unloading and Received |
@@ -47,7 +47,7 @@ The preview shows whether every supplier account is linked. A missing account is
 DockFlow compares each import with existing records:
 
 - An identical proposal remains unchanged.
-- A changed proposal that is still waiting for the supplier is updated.
+- A changed proposal that is still waiting for the supplier is shown as a conflict. Choose **Keep existing** or **Update from upload** before importing.
 - A confirmed or completed delivery is preserved as a record.
 - A genuinely new proposal is created.
 
@@ -61,7 +61,7 @@ The supplier opens **Schedule** and selects a proposal.
 4. Select **Confirm Delivery**.
 5. If material codes remain, open the proposal again and confirm the next truck.
 
-A delivery code is reserved for every confirmed truck. Planner or Production can make the final decision only after every material code has been assigned to a truck.
+A delivery code is reserved for every truck. As soon as every material code has been assigned and the supplier confirms the final truck, the booking is complete and its QR code and report entry become available.
 
 ## Monitoring and history
 
@@ -71,7 +71,7 @@ A delivery code is reserved for every confirmed truck. Planner or Production can
 
 ## Scan flow
 
-The approved delivery follows this order:
+The confirmed delivery follows this order:
 
 `Booking → Trip → Gate in → Unloading → Received → Gate out`
 

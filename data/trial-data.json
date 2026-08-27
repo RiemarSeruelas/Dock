@@ -8,7 +8,7 @@
     "Imported proposals start at PENDING_SUPPLIER. The supplier confirms one truck and its material codes at a time until every code has a truck.",
     "A manually added user may use a plain password field once; DockFlow replaces it with passwordHash on startup. Never place Gmail or SMTP passwords in this JSON file."
   ],
-  "version": 9,
+  "version": 10,
   "settings": {
     "siteName": "Cavite Foods Receiving · Trial",
     "dockCount": 2,
@@ -133,13 +133,13 @@
       "productPresets": [
         {
           "id": 1,
-          "materialCode": "EGGS",
+          "materialCode": "65013575",
           "uom": "KG",
           "defaultAmount": 300
         },
         {
           "id": 2,
-          "materialCode": "MAYONNAISE",
+          "materialCode": "65013507",
           "uom": "KG",
           "defaultAmount": 500
         }
@@ -158,7 +158,7 @@
       "productPresets": [
         {
           "id": 3,
-          "materialCode": "DELTA CAP 470/700/940 ML",
+          "materialCode": "65013743",
           "uom": "PC",
           "defaultAmount": 18480
         }
