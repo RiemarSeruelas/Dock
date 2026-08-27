@@ -136,8 +136,8 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const submit = async () => {
+    if (!username.trim() || !password) return;
     setLoading(true);
     setError("");
     try {
@@ -171,12 +171,12 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
           <span className="eyebrow">Welcome back</span>
           <h2>Sign in to your workspace</h2>
           <p>Use the account assigned to your role.</p>
-          <form onSubmit={submit}>
-            <label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Enter your username" required /></label>
-            <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Enter your password" required /></label>
+          <div className="login-form" role="form" aria-label="DockFlow sign in" onKeyDown={(event) => { if (event.key === "Enter") void submit(); }}>
+            <label>Username<input name="dockflow_identity" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="Enter your username" required /></label>
+            <label>Password<input name="dockflow_access_key" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="Enter your password" required /></label>
             {error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}
-            <button className="button primary full" disabled={loading}>{loading ? <><Loader2 className="spin" size={17} /> Signing in</> : <>Sign in <ArrowRight size={17} /></>}</button>
-          </form>
+            <button type="button" className="button primary full" disabled={loading || !username.trim() || !password} onClick={() => void submit()}>{loading ? <><Loader2 className="spin" size={17} /> Signing in</> : <>Sign in <ArrowRight size={17} /></>}</button>
+          </div>
         </div>
       </section>
     </main>

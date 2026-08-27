@@ -569,9 +569,9 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
     driverPhone: String(truck?.driverPhone || "").trim(),
     itemIds: [...new Set((Array.isArray(truck?.itemIds) ? truck.itemIds : []).map(Number).filter(Number.isFinite))],
   }));
-  if (normalizedTrucks.some((truck) => !truck.truckPlate || !truck.itemIds.length)) return response.status(400).json({ message: "Every truck needs a plate number and at least one material code" });
+  if (normalizedTrucks.some((truck) => !truck.truckPlate || !truck.driverName || truck.driverName === "To be assigned" || !truck.driverPhone || !truck.itemIds.length)) return response.status(400).json({ message: "Every delivery needs a truck plate, driver name, international phone number, and at least one material code" });
   if (new Set(normalizedTrucks.map((truck) => truck.truckPlate)).size !== normalizedTrucks.length) return response.status(400).json({ message: "Each truck plate must be unique" });
-  if (normalizedTrucks.some((truck) => truck.driverPhone && !/^\d{7,15}$/.test(truck.driverPhone))) return response.status(400).json({ message: "Driver phone numbers must contain 7–15 digits only" });
+  if (normalizedTrucks.some((truck) => !/^\+[1-9]\d{7,14}$/.test(truck.driverPhone))) return response.status(400).json({ message: "Driver phone numbers must use a country code and contain no more than 15 digits" });
   const result = await store.update((state) => {
     const proposal = state.shipments.find((shipment) => shipment.id === Number(request.params.id));
     if (!proposal) return null;

@@ -56,9 +56,9 @@ DockFlow compares each import with existing records:
 The supplier opens **Schedule** and selects a proposal.
 
 1. Accept the proposed time, or reject it with a reason and one alternative date and time.
-2. Enter one truck plate, driver name, and numeric phone number.
+2. Enter one truck plate and driver name, choose the phone country code, then enter the numeric local phone number.
 3. Select all material codes carried by that truck.
-4. Confirm the truck.
+4. Select **Confirm Delivery**.
 5. If material codes remain, open the proposal again and confirm the next truck.
 
 A delivery code is reserved for every confirmed truck. Planner or Production can make the final decision only after every material code has been assigned to a truck.
@@ -67,7 +67,7 @@ A delivery code is reserved for every confirmed truck. Planner or Production can
 
 **Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan and uses the saved supplier route.
 
-**History** is one total-record view for previous deliveries and rejected proposals. The Outcome column still shows what happened to every record.
+**History** is one total-record view for previous deliveries and rejected proposals. Filter it by supplier, material, driver, outcome, date range, or time range. The Outcome column still shows what happened to every record.
 
 ## Scan flow
 

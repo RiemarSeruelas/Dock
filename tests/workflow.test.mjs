@@ -117,6 +117,9 @@ test("SDS import, supplier truck allocation, final approval, and scan journey", 
   const incompleteAlternative = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", itemIds: proposal.items.map((item) => item.id) }] } });
   assert.equal(incompleteAlternative.response.status, 400);
 
+  const invalidPhone = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "ACCEPT", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "09170000001", itemIds: [proposal.items[0].id] }] } });
+  assert.equal(invalidPhone.response.status, 400);
+
   const firstTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
     decision: "PROPOSE_ALTERNATIVE",
     reason: "Two trucks must be loaded on the following shift",
@@ -124,7 +127,7 @@ test("SDS import, supplier truck allocation, final approval, and scan journey", 
     alternativeTime: "13:00",
     alternativeEndTime: "15:00",
     loadConfirmed: true,
-    trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "09170000001", itemIds: [proposal.items[0].id] }],
+    trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "+639170000001", itemIds: [proposal.items[0].id] }],
   } });
   assert.equal(firstTruckResponse.response.status, 200);
   assert.equal(firstTruckResponse.result.partial, true);
@@ -143,7 +146,7 @@ test("SDS import, supplier truck allocation, final approval, and scan journey", 
     alternativeTime: "13:00",
     alternativeEndTime: "15:00",
     loadConfirmed: true,
-    trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "09170000002", itemIds: [proposal.items[1].id] }],
+    trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "+639170000002", itemIds: [proposal.items[1].id] }],
   } });
   assert.equal(secondTruckResponse.response.status, 200);
   assert.equal(secondTruckResponse.result.partial, false);
