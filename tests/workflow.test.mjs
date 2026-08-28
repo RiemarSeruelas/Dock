@@ -136,6 +136,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const supplierAfterImport = await call("/api/bootstrap", { token: supplier.token });
   const proposal = supplierAfterImport.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-1001"));
   assert.equal(proposal.bookingStatus, "PENDING_SUPPLIER");
+  assert.equal(proposal.status, "PROPOSED");
   assert.equal(proposal.deliveryCode, null);
   assert.equal("dppNumber" in proposal, false);
   assert.deepEqual(proposal.items.map((item) => item.materialCode).sort(), ["SDS-1001", "SDS-1002"]);
@@ -161,6 +162,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const partialBootstrap = await call("/api/bootstrap", { token: supplier.token });
   const partialProposal = partialBootstrap.result.shipments.find((shipment) => shipment.id === proposal.id);
   assert.equal(partialProposal.bookingStatus, "PENDING_SUPPLIER");
+  assert.equal(partialProposal.status, "PROPOSED");
   assert.equal(partialProposal.items.filter((item) => item.supplierApprovedAt).length, 1);
 
   const secondTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
@@ -179,6 +181,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const group = productionQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
   assert.equal(group.length, 2);
   assert.ok(group.every((shipment) => shipment.bookingStatus === "APPROVED"));
+  assert.ok(group.every((shipment) => shipment.status === "BOOKED"));
   assert.ok(group.every((shipment) => shipment.supplierResponse === "ACCEPTED"));
   assert.equal((await call(`/api/shipments/${proposal.id}/final-decision`, { token: production.token, method: "PATCH", body: { decision: "APPROVE" } })).response.status, 404);
 

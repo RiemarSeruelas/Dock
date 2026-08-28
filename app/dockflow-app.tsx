@@ -84,7 +84,8 @@ const ROLE_VIEWS: Record<Role, View[]> = {
 };
 
 const STATUS_META: Record<ShipmentStatus, { label: string; color: string; step: number }> = {
-  BOOKED: { label: "Booking", color: "slate", step: 1 },
+  PROPOSED: { label: "Supplier approval", color: "purple", step: 0 },
+  BOOKED: { label: "Booked", color: "slate", step: 1 },
   IN_TRANSIT: { label: "In transit", color: "blue", step: 2 },
   GATE_IN: { label: "Gate in", color: "amber", step: 3 },
   UNLOADING: { label: "Unloading", color: "orange", step: 4 },
@@ -199,7 +200,7 @@ function MetricCard({ label, value, helper, icon: MetricIcon, tone, trend }: { l
 
 function OverviewPage({ data, user, onOpenShipment }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void }) {
   const today = localDate();
-  const todayShipments = data.shipments.filter((shipment) => shipment.scheduledDate === today);
+  const todayShipments = data.shipments.filter((shipment) => shipment.scheduledDate === today && shipment.bookingStatus === "APPROVED");
   const received = todayShipments.filter((shipment) => shipment.status === "RECEIVED").length;
   const atSite = todayShipments.filter((shipment) => ["GATE_IN", "UNLOADING", "RECEIVED"].includes(shipment.status)).length;
   const late = todayShipments.filter((shipment) => shipment.status === "BOOKED" && shipment.scheduledTime < new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Manila" })).length;

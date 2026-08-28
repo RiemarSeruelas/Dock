@@ -52,6 +52,8 @@ DockFlow compares each import with existing records:
 - A confirmed or completed delivery is preserved as a record.
 - A genuinely new proposal is created.
 
+An imported row is only a proposed schedule. It is not a booking, does not appear in Monitoring or reports, and has no QR code until the supplier completes the truck confirmation.
+
 ## Supplier truck confirmation
 
 The supplier opens **Schedule** and selects a proposal.
@@ -62,7 +64,7 @@ The supplier opens **Schedule** and selects a proposal.
 4. Select **Confirm Delivery**.
 5. If material codes remain, open the proposal again and confirm the next truck.
 
-A delivery code is reserved for every truck. As soon as every material code has been assigned and the supplier confirms the final truck, the booking is complete and its QR code and report entry become available.
+A delivery code is reserved for every truck. As soon as every material code has been assigned and the supplier confirms the final truck, the proposal changes to **Booked** and its QR code, Monitoring card, and report entry become available.
 
 ## Monitoring and history
 

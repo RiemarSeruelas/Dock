@@ -386,8 +386,9 @@ await store.update(async (state) => {
     shipment.availabilitySlotId = availabilityForShipment(state, shipment)?.id || null;
     const legacyStatus = shipment.status;
     const statusMigration = { PLANNED: "BOOKED", ARRIVED: "GATE_IN", VERIFIED: "GATE_IN", PARKING: "GATE_IN", AT_DOCK: "UNLOADING" };
-    shipment.status = statusMigration[legacyStatus] || (["BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"].includes(legacyStatus) ? legacyStatus : "BOOKED");
+    shipment.status = statusMigration[legacyStatus] || (["PROPOSED", "BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"].includes(legacyStatus) ? legacyStatus : "BOOKED");
     if (shipment.bookingStatus === "PENDING_APPROVAL") shipment.bookingStatus = "PENDING_SUPPLIER";
+    if (shipment.bookingStatus === "PENDING_SUPPLIER" && shipment.status !== "REJECTED") shipment.status = "PROPOSED";
     if (shipment.bookingStatus === "SUPPLIER_ALTERNATIVE" && validDate(shipment.alternativeDate) && validTime(shipment.alternativeTime)) {
       shipment.scheduledDate = shipment.alternativeDate;
       shipment.scheduledTime = shipment.alternativeTime;
@@ -1044,7 +1045,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
         id: currentShipmentId, shipmentNumber, bookingReceipt: nextCode("BKG", currentShipmentId, first.deliveryDate), supplier: supplier.name, supplierId: supplier.id,
         deliveryCode: null, vendorCode: supplier.vendorCode, scheduledDate: first.deliveryDate, scheduledTime: first.deliveryTime, scheduledEndTime: first.endTime || null,
         availabilitySlotId: availabilitySlot.id, expectedDurationMinutes: first.endTime ? durationMinutes(first.deliveryTime, first.endTime) : null,
-        timeSlot: scheduleLabel(first.deliveryTime, first.endTime), shift: "Flexible date", bookingStatus: "PENDING_SUPPLIER", status: "BOOKED",
+        timeSlot: scheduleLabel(first.deliveryTime, first.endTime), shift: "Flexible date", bookingStatus: "PENDING_SUPPLIER", status: "PROPOSED",
         truckPlate: "TO BE ASSIGNED", driverName: "To be assigned", driverPhone: "", materialWeightKg: rows.reduce((sum, row) => sum + (row.uom === "KG" ? row.quantity : row.uom === "MT" ? row.quantity * 1000 : 0), 0),
         dock: null, arrivalTime: null, startedAt: null, completedAt: null, lastProcessAt: null, tripAt: null, gateInAt: null, unloadingAt: null, receivedAt: null, gateOutAt: null,
         rejectionReason: null, supplierResponse: null, supplierResponseReason: null, supplierRespondedAt: null, alternativeDate: null, alternativeTime: null, alternativeEndTime: null,

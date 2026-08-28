@@ -1,6 +1,7 @@
 export type Role = "admin" | "planner" | "production" | "supplier" | "driver" | "security" | "warehouse";
 
 export type ShipmentStatus =
+  | "PROPOSED"
   | "BOOKED"
   | "IN_TRANSIT"
   | "GATE_IN"
