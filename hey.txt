@@ -1,4 +1,1 @@
-Gmail rejected the administrator sender. Check SMTP_USER and use a Google App Password in SMTP_APP_PASSWORD.
-
-Failed to load resource: the server responded with a status of 502 (Bad Gateway)
-0ddtwh7_jq.ou.js:1  POST http://localhost:5059/api/users/1/email/send-code 502 (Bad Gateway)
+docker compose exec api node -e "console.log({enabled:process.env.EMAIL_NOTIFICATIONS_ENABLED,userConfigured:Boolean(process.env.SMTP_USER),passwordLength:(process.env.SMTP_APP_PASSWORD||'').replace(/\s/g,'').length,host:process.env.SMTP_HOST,port:process.env.SMTP_PORT})"
