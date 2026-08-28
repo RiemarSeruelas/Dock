@@ -1,1 +1,18 @@
-Uhh I think you misuderstand a part. If the admin/planner add a schedule, the supplier will need to approve it, add the details like earlier, then it's already book. Right now, it's auto book once the uploader uploads, which is wrong since the supplier still needs to confirm it.
+0o34d9sl12_gp.js:1  POST http://localhost:5059/api/users/1/email/send-code 502 (Bad Gateway)
+Y @ 0o34d9sl12_gp.js:1
+i @ 0o34d9sl12_gp.js:1
+X @ 0o34d9sl12_gp.js:1
+ei @ 0o34d9sl12_gp.js:1
+el @ 0o34d9sl12_gp.js:1
+j @ 0o34d9sl12_gp.js:1
+onClick @ 0o34d9sl12_gp.js:1
+sJ @ 07lhk_q6pmm3r.js:1
+(anonymous) @ 07lhk_q6pmm3r.js:1
+tD @ 07lhk_q6pmm3r.js:1
+s4 @ 07lhk_q6pmm3r.js:1
+fz @ 07lhk_q6pmm3r.js:1
+fT @ 07lhk_q6pmm3r.js:1
+0o34d9sl12_gp.js:1 Uncaught (in promise) Error: The verification email could not be sent
+    at ei (0o34d9sl12_gp.js:1:11446)
+    at async el (0o34d9sl12_gp.js:1:114660)
+    at async j (0o34d9sl12_gp.js:1:97304)
