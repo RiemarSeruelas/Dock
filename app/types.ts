@@ -29,6 +29,7 @@ export interface SessionUser {
   role: Role;
   supplierId?: number | null;
   email?: string;
+  emailVerifiedAt?: string | null;
 }
 
 export interface ShipmentItem {
@@ -209,6 +210,7 @@ export interface AppData {
     siteName: string;
     siteAddress?: string;
     siteCoordinates?: { lat: number; lon: number } | null;
+    emailNotifications?: { senderEmail: string; configured: boolean; configuredAt?: string | null };
     availableDates: string[];
     availableSlots: AvailabilitySlot[];
   };

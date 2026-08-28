@@ -8,8 +8,9 @@ DockFlow manages SDS delivery schedules, supplier truck confirmations, QR scanni
 |---|---|---|---|
 | Administrator | `admin` | `admin123` | Accounts, supplier catalogs, ETA routes, and company views |
 | Planner | `planner` | `planner123` | Import and compare SDS schedules |
-| Production | `production` | `production123` | Import and compare SDS schedules |
+| Production | `production` | `production123` | View monitoring, schedule, history, and reports |
 | Supplier | `supplier` | `supplier123` | Confirm truck loads, view entries, and scan Trip |
+| Driver | `driver` | `driver123` | Read-only company monitoring, schedule, QR entries, history, and reports |
 | Security | `security` | `security123` | Scan Gate in and Gate out |
 | Warehouse | `warehouse` | `warehouse123` | Scan Unloading and Received |
 
@@ -67,7 +68,7 @@ A delivery code is reserved for every truck. As soon as every material code has 
 
 **Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan and uses the saved supplier route.
 
-**History** is one total-record view for previous deliveries and rejected proposals. Filter it by supplier, material, driver, outcome, date range, or time range. The Outcome column still shows what happened to every record.
+**History** is one total-record view for previous deliveries and rejected proposals. Company users only see their own company. Supplier and driver views keep the useful material, driver, and date filters without the supplier, outcome, or time controls.
 
 ## Scan flow
 
@@ -78,7 +79,7 @@ The confirmed delivery follows this order:
 - Supplier scans **Trip**.
 - Security scans **Gate in**, then **Gate out**.
 - Warehouse scans **Unloading** and **Received**.
-- Roles without a scan station do not see the Scan page.
+- Driver accounts can inspect their company’s approved QR entries but cannot change schedules or other delivery data.
 
 ## Trial storage
 
@@ -112,15 +113,26 @@ npm.cmd run dev
 
 Open `http://127.0.0.1:3000`.
 
-## Optional Gmail notices
+## Test ETA
 
-For an offline trial, keep this in `.env`:
+ETA address lookup and routing require internet access unless the provider URLs point to services hosted on your own network.
 
-```env
-EMAIL_NOTIFICATIONS_ENABLED=false
-```
+1. Sign in as Administrator and open **Administration → Accounts**.
+2. Save the receiving-site address.
+3. Select the route icon on a supplier account and save its dispatch address.
+4. Confirm a supplier delivery and scan **Trip**.
+5. Open Monitoring. The truck card should show the calculated distance, travel minutes, and arrival time.
 
-When internet access and a dedicated Gmail account are available, use a Google App Password in the server `.env` values and enable notifications. The Gmail password is never stored in trial JSON or sent to the browser.
+## Test email notifications
+
+1. Sign in as Administrator and open **Administration → Accounts**.
+2. Under **Notification email**, select **Configure sender**.
+3. Enter the dedicated administrator Gmail and a Google App Password. Do not use the normal Gmail password.
+4. Select each administrator, planner, or supplier email, send its six-digit code, and verify it.
+5. Import a new SDS. The linked verified supplier receives a notice.
+6. Reject a proposal from the supplier account. Verified administrator and planner emails receive the reason and proposed alternative time.
+
+The App Password is submitted once, encrypted server-side with the server secret, and never returned in API responses or logs. In an offline trial, the rest of DockFlow still works, but Gmail delivery and public ETA lookup cannot be tested.
 
 ## Replacing the truck image
 

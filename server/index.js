@@ -8,7 +8,7 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
-import { createHash, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { parseDeliveryWorkbook } from "./excel-import.js";
@@ -35,6 +35,32 @@ const ETA_USER_AGENT = process.env.ETA_USER_AGENT || "DockFlow/0.1 (configure ET
 const ETA_API_TIMEOUT_MS = Math.max(1000, Number(process.env.ETA_API_TIMEOUT_MS || 10000));
 const app = express();
 const importPreviews = new Map();
+const EMAIL_SECRET_KEY = createHash("sha256").update(`${JWT_SECRET}:dockflow-email-sender`).digest();
+
+const encryptSecret = (value) => {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", EMAIL_SECRET_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  return [iv, cipher.getAuthTag(), encrypted].map((part) => part.toString("base64url")).join(".");
+};
+const decryptSecret = (value) => {
+  if (!value) return "";
+  const [iv, tag, encrypted] = String(value).split(".").map((part) => Buffer.from(part, "base64url"));
+  const decipher = createDecipheriv("aes-256-gcm", EMAIL_SECRET_KEY, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+};
+const senderFromState = (state) => {
+  const setting = state.settings?.emailNotifications;
+  if (!setting?.senderEmail || !setting?.encryptedAppPassword) return null;
+  try { return { email: setting.senderEmail, appPassword: decryptSecret(setting.encryptedAppPassword) }; }
+  catch { return null; }
+};
+const publicEmailSettings = (state) => ({
+  senderEmail: state.settings?.emailNotifications?.senderEmail || "",
+  configured: Boolean(state.settings?.emailNotifications?.senderEmail && state.settings?.emailNotifications?.encryptedAppPassword),
+  configuredAt: state.settings?.emailNotifications?.configuredAt || null,
+});
 
 const localDate = (days = 0) => {
   const date = new Date(Date.now() + days * 86400000);
@@ -70,7 +96,7 @@ const defaultAvailabilityForDates = (dates) => dates.flatMap((date, index) => [
 ]);
 const slotContains = (slot, date, startTime, endTime = null) => slot?.date === date && startTime >= slot.startTime && startTime < slot.endTime && (!endTime || endTime <= slot.endTime);
 const matchingAvailability = (state, date, startTime, endTime) => (state.settings.availableSlots || []).find((slot) => slotContains(slot, date, startTime, endTime));
-const planningRoles = ["admin", "planner", "production"];
+const planningRoles = ["admin", "planner"];
 const validCoordinates = (value) => value && Number.isFinite(Number(value.lat)) && Number.isFinite(Number(value.lon));
 const geocodeAddress = async (address) => {
   const url = new URL(GEOCODING_API_URL);
@@ -147,8 +173,9 @@ const addAudit = (state, actor, action, detail, shipmentNumber) => state.audit.u
   shipmentNumber: shipmentNumber || undefined,
   detail,
 });
-const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", role: user.role, supplierId: user.supplierId ?? null });
-const canAccessShipment = (user, shipment) => user.role !== "supplier" || Number(user.supplierId) === Number(shipment.supplierId);
+const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", emailVerifiedAt: user.emailVerifiedAt || null, role: user.role, supplierId: user.supplierId ?? null });
+const companyScopedRoles = new Set(["supplier", "driver"]);
+const canAccessShipment = (user, shipment) => !companyScopedRoles.has(user.role) || Number(user.supplierId) === Number(shipment.supplierId);
 const supplierHasAccount = (state, supplierId) => state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplierId));
 const supplierSafeShipment = (shipment) => ({
   ...shipment,
@@ -204,7 +231,7 @@ async function createInitialState() {
     ["Supplier User", "supplier", "supplier123", "supplier", 1, "supplier@dockflow.local"],
     ["Planner User", "planner", "planner123", "planner", null, "planner@dockflow.local"],
     ["Production User", "production", "production123", "production", null, "production@dockflow.local"],
-    ["Driver User", "driver", "driver123", "driver", null, "driver@dockflow.local"],
+    ["Driver User", "driver", "driver123", "driver", 1, "driver@dockflow.local"],
     ["Security User", "security", "security123", "security", null, "security@dockflow.local"],
     ["Warehouse User", "warehouse", "warehouse123", "warehouse", null, "warehouse@dockflow.local"],
   ];
@@ -216,6 +243,7 @@ async function createInitialState() {
     role: row[3],
     supplierId: row[4],
     email: row[5],
+    emailVerifiedAt: null,
   })));
   const dates = [localDate(), localDate(1), localDate(2), localDate(3), localDate(5)];
   const materials = [
@@ -250,7 +278,7 @@ async function createInitialState() {
   }));
   return {
     version: 1,
-    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", siteAddress: "", siteCoordinates: null, availableDates: dates, availableSlots: defaultAvailabilityForDates(dates) },
+    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", siteAddress: "", siteCoordinates: null, availableDates: dates, availableSlots: defaultAvailabilityForDates(dates), emailNotifications: { senderEmail: "", encryptedAppPassword: "", configuredAt: null, configuredBy: null } },
     users,
     suppliers: [
       { id: 1, vendorCode: "TRIAL-001", name: "Trial Ingredients Supplier", productPresets: [{ id: 1, materialCode: "65013575", uom: "KG", defaultAmount: 300 }, { id: 2, materialCode: "65013507", uom: "KG", defaultAmount: 500 }] },
@@ -276,7 +304,7 @@ const store = new JsonStore(DATA_FILE, createInitialState);
 await mkdir(UPLOAD_DIR, { recursive: true });
 await store.initialize();
 await store.update(async (state) => {
-  state.version = 10;
+  state.version = 11;
   state.settings ||= {};
   state.shipments = Array.isArray(state.shipments) ? state.shipments : [];
   state.rdsRequests = Array.isArray(state.rdsRequests) ? state.rdsRequests : [];
@@ -295,7 +323,12 @@ await store.update(async (state) => {
     if (user.name === "Management Administrator") user.name = "Planner User";
     if (user.username === "planner") user.role = "planner";
     user.role = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse"].includes(user.role) ? user.role : "admin";
+    if (user.role === "driver" && !user.supplierId) user.supplierId = state.suppliers[0]?.id || 1;
     user.email = String(user.email || `${user.username}@dockflow.local`).trim().toLowerCase();
+    user.emailVerifiedAt ||= null;
+    user.emailVerificationHash ||= null;
+    user.emailVerificationExpiresAt ||= null;
+    user.emailVerificationAttempts = Number(user.emailVerificationAttempts || 0);
     if (!user.passwordHash && user.password) user.passwordHash = await bcrypt.hash(String(user.password), 10);
     if (!user.passwordHash) user.passwordHash = await bcrypt.hash(`${user.username}123`, 10);
     delete user.password;
@@ -308,6 +341,11 @@ await store.update(async (state) => {
   state.settings.siteName = String(state.settings.siteName || "Cavite Foods Receiving · Trial");
   state.settings.siteAddress = String(state.settings.siteAddress || "");
   state.settings.siteCoordinates = validCoordinates(state.settings.siteCoordinates) ? { lat: Number(state.settings.siteCoordinates.lat), lon: Number(state.settings.siteCoordinates.lon) } : null;
+  state.settings.emailNotifications ||= { senderEmail: "", encryptedAppPassword: "", configuredAt: null, configuredBy: null };
+  state.settings.emailNotifications.senderEmail = String(state.settings.emailNotifications.senderEmail || "").trim().toLowerCase();
+  state.settings.emailNotifications.encryptedAppPassword = String(state.settings.emailNotifications.encryptedAppPassword || "");
+  state.settings.emailNotifications.configuredAt ||= null;
+  state.settings.emailNotifications.configuredBy ||= null;
   if (!Array.isArray(state.settings.availableSlots)) state.settings.availableSlots = defaultAvailabilityForDates(state.settings.availableDates || []);
   state.settings.availableSlots = state.settings.availableSlots.filter((slot) => validDate(slot.date) && validTime(slot.startTime) && validTime(slot.endTime) && toMinutes(slot.endTime) > toMinutes(slot.startTime));
   let nextSlotId = nextId(state.settings.availableSlots);
@@ -533,21 +571,22 @@ app.post("/api/auth/logout", asyncRoute(async (request, response) => {
 
 app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const state = await store.read();
-  const supplierOnly = _request.user.role === "supplier";
-  const shipments = supplierOnly ? state.shipments.filter((shipment) => Number(shipment.supplierId) === Number(_request.user.supplierId)) : state.shipments;
+  const companyScoped = companyScopedRoles.has(_request.user.role);
+  const canManageSds = ["admin", "planner"].includes(_request.user.role);
+  const shipments = companyScoped ? state.shipments.filter((shipment) => Number(shipment.supplierId) === Number(_request.user.supplierId)) : state.shipments;
   const shipmentNumbers = new Set(shipments.map((shipment) => shipment.shipmentNumber));
   response.json({
     shipments: shipments.map((shipment) => {
       const linked = supplierHasAccount(state, shipment.supplierId);
       return { ...supplierSafeShipment(shipment), supplierAccountLinked: linked };
     }).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
-    rdsRequests: supplierOnly ? [] : state.rdsRequests,
+    rdsRequests: [],
     materials: [],
-    suppliers: supplierOnly ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : state.suppliers,
+    suppliers: companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : state.suppliers,
     users: _request.user.role === "admin" ? state.users.map(publicUser) : [],
-    audit: supplierOnly ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : state.audit,
-    importBatches: supplierOnly ? [] : state.importBatches,
-    settings: { ...state.settings, dockCount: 2 },
+    audit: ["admin", "planner"].includes(_request.user.role) ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : [],
+    importBatches: canManageSds ? state.importBatches : [],
+    settings: { ...state.settings, emailNotifications: publicEmailSettings(state), dockCount: 2 },
   });
 }));
 
@@ -574,23 +613,40 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   const alternativeEndTime = String(request.body?.alternativeEndTime || "").slice(0, 5);
   const trucks = Array.isArray(request.body?.trucks) ? request.body.trucks : [];
   if (!["ACCEPT", "PROPOSE_ALTERNATIVE"].includes(decision)) return response.status(400).json({ message: "Accept the proposed time or propose one alternative" });
-  if (!request.body?.loadConfirmed) return response.status(400).json({ message: "Confirm that the material load is correctly divided between the trucks" });
   if (decision === "PROPOSE_ALTERNATIVE" && (!reason || !validDate(alternativeDate) || !validTime(alternativeTime) || !validTime(alternativeEndTime) || toMinutes(alternativeEndTime) <= toMinutes(alternativeTime))) return response.status(400).json({ message: "A reason, alternative date, start time, and later end time are required" });
-  if (!trucks.length) return response.status(400).json({ message: "Add a truck plate and select at least one material code" });
+  if (decision === "ACCEPT" && !request.body?.loadConfirmed) return response.status(400).json({ message: "Confirm that the material load is correctly divided between the trucks" });
+  if (decision === "ACCEPT" && !trucks.length) return response.status(400).json({ message: "Add a truck plate and select at least one material code" });
   const normalizedTrucks = trucks.map((truck) => ({
     truckPlate: String(truck?.truckPlate || "").trim().toUpperCase(),
     driverName: String(truck?.driverName || "").trim() || "To be assigned",
     driverPhone: String(truck?.driverPhone || "").trim(),
     itemIds: [...new Set((Array.isArray(truck?.itemIds) ? truck.itemIds : []).map(Number).filter(Number.isFinite))],
   }));
-  if (normalizedTrucks.some((truck) => !truck.truckPlate || !truck.driverName || truck.driverName === "To be assigned" || !truck.driverPhone || !truck.itemIds.length)) return response.status(400).json({ message: "Every delivery needs a truck plate, driver name, international phone number, and at least one material code" });
-  if (new Set(normalizedTrucks.map((truck) => truck.truckPlate)).size !== normalizedTrucks.length) return response.status(400).json({ message: "Each truck plate must be unique" });
-  if (normalizedTrucks.some((truck) => !/^\+[1-9]\d{7,14}$/.test(truck.driverPhone))) return response.status(400).json({ message: "Driver phone numbers must use a country code and contain no more than 15 digits" });
+  if (decision === "ACCEPT" && normalizedTrucks.some((truck) => !truck.truckPlate || !truck.driverName || truck.driverName === "To be assigned" || !truck.driverPhone || !truck.itemIds.length)) return response.status(400).json({ message: "Every delivery needs a truck plate, driver name, international phone number, and at least one material code" });
+  if (decision === "ACCEPT" && new Set(normalizedTrucks.map((truck) => truck.truckPlate)).size !== normalizedTrucks.length) return response.status(400).json({ message: "Each truck plate must be unique" });
+  if (decision === "ACCEPT" && normalizedTrucks.some((truck) => !/^\+[1-9]\d{7,14}$/.test(truck.driverPhone))) return response.status(400).json({ message: "Driver phone numbers must use a country code and contain no more than 15 digits" });
   const result = await store.update((state) => {
     const proposal = state.shipments.find((shipment) => shipment.id === Number(request.params.id));
     if (!proposal) return null;
     if (!canAccessShipment(request.user, proposal)) return { forbidden: true };
     if (proposal.bookingStatus !== "PENDING_SUPPLIER") return { alreadyResponded: true };
+    if (decision === "PROPOSE_ALTERNATIVE") {
+      const respondedAt = new Date().toISOString();
+      proposal.supplierResponse = "ALTERNATIVE_PROPOSED";
+      proposal.supplierResponseReason = reason;
+      proposal.supplierRespondedAt = respondedAt;
+      proposal.alternativeDate = alternativeDate;
+      proposal.alternativeTime = alternativeTime;
+      proposal.alternativeEndTime = alternativeEndTime;
+      proposal.bookingStatus = "REJECTED";
+      proposal.status = "REJECTED";
+      proposal.rejectionReason = reason;
+      proposal.finalDecisionAt = respondedAt;
+      proposal.finalDecisionBy = request.user.name;
+      addAudit(state, request.user, "SUPPLIER_REJECTED", `${proposal.supplier} rejected ${proposal.shipmentNumber}: ${reason}`, proposal.shipmentNumber);
+      const recipients = state.users.filter((user) => ["admin", "planner"].includes(user.role) && user.emailVerifiedAt && user.email).map((user) => user.email);
+      return { rejected: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, alternativeDate, alternativeTime, recipients };
+    }
     const expectedIds = new Set(proposal.items.map((item) => Number(item.id)));
     const existingLoads = Array.isArray(proposal.confirmedTruckLoads) ? proposal.confirmedTruckLoads : [];
     const alreadyAssignedIds = new Set(existingLoads.flatMap((truck) => truck.itemIds).map(Number));
@@ -657,14 +713,23 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
       addAudit(state, request.user, "SUPPLIER_BOOKING_CONFIRMED", `${delivery.deliveryCode} confirmed for ${delivery.truckPlate}`, delivery.shipmentNumber);
       deliveries.push({ id: delivery.id, shipmentNumber: delivery.shipmentNumber, deliveryCode: delivery.deliveryCode, truckPlate: delivery.truckPlate });
     });
-    return { partial: false, deliveries, remainingMaterialCount: 0, bookingStatus: proposal.bookingStatus };
+    const recipients = state.users.filter((user) => ["admin", "planner"].includes(user.role) && user.emailVerifiedAt && user.email).map((user) => user.email);
+    return { partial: false, deliveries, remainingMaterialCount: 0, bookingStatus: proposal.bookingStatus, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, recipients };
   });
   if (!result) return response.status(404).json({ message: "SDS proposal not found" });
   if (result.forbidden) return response.status(403).json({ message: "This SDS proposal belongs to another supplier" });
   if (result.alreadyResponded) return response.status(409).json({ message: "This SDS proposal already has a supplier response" });
   if (result.invalidAssignment) return response.status(400).json({ message: "Select unconfirmed material codes only; a material can belong to one truck" });
   if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
-  response.json(result);
+  let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
+  if ((result.rejected || !result.partial) && result.recipients) {
+    const state = await store.read();
+    try { notification = await emailNotifications.sendSupplierDecision({ sender: senderFromState(state), recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.rejected ? "REJECTED" : "CONFIRMED", reason: result.reason, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime }); }
+    catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Supplier decision notification failed: ${error.message}`); }
+  }
+  const { recipients: _recipients, ...publicResult } = result;
+  void _recipients;
+  response.json({ ...publicResult, notification });
 }));
 
 app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRoute(async (request, response) => {
@@ -996,14 +1061,14 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     const batch = { id: batchId, fileName: cached.preview.fileName, status: deliveryCount ? "IMPORTED" : "UNCHANGED", totalRows: cached.preview.summary.totalRows, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, createdAt: new Date().toISOString(), completedAt: new Date().toISOString(), notificationStatus: "PENDING", notificationsSent: 0, notificationsFailed: 0 };
     state.importBatches.unshift(batch);
     addAudit(state, request.user, "SDS_IMPORT_COMPLETED", `${createdProposals} created, ${updatedProposals} updated, ${unchangedProposals} unchanged after spreadsheet comparison`);
-    const recipients = state.users.filter((user) => user.role === "supplier" && notifiedSupplierIds.has(Number(user.supplierId))).map((user) => user.email).filter(Boolean);
+    const recipients = state.users.filter((user) => user.role === "supplier" && user.emailVerifiedAt && notifiedSupplierIds.has(Number(user.supplierId))).map((user) => user.email).filter(Boolean);
     return { batchId, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, recipients };
   });
   if (result.missingAccounts) return response.status(409).json({ message: `Create and link a supplier account before importing: ${result.missingAccounts.join(", ")}` });
   if (result.conflictDecisionRequired) return response.status(409).json({ message: "Choose whether to keep or update every conflicting proposal before importing", conflicts: result.conflictDecisionRequired });
   importPreviews.delete(token);
   let notification;
-  try { notification = await emailNotifications.sendNewSds({ recipients: result.recipients, fileName: cached.preview.fileName, proposalCount: result.deliveryCount }); }
+  try { const state = await store.read(); notification = await emailNotifications.sendNewSds({ sender: senderFromState(state), recipients: result.recipients, fileName: cached.preview.fileName, proposalCount: result.deliveryCount }); }
   catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] SDS notification failed: ${error.message}`); }
   await store.update((state) => {
     const batch = state.importBatches.find((row) => row.id === result.batchId);
@@ -1031,22 +1096,105 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
   const result = await store.update((state) => {
     if (state.users.some((user) => user.username.toLowerCase() === request.body.username.toLowerCase())) return { duplicate: true };
     let supplierId = null;
-    if (request.body.role === "supplier") {
+    if (["supplier", "driver"].includes(request.body.role)) {
       const existing = state.suppliers.find((supplier) => supplier.id === Number(request.body.supplierId));
+      if (request.body.role === "driver" && !existing) return { supplierRequired: true };
       const supplier = existing || ensureSupplier(state, request.body.supplierName || request.body.name);
-      if (state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplier.id))) return { supplierAlreadyLinked: true };
+      if (request.body.role === "supplier" && state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplier.id))) return { supplierAlreadyLinked: true };
       supplier.productPresets ||= [];
       supplierId = supplier.id;
     }
     const id = nextId(state.users);
-    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, passwordHash, role: request.body.role, supplierId });
+    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, emailVerifiedAt: null, emailVerificationHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0, passwordHash, role: request.body.role, supplierId });
     addAudit(state, request.user, "ACCOUNT_CREATED", `${request.body.role === "supplier" ? "Supplier" : request.body.role} account @${String(request.body.username).trim().toLowerCase()} created`);
     return { id, supplierId };
   });
   if (result.duplicate) return response.status(409).json({ message: "That username already exists" });
   if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active supplier account" });
+  if (result.supplierRequired) return response.status(400).json({ message: "Choose the supplier company this driver belongs to" });
   activeAccountRoles.set(Number(result.id), request.body.role);
   response.status(201).json(result);
+}));
+
+app.patch("/api/admin/email-sender", auth, allow("admin"), asyncRoute(async (request, response) => {
+  const email = String(request.body?.email || "").trim().toLowerCase();
+  const appPassword = String(request.body?.appPassword || "").replace(/\s/g, "");
+  if (!/^[^\s@]+@gmail\.com$/i.test(email) || appPassword.length < 12) return response.status(400).json({ message: "Enter the administrator Gmail address and its Google App Password" });
+  try { await emailNotifications.verifySender({ email, appPassword }); }
+  catch { return response.status(502).json({ message: "Gmail rejected the sender details. Check the address and Google App Password." }); }
+  const configuredAt = new Date().toISOString();
+  await store.update((state) => {
+    state.settings.emailNotifications = { senderEmail: email, encryptedAppPassword: encryptSecret(appPassword), configuredAt, configuredBy: request.user.id };
+    addAudit(state, request.user, "EMAIL_SENDER_CONFIGURED", "DockFlow notification sender was configured");
+  });
+  response.json({ ok: true, emailNotifications: { senderEmail: email, configured: true, configuredAt } });
+}));
+
+const mayManageUserEmail = (request, target) => request.user.role === "admin" || (["admin", "planner"].includes(request.user.role) && Number(request.user.id) === Number(target.id));
+
+app.patch("/api/users/:id/email", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
+  const email = String(request.body?.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response.status(400).json({ message: "Enter a valid email address" });
+  const result = await store.update((state) => {
+    const target = state.users.find((user) => Number(user.id) === Number(request.params.id));
+    if (!target) return null;
+    if (!mayManageUserEmail(request, target) || !["admin", "planner", "supplier"].includes(target.role)) return { forbidden: true };
+    target.email = email;
+    target.emailVerifiedAt = null;
+    target.emailVerificationHash = null;
+    target.emailVerificationExpiresAt = null;
+    target.emailVerificationAttempts = 0;
+    return { ok: true, user: publicUser(target) };
+  });
+  if (!result) return response.status(404).json({ message: "Account not found" });
+  if (result.forbidden) return response.status(403).json({ message: "You cannot edit that account email" });
+  response.json(result);
+}));
+
+app.post("/api/users/:id/email/send-code", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
+  const state = await store.read();
+  const target = state.users.find((user) => Number(user.id) === Number(request.params.id));
+  if (!target) return response.status(404).json({ message: "Account not found" });
+  if (!mayManageUserEmail(request, target) || !["admin", "planner", "supplier"].includes(target.role)) return response.status(403).json({ message: "You cannot verify that account email" });
+  if (!target.email) return response.status(409).json({ message: "Add an email address to this account first" });
+  const sender = senderFromState(state);
+  if (!sender) return response.status(409).json({ message: "Configure the administrator Gmail sender first" });
+  const code = String(randomInt(100000, 1000000));
+  const notification = await emailNotifications.sendVerificationCode({ sender, recipient: target.email, code });
+  if (notification.status !== "SENT") return response.status(502).json({ message: "The verification email could not be sent", notification });
+  await store.update((draft) => {
+    const current = draft.users.find((user) => Number(user.id) === Number(target.id));
+    if (!current) return;
+    current.emailVerificationHash = createHash("sha256").update(code).digest("hex");
+    current.emailVerificationExpiresAt = new Date(Date.now() + 10 * 60000).toISOString();
+    current.emailVerificationAttempts = 0;
+  });
+  response.json({ ok: true, sentTo: target.email.replace(/^(.{2}).*(@.*)$/, "$1***$2"), expiresInMinutes: 10, ...(process.env.NODE_ENV === "test" ? { testCode: code } : {}) });
+}));
+
+app.post("/api/users/:id/email/verify", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
+  const code = String(request.body?.code || "").trim();
+  if (!/^\d{6}$/.test(code)) return response.status(400).json({ message: "Enter the 6-digit verification code" });
+  const result = await store.update((state) => {
+    const target = state.users.find((user) => Number(user.id) === Number(request.params.id));
+    if (!target) return null;
+    if (!mayManageUserEmail(request, target)) return { forbidden: true };
+    if (!target.emailVerificationHash || !target.emailVerificationExpiresAt || Date.parse(target.emailVerificationExpiresAt) < Date.now()) return { expired: true };
+    if (Number(target.emailVerificationAttempts || 0) >= 5) return { locked: true };
+    if (createHash("sha256").update(code).digest("hex") !== target.emailVerificationHash) { target.emailVerificationAttempts = Number(target.emailVerificationAttempts || 0) + 1; return { mismatch: true }; }
+    target.emailVerifiedAt = new Date().toISOString();
+    target.emailVerificationHash = null;
+    target.emailVerificationExpiresAt = null;
+    target.emailVerificationAttempts = 0;
+    addAudit(state, request.user, "EMAIL_VERIFIED", `${target.username} email verified`);
+    return { ok: true, user: publicUser(target) };
+  });
+  if (!result) return response.status(404).json({ message: "Account not found" });
+  if (result.forbidden) return response.status(403).json({ message: "You cannot verify that account email" });
+  if (result.expired) return response.status(410).json({ message: "The verification code expired. Send a new code." });
+  if (result.locked) return response.status(429).json({ message: "Too many incorrect codes. Send a new code." });
+  if (result.mismatch) return response.status(400).json({ message: "The verification code is incorrect" });
+  response.json(result);
 }));
 
 app.delete("/api/users/:id", auth, allow("admin"), asyncRoute(async (request, response) => {

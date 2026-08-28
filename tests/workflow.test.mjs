@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createTcpServer } from "node:net";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +9,7 @@ import test from "node:test";
 import ExcelJS from "exceljs";
 
 const freePort = () => new Promise((resolve, reject) => {
-  const server = createServer();
+  const server = createTcpServer();
   server.once("error", reject);
   server.listen(0, "127.0.0.1", () => { const address = server.address(); server.close(() => resolve(address.port)); });
 });
@@ -18,16 +19,23 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const dataFile = join(testDirectory, "trial-data.json");
   await copyFile(new URL("../data/trial-data.json", import.meta.url), dataFile);
   const port = await freePort();
+  const etaPort = await freePort();
+  const etaServer = createHttpServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (request.url?.startsWith("/search")) response.end(JSON.stringify([{ lat: "14.3000", lon: "120.9000", display_name: "Mock address" }]));
+    else response.end(JSON.stringify({ routes: [{ distance: 12300, duration: 2520 }] }));
+  });
+  await new Promise((resolve) => etaServer.listen(etaPort, "127.0.0.1", resolve));
   const baseUrl = `http://127.0.0.1:${port}`;
   let serverOutput = "";
   const apiProcess = spawn(process.execPath, ["server/index.js"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, DB_ENABLED: "false", EMAIL_NOTIFICATIONS_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila" },
+    env: { ...process.env, NODE_ENV: "test", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   apiProcess.stdout.on("data", (chunk) => { serverOutput += chunk; });
   apiProcess.stderr.on("data", (chunk) => { serverOutput += chunk; });
-  context.after(async () => { apiProcess.kill("SIGTERM"); await rm(testDirectory, { recursive: true, force: true }); });
+  context.after(async () => { apiProcess.kill("SIGTERM"); etaServer.close(); await rm(testDirectory, { recursive: true, force: true }); });
 
   for (let attempt = 0; attempt < 80; attempt += 1) {
     try { if ((await fetch(`${baseUrl}/api/health`)).ok) break; } catch {}
@@ -49,9 +57,19 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   const supplier = await login("supplier", "supplier123");
   const admin = await login("admin", "admin123");
+  const planner = await login("planner", "planner123");
   const production = await login("production", "production123");
+  const driver = await login("driver", "driver123");
   const security = await login("security", "security123");
   const warehouse = await login("warehouse", "warehouse123");
+
+  assert.equal((await call("/api/admin/email-sender", { token: admin.token, method: "PATCH", body: { email: "dockflow.notifications@gmail.com", appPassword: "abcdefghijklmnop" } })).response.status, 200);
+  for (const account of [supplier.user, planner.user, admin.user]) {
+    const sent = await call(`/api/users/${account.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
+    assert.equal(sent.response.status, 200);
+    assert.match(sent.result.testCode, /^\d{6}$/);
+    assert.equal((await call(`/api/users/${account.id}/email/verify`, { token: admin.token, method: "POST", body: { code: sent.result.testCode } })).response.status, 200);
+  }
 
   assert.equal((await call("/api/rds", { token: supplier.token, method: "POST", body: {} })).response.status, 410);
   const refreshed = await call("/api/auth/refresh", { method: "POST", headers: { Cookie: admin.refreshCookie } });
@@ -63,6 +81,13 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(supplierBefore.result.users.length, 0);
   assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.supplierId === supplier.user.supplierId));
   assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item) && !("poNumber" in item))));
+  assert.equal(supplierBefore.result.settings.emailNotifications.configured, true);
+  assert.equal(JSON.stringify(supplierBefore.result).includes("abcdefghijklmnop"), false);
+  assert.equal(JSON.stringify(supplierBefore.result.settings).includes("encryptedAppPassword"), false);
+  const driverBootstrap = await call("/api/bootstrap", { token: driver.token });
+  assert.ok(driverBootstrap.result.shipments.every((shipment) => shipment.supplierId === driver.user.supplierId));
+  assert.equal(driverBootstrap.result.importBatches.length, 0);
+  assert.equal((await call("/api/availability", { token: production.token, method: "POST", body: { date: "2026-08-28", startTime: "12:00", endTime: "13:00" } })).response.status, 403);
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("SDS Schedule");
@@ -82,7 +107,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const committed = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: preview.previewToken } });
   assert.equal(committed.response.status, 201);
   assert.equal(committed.result.deliveryCount, 1);
-  assert.equal(committed.result.notification.status, "DISABLED");
+  assert.equal(committed.result.notification.status, "SENT");
 
   const duplicatePreview = await uploadPreview(workbook, "same-data-renamed.xlsx");
   const duplicateCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: duplicatePreview.result.previewToken } });
@@ -124,11 +149,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(invalidPhone.response.status, 400);
 
   const firstTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
-    decision: "PROPOSE_ALTERNATIVE",
-    reason: "Two trucks must be loaded on the following shift",
-    alternativeDate: "2026-08-29",
-    alternativeTime: "13:00",
-    alternativeEndTime: "15:00",
+    decision: "ACCEPT",
     loadConfirmed: true,
     trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "+639170000001", itemIds: [proposal.items[0].id] }],
   } });
@@ -143,11 +164,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(partialProposal.items.filter((item) => item.supplierApprovedAt).length, 1);
 
   const secondTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
-    decision: "PROPOSE_ALTERNATIVE",
-    reason: "Two trucks must be loaded on the following shift",
-    alternativeDate: "2026-08-29",
-    alternativeTime: "13:00",
-    alternativeEndTime: "15:00",
+    decision: "ACCEPT",
     loadConfirmed: true,
     trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "+639170000002", itemIds: [proposal.items[1].id] }],
   } });
@@ -162,12 +179,12 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const group = productionQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
   assert.equal(group.length, 2);
   assert.ok(group.every((shipment) => shipment.bookingStatus === "APPROVED"));
-  assert.ok(group.every((shipment) => shipment.supplierResponseReason));
+  assert.ok(group.every((shipment) => shipment.supplierResponse === "ACCEPTED"));
   assert.equal((await call(`/api/shipments/${proposal.id}/final-decision`, { token: production.token, method: "PATCH", body: { decision: "APPROVE" } })).response.status, 404);
 
   const approvedBootstrap = await call("/api/bootstrap", { token: supplier.token });
   const approvedGroup = approvedBootstrap.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
-  assert.ok(approvedGroup.every((shipment) => shipment.bookingStatus === "APPROVED" && shipment.scheduledDate === "2026-08-29"));
+  assert.ok(approvedGroup.every((shipment) => shipment.bookingStatus === "APPROVED" && shipment.scheduledDate === "2026-08-28"));
   const first = approvedGroup[0];
   const qr = await call(`/api/shipments/${first.id}/qr.svg`, { token: supplier.token });
   assert.equal(qr.response.status, 200);
@@ -177,8 +194,36 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(pdf.result.subarray(0, 4).toString(), "%PDF");
   assert.equal((pdf.result.toString("latin1").match(/\/Type\s*\/Page\b/g) || []).length, 1);
 
+  const siteRoute = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Mock receiving site, Cavite" } });
+  assert.equal(siteRoute.response.status, 200);
+  const supplierRoute = await call(`/api/suppliers/${supplier.user.supplierId}/route`, { token: admin.token, method: "PATCH", body: { originAddress: "Mock supplier origin, Manila" } });
+  assert.equal(supplierRoute.response.status, 200);
+  assert.equal(supplierRoute.result.supplier.routeDistanceKm, 12.3);
+  assert.equal(supplierRoute.result.supplier.routeDurationMinutes, 42);
+
+  const rejectionWorkbook = new ExcelJS.Workbook();
+  const rejectionSheet = rejectionWorkbook.addWorksheet("SDS Schedule");
+  rejectionSheet.addRow(["Supplier", "Material Code", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time"]);
+  rejectionSheet.addRow(["Trial Ingredients Supplier", "SDS-REJECT-1", "KG", 100, "30-Aug-2026", "15:00", "16:00"]);
+  const rejectionPreview = await uploadPreview(rejectionWorkbook, "supplier-rejection.xlsx");
+  const rejectionCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: rejectionPreview.result.previewToken } });
+  assert.equal(rejectionCommit.response.status, 201);
+  const beforeReject = await call("/api/bootstrap", { token: supplier.token });
+  const rejectionProposal = beforeReject.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-REJECT-1"));
+  const rejectedResponse = await call(`/api/shipments/${rejectionProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "Truck is unavailable", alternativeDate: "2026-08-31", alternativeTime: "10:00", alternativeEndTime: "11:00", loadConfirmed: false, trucks: [] } });
+  assert.equal(rejectedResponse.response.status, 200);
+  assert.equal(rejectedResponse.result.rejected, true);
+  assert.equal(rejectedResponse.result.notification.status, "SENT");
+  const afterReject = await call("/api/bootstrap", { token: admin.token });
+  assert.equal(afterReject.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "REJECTED");
+  assert.equal(afterReject.result.audit.find((entry) => entry.shipmentNumber === rejectionProposal.shipmentNumber).action, "SUPPLIER_REJECTED");
+  assert.equal((await call(`/api/shipments/${rejectionProposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
+
   const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage } });
-  assert.equal((await scan(supplier.token, "TRIP")).result.shipment.status, "IN_TRANSIT");
+  const tripScan = await scan(supplier.token, "TRIP");
+  assert.equal(tripScan.result.shipment.status, "IN_TRANSIT");
+  assert.equal(tripScan.result.shipment.estimatedTravelMinutes, 42);
+  assert.ok(tripScan.result.shipment.estimatedArrivalAt);
   assert.equal((await scan(security.token, "GATE")).result.shipment.status, "GATE_IN");
   assert.equal((await scan(warehouse.token, "UNLOADING")).result.shipment.status, "UNLOADING");
   assert.equal((await scan(warehouse.token, "RECEIVED")).result.shipment.status, "RECEIVED");
