@@ -64,6 +64,7 @@ const localDate = (days = 0) => {
 };
 const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+const placeholderEmail = (value) => /@(dockflow\.local|localhost|example\.(com|net|org)|[^@]+\.(local|test|invalid))$/i.test(String(value || "").trim());
 const toMinutes = (value) => {
   const [hour, minute] = String(value || "00:00").split(":").map(Number);
   return hour * 60 + minute;
@@ -1139,11 +1140,15 @@ app.post("/api/users/:id/email/send-code", auth, allow("admin", "planner"), asyn
   if (!target) return response.status(404).json({ message: "Account not found" });
   if (!mayManageUserEmail(request, target)) return response.status(403).json({ message: "You cannot verify that account email" });
   if (!target.email) return response.status(409).json({ message: "Add an email address to this account first" });
+  if (placeholderEmail(target.email)) return response.status(409).json({ message: `${target.email} is a trial placeholder. Replace it with the account owner's real email address before sending a verification code.` });
   const sender = emailSender;
   if (!sender) return response.status(409).json({ message: "Configure EMAIL_NOTIFICATIONS_ENABLED, SMTP_USER, and SMTP_APP_PASSWORD in the server .env file first" });
   const code = String(randomInt(100000, 1000000));
   const notification = await emailNotifications.sendVerificationCode({ sender, recipient: target.email, code });
-  if (notification.status !== "SENT") return response.status(502).json({ message: "The verification email could not be sent", notification });
+  if (notification.status !== "SENT") {
+    console.error(`[email] Verification failed (${notification.errorCode || "SMTP_ERROR"})`);
+    return response.status(502).json({ message: notification.message || "The verification email could not be sent", notification });
+  }
   await store.update((draft) => {
     const current = draft.users.find((user) => Number(user.id) === Number(target.id));
     if (!current) return;

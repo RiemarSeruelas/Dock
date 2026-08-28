@@ -1,18 +1,7 @@
-0o34d9sl12_gp.js:1  POST http://localhost:5059/api/users/1/email/send-code 502 (Bad Gateway)
-Y @ 0o34d9sl12_gp.js:1
-i @ 0o34d9sl12_gp.js:1
-X @ 0o34d9sl12_gp.js:1
-ei @ 0o34d9sl12_gp.js:1
-el @ 0o34d9sl12_gp.js:1
-j @ 0o34d9sl12_gp.js:1
-onClick @ 0o34d9sl12_gp.js:1
-sJ @ 07lhk_q6pmm3r.js:1
-(anonymous) @ 07lhk_q6pmm3r.js:1
-tD @ 07lhk_q6pmm3r.js:1
-s4 @ 07lhk_q6pmm3r.js:1
-fz @ 07lhk_q6pmm3r.js:1
-fT @ 07lhk_q6pmm3r.js:1
-0o34d9sl12_gp.js:1 Uncaught (in promise) Error: The verification email could not be sent
-    at ei (0o34d9sl12_gp.js:1:11446)
-    at async el (0o34d9sl12_gp.js:1:114660)
-    at async j (0o34d9sl12_gp.js:1:97304)
+EMAIL_NOTIFICATIONS_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your_actual_admin@gmail.com
+SMTP_APP_PASSWORD=your_google_app_password
+MAIL_FROM=

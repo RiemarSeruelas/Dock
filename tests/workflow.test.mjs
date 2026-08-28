@@ -64,7 +64,12 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const warehouse = await login("warehouse", "warehouse123");
 
   assert.equal((await call("/api/admin/email-sender", { token: admin.token, method: "PATCH", body: { email: "attacker@example.com", appPassword: "do-not-store-this" } })).response.status, 410);
+  const placeholderRecipient = await call(`/api/users/${admin.user.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
+  assert.equal(placeholderRecipient.response.status, 409);
+  assert.match(placeholderRecipient.result.message, /trial placeholder/i);
   for (const account of [supplier.user, planner.user, admin.user, production.user, driver.user, security.user, warehouse.user]) {
+    const accountEmail = `${account.username}.dockflow.test@gmail.com`;
+    assert.equal((await call(`/api/users/${account.id}/email`, { token: admin.token, method: "PATCH", body: { email: accountEmail } })).response.status, 200);
     const sent = await call(`/api/users/${account.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
     assert.equal(sent.response.status, 200);
     assert.match(sent.result.testCode, /^\d{6}$/);

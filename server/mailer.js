@@ -4,6 +4,14 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => (
 const testMode = process.env.NODE_ENV === "test";
 const uniqueEmails = (recipients) => [...new Set((recipients || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
 const transporterFor = ({ email, appPassword, host = "smtp.gmail.com", port = 465, secure = true }) => nodemailer.createTransport({ host, port, secure, auth: { user: email, pass: appPassword } });
+const safeFailureMessage = (error) => {
+  const code = String(error?.code || "").toUpperCase();
+  const responseCode = Number(error?.responseCode || 0);
+  if (code === "EAUTH" || responseCode === 534 || responseCode === 535) return "Gmail rejected the administrator sender. Check SMTP_USER and use a Google App Password in SMTP_APP_PASSWORD.";
+  if (["ETIMEDOUT", "ESOCKET", "ECONNECTION", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "EDNS"].includes(code)) return "DockFlow could not reach Gmail from the API container. Check internet access, DNS, firewall rules, and smtp.gmail.com port 465.";
+  if ([550, 551, 552, 553, 554].includes(responseCode)) return "The mail server rejected the sender or recipient address. Confirm that both addresses are real email accounts.";
+  return "The mail server rejected the verification message. Check the API container logs for the SMTP error code.";
+};
 
 const send = async ({ sender, recipients, subject, text, html }) => {
   const uniqueRecipients = uniqueEmails(recipients);
@@ -13,7 +21,8 @@ const send = async ({ sender, recipients, subject, text, html }) => {
   const transporter = transporterFor(sender);
   const settled = await Promise.allSettled(uniqueRecipients.map((to) => transporter.sendMail({ from: sender.from || `DockFlow <${sender.email}>`, to, subject, text, html })));
   const sent = settled.filter((result) => result.status === "fulfilled").length;
-  return { status: sent === uniqueRecipients.length ? "SENT" : sent ? "PARTIAL" : "FAILED", sent, failed: uniqueRecipients.length - sent };
+  const firstFailure = settled.find((result) => result.status === "rejected");
+  return { status: sent === uniqueRecipients.length ? "SENT" : sent ? "PARTIAL" : "FAILED", sent, failed: uniqueRecipients.length - sent, ...(firstFailure ? { message: safeFailureMessage(firstFailure.reason), errorCode: String(firstFailure.reason?.code || firstFailure.reason?.responseCode || "SMTP_ERROR") } : {}) };
 };
 
 export const emailNotifications = {
