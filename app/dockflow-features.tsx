@@ -229,7 +229,7 @@ const PHONE_COUNTRIES = [
   { dial: "+971", label: "UAE +971", min: 9, max: 9 },
 ];
 
-function SupplierSdsModal({ shipment, onClose, onSubmit }: { shipment: Shipment; onClose: () => void; onSubmit: (shipment: Shipment, payload: SupplierResponsePayload) => Promise<void> | void }) {
+export function SupplierSdsModal({ shipment, onClose, onSubmit }: { shipment: Shipment; onClose: () => void; onSubmit: (shipment: Shipment, payload: SupplierResponsePayload) => Promise<void> | void }) {
   const previousLoads = shipment.confirmedTruckLoads || [];
   const remainingItems = shipment.items.filter((item) => !item.supplierApprovedAt);
   const firstLoad = previousLoads.length === 0;
@@ -297,13 +297,11 @@ function SdsWorkflowPanel({ data, onImportSds, onOpenShipment }: { data: AppData
   </section>;
 }
 
-export function FlexibleSchedulePage({ data, user, onOpenShipment, onSaveAvailability, onDeleteAvailability, onMoveShipment, onImportSds, onSupplierResponse }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void; onSaveAvailability: (slot: AvailabilityInput) => Promise<void> | void; onDeleteAvailability: (id: number) => Promise<void> | void; onMoveShipment: (shipment: Shipment, date: string, startTime: string, endTime: string) => Promise<void> | void; onImportSds: () => void; onSupplierResponse: (shipment: Shipment, payload: SupplierResponsePayload) => Promise<void> | void }) {
+export function FlexibleSchedulePage({ data, user, onOpenShipment, onSaveAvailability, onDeleteAvailability, onMoveShipment, onImportSds }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void; onSaveAvailability: (slot: AvailabilityInput) => Promise<void> | void; onDeleteAvailability: (id: number) => Promise<void> | void; onMoveShipment: (shipment: Shipment, date: string, startTime: string, endTime: string) => Promise<void> | void; onImportSds: () => void }) {
   const [date, setDate] = useState(data.settings.availableDates.find((item) => item >= localDate()) || localDate());
   const [mode, setMode] = useState<"day" | "week">("week");
-  const [responding, setResponding] = useState<Shipment | null>(null);
   const canEdit = ["admin", "planner"].includes(user.role);
   const canImport = ["admin", "planner"].includes(user.role);
-  const openScheduleEntry = (shipment: Shipment) => user.role === "supplier" && shipment.bookingStatus === "PENDING_SUPPLIER" ? setResponding(shipment) : onOpenShipment(shipment);
   const move = (direction: number) => setDate(addDays(date, direction * (mode === "day" ? 1 : 7)));
   const visibleDates = mode === "day" ? [date] : Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(date), index));
   const bookingCount = data.shipments.filter((shipment) => visibleDates.includes(shipment.scheduledDate) && shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED").length;
@@ -316,9 +314,8 @@ export function FlexibleSchedulePage({ data, user, onOpenShipment, onSaveAvailab
       <div className="panel-head"><div><span className="eyebrow">{period}</span><h2>{canEdit ? "Availability and confirmed deliveries" : "Times available to book"}</h2></div><span className="policy-chip"><Clock3 size={14} /> Manila time · GMT+8</span></div>
       {canEdit && <ReceivingHoursControl key={`${date}-${data.settings.availableSlots.filter((slot) => slot.date === date).map((slot) => `${slot.id}:${slot.startTime}:${slot.endTime}`).join("|")}`} date={date} slots={data.settings.availableSlots} onSave={onSaveAvailability} onDelete={onDeleteAvailability} />}
       <div className="schedule-calendar-summary"><span className="availability"><i /><b>{availabilityCount}</b> open window{availabilityCount === 1 ? "" : "s"}</span><span className="bookings"><i /><b>{bookingCount}</b> approved deliver{bookingCount === 1 ? "y" : "ies"}</span></div>
-      <ScheduleTimeline shipments={data.shipments} availableSlots={data.settings.availableSlots} anchorDate={date} mode={mode} editable={canEdit} showPending={["admin", "planner", "supplier"].includes(user.role)} onOpenShipment={openScheduleEntry} onMoveShipment={onMoveShipment} onMoveAvailability={onSaveAvailability} />
+      <ScheduleTimeline shipments={data.shipments} availableSlots={data.settings.availableSlots} anchorDate={date} mode={mode} editable={canEdit} showPending={["admin", "planner", "supplier"].includes(user.role)} onOpenShipment={onOpenShipment} onMoveShipment={onMoveShipment} onMoveAvailability={onSaveAvailability} />
     </section>
-    {responding && <SupplierSdsModal shipment={responding} onClose={() => setResponding(null)} onSubmit={onSupplierResponse} />}
   </div>;
 }
 

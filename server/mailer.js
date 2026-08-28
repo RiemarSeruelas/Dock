@@ -3,7 +3,7 @@ import nodemailer from "nodemailer";
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 const testMode = process.env.NODE_ENV === "test";
 const uniqueEmails = (recipients) => [...new Set((recipients || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
-const transporterFor = ({ email, appPassword }) => nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, auth: { user: email, pass: appPassword } });
+const transporterFor = ({ email, appPassword, host = "smtp.gmail.com", port = 465, secure = true }) => nodemailer.createTransport({ host, port, secure, auth: { user: email, pass: appPassword } });
 
 const send = async ({ sender, recipients, subject, text, html }) => {
   const uniqueRecipients = uniqueEmails(recipients);
@@ -11,7 +11,7 @@ const send = async ({ sender, recipients, subject, text, html }) => {
   if (!sender?.email || !sender?.appPassword) return { status: "NOT_CONFIGURED", sent: 0, failed: uniqueRecipients.length };
   if (testMode) return { status: "SENT", sent: uniqueRecipients.length, failed: 0 };
   const transporter = transporterFor(sender);
-  const settled = await Promise.allSettled(uniqueRecipients.map((to) => transporter.sendMail({ from: `DockFlow <${sender.email}>`, to, subject, text, html })));
+  const settled = await Promise.allSettled(uniqueRecipients.map((to) => transporter.sendMail({ from: sender.from || `DockFlow <${sender.email}>`, to, subject, text, html })));
   const sent = settled.filter((result) => result.status === "fulfilled").length;
   return { status: sent === uniqueRecipients.length ? "SENT" : sent ? "PARTIAL" : "FAILED", sent, failed: uniqueRecipients.length - sent };
 };

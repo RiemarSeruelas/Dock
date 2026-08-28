@@ -8,7 +8,7 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { parseDeliveryWorkbook } from "./excel-import.js";
@@ -33,33 +33,27 @@ const GEOCODING_API_URL = process.env.GEOCODING_API_URL || "https://nominatim.op
 const ROUTING_API_URL = process.env.ROUTING_API_URL || "https://router.project-osrm.org/route/v1/driving";
 const ETA_USER_AGENT = process.env.ETA_USER_AGENT || "DockFlow/0.1 (configure ETA_USER_AGENT with an administrator contact)";
 const ETA_API_TIMEOUT_MS = Math.max(1000, Number(process.env.ETA_API_TIMEOUT_MS || 10000));
+const EMAIL_NOTIFICATIONS_ENABLED = String(process.env.EMAIL_NOTIFICATIONS_ENABLED || "false").toLowerCase() === "true";
+const SMTP_USER = String(process.env.SMTP_USER || "").trim().toLowerCase();
+const SMTP_APP_PASSWORD = String(process.env.SMTP_APP_PASSWORD || "").replace(/\s/g, "");
+const SMTP_HOST = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
+const SMTP_PORT = Math.max(1, Number(process.env.SMTP_PORT || 465));
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "true").toLowerCase() === "true";
+const MAIL_FROM = String(process.env.MAIL_FROM || SMTP_USER).trim();
 const app = express();
 const importPreviews = new Map();
-const EMAIL_SECRET_KEY = createHash("sha256").update(`${JWT_SECRET}:dockflow-email-sender`).digest();
-
-const encryptSecret = (value) => {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", EMAIL_SECRET_KEY, iv);
-  const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
-  return [iv, cipher.getAuthTag(), encrypted].map((part) => part.toString("base64url")).join(".");
-};
-const decryptSecret = (value) => {
-  if (!value) return "";
-  const [iv, tag, encrypted] = String(value).split(".").map((part) => Buffer.from(part, "base64url"));
-  const decipher = createDecipheriv("aes-256-gcm", EMAIL_SECRET_KEY, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
-};
-const senderFromState = (state) => {
-  const setting = state.settings?.emailNotifications;
-  if (!setting?.senderEmail || !setting?.encryptedAppPassword) return null;
-  try { return { email: setting.senderEmail, appPassword: decryptSecret(setting.encryptedAppPassword) }; }
-  catch { return null; }
-};
-const publicEmailSettings = (state) => ({
-  senderEmail: state.settings?.emailNotifications?.senderEmail || "",
-  configured: Boolean(state.settings?.emailNotifications?.senderEmail && state.settings?.emailNotifications?.encryptedAppPassword),
-  configuredAt: state.settings?.emailNotifications?.configuredAt || null,
+const emailSender = EMAIL_NOTIFICATIONS_ENABLED && SMTP_USER && SMTP_APP_PASSWORD ? {
+  email: SMTP_USER,
+  appPassword: SMTP_APP_PASSWORD,
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: SMTP_SECURE,
+  from: MAIL_FROM || SMTP_USER,
+} : null;
+const publicEmailSettings = () => ({
+  senderEmail: "",
+  configured: Boolean(emailSender),
+  configuredAt: null,
 });
 
 const localDate = (days = 0) => {
@@ -278,7 +272,7 @@ async function createInitialState() {
   }));
   return {
     version: 1,
-    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", siteAddress: "", siteCoordinates: null, availableDates: dates, availableSlots: defaultAvailabilityForDates(dates), emailNotifications: { senderEmail: "", encryptedAppPassword: "", configuredAt: null, configuredBy: null } },
+    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", siteAddress: "", siteCoordinates: null, availableDates: dates, availableSlots: defaultAvailabilityForDates(dates), emailNotifications: {} },
     users,
     suppliers: [
       { id: 1, vendorCode: "TRIAL-001", name: "Trial Ingredients Supplier", productPresets: [{ id: 1, materialCode: "65013575", uom: "KG", defaultAmount: 300 }, { id: 2, materialCode: "65013507", uom: "KG", defaultAmount: 500 }] },
@@ -341,11 +335,9 @@ await store.update(async (state) => {
   state.settings.siteName = String(state.settings.siteName || "Cavite Foods Receiving · Trial");
   state.settings.siteAddress = String(state.settings.siteAddress || "");
   state.settings.siteCoordinates = validCoordinates(state.settings.siteCoordinates) ? { lat: Number(state.settings.siteCoordinates.lat), lon: Number(state.settings.siteCoordinates.lon) } : null;
-  state.settings.emailNotifications ||= { senderEmail: "", encryptedAppPassword: "", configuredAt: null, configuredBy: null };
-  state.settings.emailNotifications.senderEmail = String(state.settings.emailNotifications.senderEmail || "").trim().toLowerCase();
-  state.settings.emailNotifications.encryptedAppPassword = String(state.settings.emailNotifications.encryptedAppPassword || "");
-  state.settings.emailNotifications.configuredAt ||= null;
-  state.settings.emailNotifications.configuredBy ||= null;
+  // Gmail credentials belong only in the server environment. Remove any sender
+  // secret left by an older trial build from JSON storage during startup.
+  state.settings.emailNotifications = {};
   if (!Array.isArray(state.settings.availableSlots)) state.settings.availableSlots = defaultAvailabilityForDates(state.settings.availableDates || []);
   state.settings.availableSlots = state.settings.availableSlots.filter((slot) => validDate(slot.date) && validTime(slot.startTime) && validTime(slot.endTime) && toMinutes(slot.endTime) > toMinutes(slot.startTime));
   let nextSlotId = nextId(state.settings.availableSlots);
@@ -587,7 +579,7 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
     users: _request.user.role === "admin" ? state.users.map(publicUser) : [],
     audit: ["admin", "planner"].includes(_request.user.role) ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : [],
     importBatches: canManageSds ? state.importBatches : [],
-    settings: { ...state.settings, emailNotifications: publicEmailSettings(state), dockCount: 2 },
+    settings: { ...state.settings, emailNotifications: publicEmailSettings(), dockCount: 2 },
   });
 }));
 
@@ -724,8 +716,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
   if ((result.rejected || !result.partial) && result.recipients) {
-    const state = await store.read();
-    try { notification = await emailNotifications.sendSupplierDecision({ sender: senderFromState(state), recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.rejected ? "REJECTED" : "CONFIRMED", reason: result.reason, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime }); }
+    try { notification = await emailNotifications.sendSupplierDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.rejected ? "REJECTED" : "CONFIRMED", reason: result.reason, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime }); }
     catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Supplier decision notification failed: ${error.message}`); }
   }
   const { recipients: _recipients, ...publicResult } = result;
@@ -1069,7 +1060,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
   if (result.conflictDecisionRequired) return response.status(409).json({ message: "Choose whether to keep or update every conflicting proposal before importing", conflicts: result.conflictDecisionRequired });
   importPreviews.delete(token);
   let notification;
-  try { const state = await store.read(); notification = await emailNotifications.sendNewSds({ sender: senderFromState(state), recipients: result.recipients, fileName: cached.preview.fileName, proposalCount: result.deliveryCount }); }
+  try { notification = await emailNotifications.sendNewSds({ sender: emailSender, recipients: result.recipients, fileName: cached.preview.fileName, proposalCount: result.deliveryCount }); }
   catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] SDS notification failed: ${error.message}`); }
   await store.update((state) => {
     const batch = state.importBatches.find((row) => row.id === result.batchId);
@@ -1117,19 +1108,9 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
   response.status(201).json(result);
 }));
 
-app.patch("/api/admin/email-sender", auth, allow("admin"), asyncRoute(async (request, response) => {
-  const email = String(request.body?.email || "").trim().toLowerCase();
-  const appPassword = String(request.body?.appPassword || "").replace(/\s/g, "");
-  if (!/^[^\s@]+@gmail\.com$/i.test(email) || appPassword.length < 12) return response.status(400).json({ message: "Enter the administrator Gmail address and its Google App Password" });
-  try { await emailNotifications.verifySender({ email, appPassword }); }
-  catch { return response.status(502).json({ message: "Gmail rejected the sender details. Check the address and Google App Password." }); }
-  const configuredAt = new Date().toISOString();
-  await store.update((state) => {
-    state.settings.emailNotifications = { senderEmail: email, encryptedAppPassword: encryptSecret(appPassword), configuredAt, configuredBy: request.user.id };
-    addAudit(state, request.user, "EMAIL_SENDER_CONFIGURED", "DockFlow notification sender was configured");
-  });
-  response.json({ ok: true, emailNotifications: { senderEmail: email, configured: true, configuredAt } });
-}));
+app.patch("/api/admin/email-sender", auth, allow("admin"), (_request, response) => {
+  response.status(410).json({ message: "The notification sender is configured privately in the server .env file" });
+});
 
 const mayManageUserEmail = (request, target) => request.user.role === "admin" || (["admin", "planner"].includes(request.user.role) && Number(request.user.id) === Number(target.id));
 
@@ -1139,7 +1120,7 @@ app.patch("/api/users/:id/email", auth, allow("admin", "planner"), asyncRoute(as
   const result = await store.update((state) => {
     const target = state.users.find((user) => Number(user.id) === Number(request.params.id));
     if (!target) return null;
-    if (!mayManageUserEmail(request, target) || !["admin", "planner", "supplier"].includes(target.role)) return { forbidden: true };
+    if (!mayManageUserEmail(request, target)) return { forbidden: true };
     target.email = email;
     target.emailVerifiedAt = null;
     target.emailVerificationHash = null;
@@ -1156,10 +1137,10 @@ app.post("/api/users/:id/email/send-code", auth, allow("admin", "planner"), asyn
   const state = await store.read();
   const target = state.users.find((user) => Number(user.id) === Number(request.params.id));
   if (!target) return response.status(404).json({ message: "Account not found" });
-  if (!mayManageUserEmail(request, target) || !["admin", "planner", "supplier"].includes(target.role)) return response.status(403).json({ message: "You cannot verify that account email" });
+  if (!mayManageUserEmail(request, target)) return response.status(403).json({ message: "You cannot verify that account email" });
   if (!target.email) return response.status(409).json({ message: "Add an email address to this account first" });
-  const sender = senderFromState(state);
-  if (!sender) return response.status(409).json({ message: "Configure the administrator Gmail sender first" });
+  const sender = emailSender;
+  if (!sender) return response.status(409).json({ message: "Configure EMAIL_NOTIFICATIONS_ENABLED, SMTP_USER, and SMTP_APP_PASSWORD in the server .env file first" });
   const code = String(randomInt(100000, 1000000));
   const notification = await emailNotifications.sendVerificationCode({ sender, recipient: target.email, code });
   if (notification.status !== "SENT") return response.status(502).json({ message: "The verification email could not be sent", notification });

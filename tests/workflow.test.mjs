@@ -30,7 +30,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   let serverOutput = "";
   const apiProcess = spawn(process.execPath, ["server/index.js"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, NODE_ENV: "test", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
+    env: { ...process.env, NODE_ENV: "test", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   apiProcess.stdout.on("data", (chunk) => { serverOutput += chunk; });
@@ -63,8 +63,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const security = await login("security", "security123");
   const warehouse = await login("warehouse", "warehouse123");
 
-  assert.equal((await call("/api/admin/email-sender", { token: admin.token, method: "PATCH", body: { email: "dockflow.notifications@gmail.com", appPassword: "abcdefghijklmnop" } })).response.status, 200);
-  for (const account of [supplier.user, planner.user, admin.user]) {
+  assert.equal((await call("/api/admin/email-sender", { token: admin.token, method: "PATCH", body: { email: "attacker@example.com", appPassword: "do-not-store-this" } })).response.status, 410);
+  for (const account of [supplier.user, planner.user, admin.user, production.user, driver.user, security.user, warehouse.user]) {
     const sent = await call(`/api/users/${account.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
     assert.equal(sent.response.status, 200);
     assert.match(sent.result.testCode, /^\d{6}$/);
@@ -82,6 +82,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.supplierId === supplier.user.supplierId));
   assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item) && !("poNumber" in item))));
   assert.equal(supplierBefore.result.settings.emailNotifications.configured, true);
+  assert.equal(supplierBefore.result.settings.emailNotifications.senderEmail, "");
   assert.equal(JSON.stringify(supplierBefore.result).includes("abcdefghijklmnop"), false);
   assert.equal(JSON.stringify(supplierBefore.result.settings).includes("encryptedAppPassword"), false);
   const driverBootstrap = await call("/api/bootstrap", { token: driver.token });
