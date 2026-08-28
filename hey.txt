@@ -1,1 +1,3 @@
-docker compose exec api node -e "console.log({enabled:process.env.EMAIL_NOTIFICATIONS_ENABLED,userConfigured:Boolean(process.env.SMTP_USER),passwordLength:(process.env.SMTP_APP_PASSWORD||'').replace(/\s/g,'').length,host:process.env.SMTP_HOST,port:process.env.SMTP_PORT})"
+A new SDS file Copy of sds summary PMRM wk30(RM) triall.csv was uploaded with 3 proposed delivery schedules.
+
+Sign in to DockFlow to confirm or reject the proposed delivery.

@@ -22,7 +22,8 @@
       "2026-07-23",
       "2026-08-13",
       "2026-08-14",
-      "2026-08-15"
+      "2026-08-15",
+      "2026-08-23"
     ],
     "availableSlots": [
       {
@@ -101,6 +102,20 @@
         "startTime": "08:30",
         "endTime": "10:30",
         "label": "Imported delivery window"
+      },
+      {
+        "id": 12,
+        "date": "2026-08-23",
+        "startTime": "08:30",
+        "endTime": "10:30",
+        "label": "Imported delivery window"
+      },
+      {
+        "id": 13,
+        "date": "2026-07-20",
+        "startTime": "11:30",
+        "endTime": "13:30",
+        "label": "Imported delivery window"
       }
     ],
     "siteAddress": "",
@@ -116,7 +131,7 @@
       "supplierId": null,
       "passwordHash": "$2b$10$MDbDX2ponccnkqEhLmKvueGOgNOE7rXOZgAD.5MNI26AlNAyV1HUe",
       "email": "riemsjr534@gmail.com",
-      "emailVerifiedAt": null,
+      "emailVerifiedAt": "2026-08-28T07:13:33.029Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0
@@ -203,8 +218,8 @@
       "id": 8,
       "name": "Ajinomoto",
       "username": "ajinomoto",
-      "email": "ajinomoto@gmail.com",
-      "emailVerifiedAt": null,
+      "email": "mhicaido53@gmail.com",
+      "emailVerifiedAt": "2026-08-28T07:14:18.632Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
@@ -945,10 +960,10 @@
       "supplierId": 3,
       "deliveryCode": null,
       "vendorCode": "TRIAL-003",
-      "scheduledDate": "2026-07-23",
+      "scheduledDate": "2026-08-23",
       "scheduledTime": "09:00",
       "scheduledEndTime": null,
-      "availabilitySlotId": 6,
+      "availabilitySlotId": 12,
       "expectedDurationMinutes": null,
       "timeSlot": "09:00",
       "shift": "Flexible date",
@@ -979,10 +994,10 @@
       "finalDecisionAt": null,
       "finalDecisionBy": null,
       "sdsProposalId": 6,
-      "importBatchId": 1,
+      "importBatchId": 2,
       "importSource": null,
       "sdsImportIdentity": "b0e7996fec2b85f2371a773fda318f10a4256b24e605863cccdca68cc48d743c",
-      "sdsImportFingerprint": "ad181d46805caa82b56a8d33e4c897f946961820ff2ad7f2448fa91619050a8b",
+      "sdsImportFingerprint": "2624022f71095878081f0235abd6e20694f2576b3c3a6bec4616915995a71d4a",
       "confirmedTruckLoads": [],
       "items": [
         {
@@ -1261,10 +1276,10 @@
       "supplierId": 4,
       "deliveryCode": null,
       "vendorCode": "TRIAL-004",
-      "scheduledDate": "2026-08-13",
+      "scheduledDate": "2026-07-20",
       "scheduledTime": "12:00",
       "scheduledEndTime": null,
-      "availabilitySlotId": 8,
+      "availabilitySlotId": 13,
       "expectedDurationMinutes": null,
       "timeSlot": "12:00",
       "shift": "Flexible date",
@@ -1295,10 +1310,10 @@
       "finalDecisionAt": null,
       "finalDecisionBy": null,
       "sdsProposalId": 10,
-      "importBatchId": 1,
+      "importBatchId": 2,
       "importSource": null,
       "sdsImportIdentity": "e053dc2c577eac6f45fbde25ca0c1e11bca004de176ab644285581b3ca6f6c4a",
-      "sdsImportFingerprint": "43bc9cc798616c8c2f8f0c38295f53d8272e20a6f2464f3f33a87a8912c718d2",
+      "sdsImportFingerprint": "241832e182f948dbb1cc42ce08758781ccae02c52d112e12c922cfcd2c1a82d5",
       "confirmedTruckLoads": [],
       "items": [
         {
@@ -1419,10 +1434,10 @@
       "supplierId": 4,
       "deliveryCode": null,
       "vendorCode": "TRIAL-004",
-      "scheduledDate": "2026-08-13",
+      "scheduledDate": "2026-07-20",
       "scheduledTime": "07:00",
       "scheduledEndTime": null,
-      "availabilitySlotId": 1,
+      "availabilitySlotId": 7,
       "expectedDurationMinutes": null,
       "timeSlot": "07:00",
       "shift": "Flexible date",
@@ -1453,10 +1468,10 @@
       "finalDecisionAt": null,
       "finalDecisionBy": null,
       "sdsProposalId": 12,
-      "importBatchId": 1,
+      "importBatchId": 2,
       "importSource": null,
       "sdsImportIdentity": "1db21db57309236a76865b8aa8c467d4f46ce4b94f8713f64c2b6f0e28545b05",
-      "sdsImportFingerprint": "25364f0d9480a5305463ae23ad5323f6f3f50a6248cd0128c3e00cf41298df92",
+      "sdsImportFingerprint": "f50bdeb6a34b16bc48f353e28aa7190f9dbc736c2f052a9ca5bc5738433f892f",
       "confirmedTruckLoads": [],
       "items": [
         {
@@ -1889,6 +1904,51 @@
   "rdsRequests": [],
   "audit": [
     {
+      "id": 26,
+      "at": "2026-08-28T07:14:48.409Z",
+      "actor": "System Administrator",
+      "action": "SDS_IMPORT_COMPLETED",
+      "detail": "0 created, 3 updated, 9 unchanged after spreadsheet comparison"
+    },
+    {
+      "id": 25,
+      "at": "2026-08-28T07:14:48.409Z",
+      "actor": "System Administrator",
+      "action": "SDS_UPDATED",
+      "shipmentNumber": "SHP-20260813-012",
+      "detail": "SHP-20260813-012 updated after spreadsheet comparison"
+    },
+    {
+      "id": 24,
+      "at": "2026-08-28T07:14:48.409Z",
+      "actor": "System Administrator",
+      "action": "SDS_UPDATED",
+      "shipmentNumber": "SHP-20260813-010",
+      "detail": "SHP-20260813-010 updated after spreadsheet comparison"
+    },
+    {
+      "id": 23,
+      "at": "2026-08-28T07:14:48.409Z",
+      "actor": "System Administrator",
+      "action": "SDS_UPDATED",
+      "shipmentNumber": "SHP-20260723-006",
+      "detail": "SHP-20260723-006 updated after spreadsheet comparison"
+    },
+    {
+      "id": 22,
+      "at": "2026-08-28T07:14:18.632Z",
+      "actor": "System Administrator",
+      "action": "EMAIL_VERIFIED",
+      "detail": "ajinomoto email verified"
+    },
+    {
+      "id": 21,
+      "at": "2026-08-28T07:13:33.029Z",
+      "actor": "System Administrator",
+      "action": "EMAIL_VERIFIED",
+      "detail": "admin email verified"
+    },
+    {
       "id": 20,
       "at": "2026-08-28T06:31:49.519Z",
       "actor": "System Administrator",
@@ -2044,6 +2104,24 @@
     }
   ],
   "importBatches": [
+    {
+      "id": 2,
+      "fileName": "Copy of sds summary PMRM wk30(RM) triall.csv",
+      "status": "IMPORTED",
+      "totalRows": 12,
+      "importedRows": 3,
+      "unchangedRows": 9,
+      "skippedRows": 0,
+      "deliveryCount": 3,
+      "createdProposals": 0,
+      "updatedProposals": 3,
+      "unchangedProposals": 9,
+      "createdAt": "2026-08-28T07:14:48.409Z",
+      "completedAt": "2026-08-28T07:14:48.409Z",
+      "notificationStatus": "SENT",
+      "notificationsSent": 1,
+      "notificationsFailed": 0
+    },
     {
       "id": 1,
       "fileName": "Copy of sds summary PMRM wk30(RM) triall.csv",
