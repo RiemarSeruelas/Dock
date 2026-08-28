@@ -1,3 +1,9 @@
-A new SDS file Copy of sds summary PMRM wk30(RM) triall.csv was uploaded with 3 proposed delivery schedules.
+1. notify: 
+Dear Supplier,
+There have been new changes uploaded. Please sign in to review them and reconfirm the delivery.
+2. show before vs after changes
 
-Sign in to DockFlow to confirm or reject the proposed delivery.
+when supplier is unavailable
+1. notify: Dear Planner & Production team,
+Supplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule for approval.
+2. show the reason, scheduled time, and proposed time
