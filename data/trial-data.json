@@ -8,7 +8,7 @@
     "Imported proposals start at PENDING_SUPPLIER. The supplier confirms one truck and its material codes at a time until every code has a truck.",
     "A manually added user may use a plain password field once; DockFlow replaces it with passwordHash on startup. Never place Gmail or SMTP passwords in this JSON file."
   ],
-  "version": 11,
+  "version": 10,
   "settings": {
     "siteName": "Cavite Foods Receiving · Trial",
     "dockCount": 2,
@@ -58,13 +58,7 @@
       }
     ],
     "siteAddress": "",
-    "siteCoordinates": null,
-    "emailNotifications": {
-      "senderEmail": "",
-      "encryptedAppPassword": "",
-      "configuredAt": null,
-      "configuredBy": null
-    }
+    "siteCoordinates": null
   },
   "users": [
     {
@@ -74,11 +68,7 @@
       "role": "admin",
       "supplierId": null,
       "passwordHash": "$2b$10$MDbDX2ponccnkqEhLmKvueGOgNOE7rXOZgAD.5MNI26AlNAyV1HUe",
-      "email": "admin@dockflow.local",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0
+      "email": "admin@dockflow.local"
     },
     {
       "id": 2,
@@ -87,11 +77,7 @@
       "role": "planner",
       "supplierId": null,
       "passwordHash": "$2b$10$rG5PUAy4/k0goLCUGbPAaeJYNNNOn.NXXVgYWeZZYJSbwbaoye5KK",
-      "email": "planner@dockflow.local",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0
+      "email": "planner@dockflow.local"
     },
     {
       "id": 3,
@@ -100,24 +86,16 @@
       "role": "supplier",
       "supplierId": 1,
       "passwordHash": "$2b$10$1k/SF5ruKyRIRXJ8ZW8SROGtOOFDp/HeRKQxmO8r1Hx4mx.6CSyxu",
-      "email": "supplier@dockflow.local",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0
+      "email": "supplier@dockflow.local"
     },
     {
       "id": 4,
       "name": "Driver User",
       "username": "driver",
       "role": "driver",
-      "supplierId": 1,
+      "supplierId": null,
       "passwordHash": "$2b$10$XGtCvTUktq6yWD.GmuNx5eU9xOzqw7Cxt.K1Ijh.amU5SgZ.dA7t6",
-      "email": "driver@dockflow.local",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0
+      "email": "driver@dockflow.local"
     },
     {
       "id": 5,
@@ -126,11 +104,7 @@
       "role": "security",
       "supplierId": null,
       "passwordHash": "$2b$10$KDCyVERwvtxnmgFp9QO8.u7piHzfc8BYVY54la2glRmkxSyZQnoSG",
-      "email": "security@dockflow.local",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0
+      "email": "security@dockflow.local"
     },
     {
       "id": 6,
@@ -139,11 +113,7 @@
       "role": "warehouse",
       "supplierId": null,
       "passwordHash": "$2b$10$Pbo9Y5.b28Rs.FWgbUE6NuR9xye3yuSQLSvcUmGQQwzlvK88FwVs6",
-      "email": "warehouse@dockflow.local",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0
+      "email": "warehouse@dockflow.local"
     },
     {
       "id": 7,
@@ -152,11 +122,7 @@
       "email": "production@dockflow.local",
       "passwordHash": "$2b$10$L4SkPm2/tFZKBLJw4V4ja.PaPX2HlE7PSfk01Wlp00Lsr7bL6SMT6",
       "role": "production",
-      "supplierId": null,
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0
+      "supplierId": null
     }
   ],
   "suppliers": [
@@ -264,9 +230,7 @@
           "poBalance": null,
           "poQuantity": null,
           "stillToBeDelivered": null,
-          "remarks": null,
-          "supplierApprovedAt": null,
-          "assignedTruckPlate": null
+          "remarks": null
         }
       ],
       "shipmentNumber": "SHP-20260813-001",
@@ -294,10 +258,7 @@
       "loadConfirmedAt": null,
       "finalDecisionAt": null,
       "finalDecisionBy": null,
-      "sdsProposalId": 1,
-      "confirmedTruckLoads": [],
-      "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsProposalId": 1
     },
     {
       "id": 2,
@@ -336,9 +297,7 @@
           "poBalance": null,
           "poQuantity": null,
           "stillToBeDelivered": null,
-          "remarks": null,
-          "supplierApprovedAt": null,
-          "assignedTruckPlate": null
+          "remarks": null
         }
       ],
       "shipmentNumber": "SHP-20260813-002",
@@ -365,10 +324,7 @@
       "loadConfirmedAt": null,
       "finalDecisionAt": null,
       "finalDecisionBy": null,
-      "sdsProposalId": 2,
-      "confirmedTruckLoads": [],
-      "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsProposalId": 2
     },
     {
       "id": 3,
@@ -410,9 +366,7 @@
           "poBalance": null,
           "poQuantity": null,
           "stillToBeDelivered": null,
-          "remarks": null,
-          "supplierApprovedAt": null,
-          "assignedTruckPlate": null
+          "remarks": null
         }
       ],
       "shipmentNumber": "SHP-20260813-003",
@@ -436,10 +390,7 @@
       "loadConfirmedAt": null,
       "finalDecisionAt": null,
       "finalDecisionBy": null,
-      "sdsProposalId": 3,
-      "confirmedTruckLoads": [],
-      "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsProposalId": 3
     },
     {
       "id": 4,
@@ -481,9 +432,7 @@
           "poBalance": null,
           "poQuantity": null,
           "stillToBeDelivered": null,
-          "remarks": null,
-          "supplierApprovedAt": null,
-          "assignedTruckPlate": null
+          "remarks": null
         }
       ],
       "availabilitySlotId": null,
@@ -508,10 +457,7 @@
       "loadConfirmedAt": null,
       "finalDecisionAt": null,
       "finalDecisionBy": null,
-      "sdsProposalId": 4,
-      "confirmedTruckLoads": [],
-      "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsProposalId": 4
     },
     {
       "id": 5,
@@ -546,9 +492,7 @@
           "poBalance": null,
           "poQuantity": null,
           "stillToBeDelivered": null,
-          "remarks": null,
-          "supplierApprovedAt": null,
-          "assignedTruckPlate": null
+          "remarks": null
         }
       ],
       "availabilitySlotId": null,
@@ -579,10 +523,7 @@
       "loadConfirmedAt": null,
       "finalDecisionAt": null,
       "finalDecisionBy": null,
-      "sdsProposalId": 5,
-      "confirmedTruckLoads": [],
-      "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsProposalId": 5
     }
   ],
   "rdsRequests": [],

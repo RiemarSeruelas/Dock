@@ -23,8 +23,8 @@ Each supplier in the spreadsheet must have a directly linked supplier account.
 1. Open **Administration → Accounts**.
 2. Select **Add account**.
 3. Choose **Supplier account** as the role.
-4. Enter the supplier company exactly as it appears in the spreadsheet.
-5. Add the supplier email, username, and initial password.
+4. Use the supplier company name as the account display name.
+5. Add the supplier email, username, and initial password. Supplier accounts do not need a separate company selector.
 
 One supplier company can have one active supplier account. Deleting its account keeps its delivery records, but new spreadsheet deliveries for that supplier are blocked until an account is linked again.
 
