@@ -31,16 +31,15 @@ const detailText = (label, details) => `${label}\nSchedule: ${scheduleText(detai
 const detailHtml = (label, details, tone) => `<div style="margin:12px 0;padding:14px;border:1px solid ${tone};border-radius:10px"><strong>${escapeHtml(label)}</strong><p style="margin:8px 0 4px"><b>Schedule:</b> ${escapeHtml(scheduleText(details))}<br><b>Site:</b> ${escapeHtml(details.site || "Not specified")}</p><p style="margin:8px 0 4px"><b>Material codes</b></p><ul style="margin-top:4px">${(details.items || []).map((item) => `<li><b>${escapeHtml(item.materialCode)}</b> — ${escapeHtml(item.quantity)} ${escapeHtml(item.uom)}</li>`).join("") || "<li>None</li>"}</ul></div>`;
 
 export const buildSdsChangeEmail = ({ supplier, changes }) => {
-  const hasReschedule = changes.some((change) => change.kind === "RESCHEDULE");
-  const subject = `${hasReschedule ? "Delivery reschedule" : "New proposed delivery"} – ${supplier}`;
+  const subject = `DockFlow delivery changes – ${supplier}`;
   const textBlocks = changes.map((change) => change.kind === "RESCHEDULE"
     ? `Reschedule\nDelivery: ${change.shipmentNumber}\n\n${detailText("Before", change.before)}\n\n${detailText("After", change.after)}`
-    : `New proposed delivery\nDelivery: ${change.shipmentNumber}\n\n${detailText("Proposed", change.after)}`);
-  const htmlBlocks = changes.map((change) => `<section style="margin:18px 0;padding-top:4px;border-top:2px solid #e8edf5"><h2 style="font-size:18px">${change.kind === "RESCHEDULE" ? "Reschedule" : "New proposed delivery"}</h2><p><b>Delivery:</b> ${escapeHtml(change.shipmentNumber)}</p>${change.kind === "RESCHEDULE" ? `${detailHtml("Before", change.before, "#f2b8b5")}${detailHtml("After", change.after, "#9fd8ca")}` : detailHtml("Proposed", change.after, "#a9c7ff")}</section>`);
+    : `New proposed delivery\nDelivery: ${change.shipmentNumber}\n\nBefore\nNo previous delivery proposal\n\n${detailText("After", change.after)}`);
+  const htmlBlocks = changes.map((change) => `<section style="margin:18px 0;padding-top:4px;border-top:2px solid #e8edf5"><h2 style="font-size:18px">${change.kind === "RESCHEDULE" ? "Reschedule" : "New proposed delivery"}</h2><p><b>Delivery:</b> ${escapeHtml(change.shipmentNumber)}</p>${change.kind === "RESCHEDULE" ? `${detailHtml("Before", change.before, "#f2b8b5")}${detailHtml("After", change.after, "#9fd8ca")}` : `<div style="margin:12px 0;padding:14px;border:1px solid #d8e1ed;border-radius:10px"><strong>Before</strong><p>No previous delivery proposal</p></div>${detailHtml("After", change.after, "#9fd8ca")}`}</section>`);
   return {
     subject,
-    text: `Hello ${supplier},\n\n${textBlocks.join("\n\n---\n\n")}\n\nSign in to DockFlow to review and confirm or reject your proposed delivery.`,
-    html: `<p>Hello <strong>${escapeHtml(supplier)}</strong>,</p>${htmlBlocks.join("")}<p>Sign in to DockFlow to review and confirm or reject your proposed delivery.</p>`,
+    text: `Dear Supplier,\n\nThere have been new changes uploaded. Please sign in to review them and reconfirm the delivery.\n\n${textBlocks.join("\n\n---\n\n")}`,
+    html: `<p>Dear Supplier,</p><p>There have been new changes uploaded. Please sign in to review them and reconfirm the delivery.</p>${htmlBlocks.join("")}`,
   };
 };
 
@@ -56,8 +55,10 @@ export const emailNotifications = {
   async sendSdsChanges({ sender, recipients, supplier, changes }) {
     return send({ sender, recipients, ...buildSdsChangeEmail({ supplier, changes }) });
   },
-  async sendSupplierDecision({ sender, recipients, shipmentNumber, supplier, decision, reason, alternativeDate, alternativeTime }) {
+  async sendSupplierDecision({ sender, recipients, shipmentNumber, supplier, decision, reason, scheduledDate, scheduledTime, scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime }) {
     const rejected = decision === "REJECTED";
-    return send({ sender, recipients, subject: `${supplier} ${rejected ? "rejected" : "confirmed"} ${shipmentNumber}`, text: `${supplier} ${rejected ? "rejected" : "confirmed"} delivery ${shipmentNumber}.${rejected ? ` Reason: ${reason}. Proposed alternative: ${alternativeDate} at ${alternativeTime}.` : ""}`, html: `<p><strong>${escapeHtml(supplier)}</strong> ${rejected ? "rejected" : "confirmed"} delivery <strong>${escapeHtml(shipmentNumber)}</strong>.</p>${rejected ? `<p><strong>Reason:</strong> ${escapeHtml(reason)}</p><p><strong>Proposed alternative:</strong> ${escapeHtml(alternativeDate)} at ${escapeHtml(alternativeTime)}</p>` : ""}` });
+    const scheduled = `${scheduledDate || "—"} at ${scheduledTime || "—"}${scheduledEndTime ? `–${scheduledEndTime}` : ""}`;
+    const proposed = `${alternativeDate || "—"} at ${alternativeTime || "—"}${alternativeEndTime ? `–${alternativeEndTime}` : ""}`;
+    return send({ sender, recipients, subject: `${supplier} ${rejected ? "requested a schedule change" : "confirmed"} – ${shipmentNumber}`, text: rejected ? `Dear Planner & Production team,\n\nSupplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule for approval.\n\nSupplier: ${supplier}\nDelivery: ${shipmentNumber}\nReason: ${reason}\nScheduled time: ${scheduled}\nProposed time: ${proposed}` : `${supplier} confirmed delivery ${shipmentNumber}.`, html: rejected ? `<p>Dear Planner &amp; Production team,</p><p>Supplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule for approval.</p><div style="margin-top:16px;padding:14px;border:1px solid #f0c7a7;border-radius:10px"><p><b>Supplier:</b> ${escapeHtml(supplier)}<br><b>Delivery:</b> ${escapeHtml(shipmentNumber)}<br><b>Reason:</b> ${escapeHtml(reason)}<br><b>Scheduled time:</b> ${escapeHtml(scheduled)}<br><b>Proposed time:</b> ${escapeHtml(proposed)}</p></div>` : `<p><strong>${escapeHtml(supplier)}</strong> confirmed delivery <strong>${escapeHtml(shipmentNumber)}</strong>.</p>` });
   },
 };

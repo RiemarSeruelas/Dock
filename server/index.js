@@ -28,6 +28,7 @@ const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR || "./uploads");
 const DATA_FILE = resolve(process.env.DATA_FILE || "./data/trial-data.json");
 const APP_ORIGIN = process.env.APP_ORIGIN || "http://localhost:5059";
 const ALLOWED_ORIGINS = [...new Set(`${APP_ORIGIN},${process.env.CORS_ORIGINS || ""}`.split(",").map((value) => value.trim()).filter(Boolean))];
+const ALLOW_PRIVATE_NETWORK_ORIGINS = String(process.env.ALLOW_PRIVATE_NETWORK_ORIGINS || "true").toLowerCase() === "true";
 const TIME_ZONE = process.env.TZ || "Asia/Manila";
 const GEOCODING_API_URL = process.env.GEOCODING_API_URL || "https://nominatim.openstreetmap.org/search";
 const ROUTING_API_URL = process.env.ROUTING_API_URL || "https://router.project-osrm.org/route/v1/driving";
@@ -86,8 +87,8 @@ const durationMinutes = (start, end) => {
   return duration;
 };
 const defaultAvailabilityForDates = (dates) => dates.flatMap((date, index) => [
-  { id: index * 2 + 1, date, startTime: "07:00", endTime: "12:00", label: "Open receiving window" },
-  { id: index * 2 + 2, date, startTime: "13:00", endTime: "20:00", label: "Open receiving window" },
+  { id: index * 2 + 1, date, startTime: "08:00", endTime: "09:00", label: "Available time" },
+  { id: index * 2 + 2, date, startTime: "13:00", endTime: "14:00", label: "Available time" },
 ]);
 const slotContains = (slot, date, startTime, endTime = null) => slot?.date === date && startTime >= slot.startTime && startTime < slot.endTime && (!endTime || endTime <= slot.endTime);
 const matchingAvailability = (state, date, startTime, endTime) => (state.settings.availableSlots || []).find((slot) => slotContains(slot, date, startTime, endTime));
@@ -153,8 +154,8 @@ const ensureAvailabilityForTime = (state, date, time) => {
   state.settings.availableSlots ||= [];
   const existing = matchingAvailability(state, date, time, null);
   if (existing) return existing;
-  const startMinutes = Math.max(0, toMinutes(time) - 30);
-  const endMinutes = Math.min(1439, toMinutes(time) + 90);
+  const startMinutes = Math.min(1380, Math.max(0, toMinutes(time)));
+  const endMinutes = Math.min(1439, startMinutes + 60);
   const slot = { id: nextId(state.settings.availableSlots), date, startTime: toTime(startMinutes), endTime: toTime(endMinutes), label: "Imported delivery window" };
   state.settings.availableSlots.push(slot);
   syncAvailableDates(state);
@@ -477,9 +478,17 @@ app.use((request, response, next) => {
 
 app.set("trust proxy", 1);
 app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use(cors({
+app.use(cors((request, optionsCallback) => optionsCallback(null, {
   origin(origin, callback) {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    let originHost = "";
+    let originHostname = "";
+    try { const parsed = new URL(origin); originHost = parsed.host.toLowerCase(); originHostname = parsed.hostname.toLowerCase(); } catch {}
+    const privateOrigin = /^(localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})$/.test(originHostname);
+    if (ALLOW_PRIVATE_NETWORK_ORIGINS && privateOrigin) return callback(null, true);
+    const requestHosts = [request.get("host"), ...String(request.get("x-forwarded-host") || "").split(",")]
+      .map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
+    if (originHost && requestHosts.includes(originHost)) return callback(null, true);
     const error = new Error("This origin is not allowed to call DockFlow");
     error.status = 403;
     callback(error);
@@ -488,7 +497,7 @@ app.use(cors({
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Authorization", "Content-Type", "X-Request-ID"],
   exposedHeaders: ["X-Request-ID", "RateLimit", "RateLimit-Policy"],
-}));
+})));
 app.use(express.json({ limit: "2mb" }));
 
 const asyncRoute = (handler) => (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next);
@@ -638,8 +647,8 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
       proposal.finalDecisionAt = respondedAt;
       proposal.finalDecisionBy = request.user.name;
       addAudit(state, request.user, "SUPPLIER_REJECTED", `${proposal.supplier} rejected ${proposal.shipmentNumber}: ${reason}`, proposal.shipmentNumber);
-      const recipients = state.users.filter((user) => ["admin", "planner"].includes(user.role) && user.emailVerifiedAt && user.email).map((user) => user.email);
-      return { rejected: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, alternativeDate, alternativeTime, recipients };
+      const recipients = state.users.filter((user) => ["planner", "production"].includes(user.role) && user.emailVerifiedAt && user.email).map((user) => user.email);
+      return { rejected: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, scheduledDate: proposal.scheduledDate, scheduledTime: proposal.scheduledTime, scheduledEndTime: proposal.scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, recipients };
     }
     const expectedIds = new Set(proposal.items.map((item) => Number(item.id)));
     const existingLoads = Array.isArray(proposal.confirmedTruckLoads) ? proposal.confirmedTruckLoads : [];
@@ -717,7 +726,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
   if ((result.rejected || !result.partial) && result.recipients) {
-    try { notification = await emailNotifications.sendSupplierDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.rejected ? "REJECTED" : "CONFIRMED", reason: result.reason, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime }); }
+    try { notification = await emailNotifications.sendSupplierDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.rejected ? "REJECTED" : "CONFIRMED", reason: result.reason, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime, scheduledEndTime: result.scheduledEndTime, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime, alternativeEndTime: result.alternativeEndTime }); }
     catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Supplier decision notification failed: ${error.message}`); }
   }
   const { recipients: _recipients, ...publicResult } = result;
@@ -1136,9 +1145,10 @@ app.patch("/api/admin/email-sender", auth, allow("admin"), (_request, response) 
   response.status(410).json({ message: "The notification sender is configured privately in the server .env file" });
 });
 
-const mayManageUserEmail = (request, target) => request.user.role === "admin" || (["admin", "planner"].includes(request.user.role) && Number(request.user.id) === Number(target.id));
+const mayManageUserEmail = (request, target) => request.user.role === "admin" || Number(request.user.id) === Number(target.id);
+const emailAccountRoles = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse"];
 
-app.patch("/api/users/:id/email", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
+app.patch("/api/users/:id/email", auth, allow(...emailAccountRoles), asyncRoute(async (request, response) => {
   const email = String(request.body?.email || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response.status(400).json({ message: "Enter a valid email address" });
   const result = await store.update((state) => {
@@ -1157,7 +1167,7 @@ app.patch("/api/users/:id/email", auth, allow("admin", "planner"), asyncRoute(as
   response.json(result);
 }));
 
-app.post("/api/users/:id/email/send-code", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
+app.post("/api/users/:id/email/send-code", auth, allow(...emailAccountRoles), asyncRoute(async (request, response) => {
   const state = await store.read();
   const target = state.users.find((user) => Number(user.id) === Number(request.params.id));
   if (!target) return response.status(404).json({ message: "Account not found" });
@@ -1182,7 +1192,7 @@ app.post("/api/users/:id/email/send-code", auth, allow("admin", "planner"), asyn
   response.json({ ok: true, sentTo: target.email.replace(/^(.{2}).*(@.*)$/, "$1***$2"), expiresInMinutes: 10, ...(process.env.NODE_ENV === "test" ? { testCode: code } : {}) });
 }));
 
-app.post("/api/users/:id/email/verify", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
+app.post("/api/users/:id/email/verify", auth, allow(...emailAccountRoles), asyncRoute(async (request, response) => {
   const code = String(request.body?.code || "").trim();
   if (!/^\d{6}$/.test(code)) return response.status(400).json({ message: "Enter the 6-digit verification code" });
   const result = await store.update((state) => {
@@ -1412,10 +1422,10 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "supplier"), asyncRoute
   });
   summary.autoFilter = { from: "A7", to: `F${Math.max(7, summary.rowCount)}` };
 
-  const details = workbook.addWorksheet("Delivery Details", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-  details.columns = [18, 18, 26, 14, 12, 18, 18, 18, 18, 18, 14, 18, 18, 18, 18, 18, 18, 42].map((width) => ({ width }));
-  titleSheet(details, "Confirmed Delivery Details", `${selectedSupplier}  •  ${shipments.length} confirmed delivery record${shipments.length === 1 ? "" : "s"}`, "R");
-  const detailHeaders = ["Booking", "Shipment", "Supplier", "Date", "Time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "ETA (min)", "Trip scan", "Gate in", "Unloading", "Received", "Gate out", "Site time (min)", "Material codes / quantities"];
+  const details = workbook.addWorksheet("Deliveries", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
+  details.columns = [18, 18, 26, 14, 12, 16, 20, 18, 18, 17, 16].map((width) => ({ width }));
+  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "K");
+  const detailHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)"];
   const detailHeader = details.getRow(7);
   detailHeaders.forEach((value, index) => { detailHeader.getCell(index + 1).value = value; });
   detailHeader.eachCell((cell) => { cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
@@ -1423,14 +1433,31 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "supplier"), asyncRoute
   shipments.sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)).forEach((shipment, index) => {
     const output = details.addRow([
       shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime,
-      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), shipment.estimatedTravelMinutes || "—",
-      shipment.tripAt || "—", shipment.gateInAt || "—", shipment.unloadingAt || "—", shipment.receivedAt || "—", shipment.gateOutAt || "—", duration(shipment.gateInAt, shipment.gateOutAt) ?? "—",
-      shipment.items.map((item) => `${item.materialCode}: ${Number(item.quantity || 0).toLocaleString("en-PH")} ${item.uom || ""}`.trim()).join(" | "),
+      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—",
     ]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 9, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "top", wrapText: true }; if (index % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.height = 28;
   });
-  details.autoFilter = { from: "A7", to: `R${Math.max(7, details.rowCount)}` };
+  details.getColumn(8).numFmt = "@";
+  details.autoFilter = { from: "A7", to: `K${Math.max(7, details.rowCount)}` };
+
+  const materials = workbook.addWorksheet("Material Codes", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
+  materials.columns = [18, 18, 25, 14, 12, 18, 22, 14, 12, 14].map((width) => ({ width }));
+  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "J");
+  const materialHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Material code", "Quantity", "UOM", "Site"];
+  const materialHeader = materials.getRow(7);
+  materialHeaders.forEach((value, index) => { materialHeader.getCell(index + 1).value = value; });
+  materialHeader.eachCell((cell) => { cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
+  materialHeader.height = 28;
+  let materialIndex = 0;
+  shipments.forEach((shipment) => shipment.items.forEach((item) => {
+    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime, shipment.truckPlate, item.materialCode, Number(item.quantity || 0), item.uom || "—", item.deliverySite || "—"]);
+    output.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; if (materialIndex % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
+    materialIndex += 1;
+  }));
+  materials.getColumn(7).numFmt = "@";
+  materials.getColumn(8).numFmt = "#,##0.00";
+  materials.autoFilter = { from: "A7", to: `J${Math.max(7, materials.rowCount)}` };
 
   const safeName = selectedSupplier.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "all-suppliers";
   response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

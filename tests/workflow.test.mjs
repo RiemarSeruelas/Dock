@@ -16,7 +16,8 @@ test("supplier schedule emails contain only that supplier's detailed changes", (
     before: { date: "2026-08-28", time: "09:00", endTime: "11:00", site: "Dressings", items: [{ materialCode: "SDS-1001", quantity: 500, uom: "KG" }] },
     after: { date: "2026-08-29", time: "10:00", endTime: "12:00", site: "Dressings", items: [{ materialCode: "SDS-1001", quantity: 550, uom: "KG" }] },
   }] });
-  assert.match(message.subject, /Delivery reschedule/);
+  assert.match(message.subject, /DockFlow delivery changes/);
+  assert.match(message.text, /Dear Supplier/);
   assert.match(message.text, /Before[\s\S]*2026-08-28[\s\S]*After[\s\S]*2026-08-29/);
   assert.match(message.text, /SDS-1001: 550 KG/);
   assert.doesNotMatch(message.text, /SDS summary|Other Supplier|\.csv/i);
@@ -68,6 +69,12 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
     assert.equal(response.status, 200);
     return { ...result, refreshCookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
+
+  const lanCors = await fetch(`${baseUrl}/api/auth/login`, { method: "OPTIONS", headers: { Origin: baseUrl, "Access-Control-Request-Method": "POST" } });
+  assert.equal(lanCors.status, 204);
+  assert.equal(lanCors.headers.get("access-control-allow-origin"), baseUrl);
+  const blockedCors = await fetch(`${baseUrl}/api/auth/login`, { method: "OPTIONS", headers: { Origin: "http://evil.example", "Access-Control-Request-Method": "POST" } });
+  assert.equal(blockedCors.status, 403);
 
   const supplier = await login("supplier", "supplier123");
   const admin = await login("admin", "admin123");
@@ -259,8 +266,9 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(report.response.status, 200);
   const reportWorkbook = new ExcelJS.Workbook();
   await reportWorkbook.xlsx.load(report.result);
-  assert.equal(reportWorkbook.getWorksheet("Delivery Details").getCell("I7").value, "Delivery code");
-  assert.ok(reportWorkbook.getWorksheet("Delivery Details").getColumn("R").values.some((value) => /SDS-/.test(String(value || ""))));
+  assert.equal(reportWorkbook.getWorksheet("Deliveries").getCell("I7").value, "Delivery code");
+  assert.equal(reportWorkbook.getWorksheet("Material Codes").getCell("G7").value, "Material code");
+  assert.ok(reportWorkbook.getWorksheet("Material Codes").getColumn("G").values.some((value) => /SDS-/.test(String(value || ""))));
 
   const missingEmail = await call("/api/users", { token: admin.token, method: "POST", body: { name: "No Email", username: "noemail", password: "password123", role: "supplier", supplierName: "No Email Supplier" } });
   assert.equal(missingEmail.response.status, 400);
