@@ -7,6 +7,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import ExcelJS from "exceljs";
+import { buildSdsChangeEmail } from "../server/mailer.js";
+
+test("supplier schedule emails contain only that supplier's detailed changes", () => {
+  const message = buildSdsChangeEmail({ supplier: "Trial Ingredients Supplier", changes: [{
+    kind: "RESCHEDULE",
+    shipmentNumber: "SHP-001",
+    before: { date: "2026-08-28", time: "09:00", endTime: "11:00", site: "Dressings", items: [{ materialCode: "SDS-1001", quantity: 500, uom: "KG" }] },
+    after: { date: "2026-08-29", time: "10:00", endTime: "12:00", site: "Dressings", items: [{ materialCode: "SDS-1001", quantity: 550, uom: "KG" }] },
+  }] });
+  assert.match(message.subject, /Delivery reschedule/);
+  assert.match(message.text, /Before[\s\S]*2026-08-28[\s\S]*After[\s\S]*2026-08-29/);
+  assert.match(message.text, /SDS-1001: 550 KG/);
+  assert.doesNotMatch(message.text, /SDS summary|Other Supplier|\.csv/i);
+});
 
 const freePort = () => new Promise((resolve, reject) => {
   const server = createTcpServer();
@@ -114,6 +128,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(committed.response.status, 201);
   assert.equal(committed.result.deliveryCount, 1);
   assert.equal(committed.result.notification.status, "SENT");
+  assert.deepEqual(committed.result.notification.supplierNotifications[0].changeTypes, ["NEW"]);
+  assert.equal(committed.result.notification.supplierNotifications[0].supplier, "Trial Ingredients Supplier");
 
   const duplicatePreview = await uploadPreview(workbook, "same-data-renamed.xlsx");
   const duplicateCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: duplicatePreview.result.previewToken } });
@@ -129,6 +145,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const changedCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: changedPreview.result.previewToken, conflictDecisions: { [changedPreview.result.conflicts[0].key]: "UPDATE" } } });
   assert.equal(changedCommit.response.status, 201);
   assert.equal(changedCommit.result.updatedProposals, 1);
+  assert.deepEqual(changedCommit.result.notification.supplierNotifications[0].changeTypes, ["RESCHEDULE"]);
 
   const missingAccountWorkbook = new ExcelJS.Workbook();
   const missingSheet = missingAccountWorkbook.addWorksheet("SDS Schedule");

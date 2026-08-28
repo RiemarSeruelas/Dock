@@ -968,7 +968,18 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     let shipmentId = nextId(state.shipments);
     let itemId = Math.max(0, ...state.shipments.flatMap((shipment) => shipment.items || []).map((item) => Number(item.id) || 0)) + 1;
     let createdProposals = 0, updatedProposals = 0, unchangedProposals = 0, importedRows = 0, unchangedRows = 0;
-    const notifiedSupplierIds = new Set();
+    const supplierChanges = new Map();
+    const emailDetails = ({ scheduledDate, scheduledTime, scheduledEndTime, items }) => ({
+      date: scheduledDate,
+      time: scheduledTime,
+      endTime: scheduledEndTime || null,
+      site: items.find((item) => item.deliverySite)?.deliverySite || "",
+      items: items.map((item) => ({ materialCode: item.materialCode, quantity: Number(item.quantity || 0), uom: item.uom })),
+    });
+    const addSupplierChange = (supplier, change) => {
+      if (!supplierChanges.has(supplier.id)) supplierChanges.set(supplier.id, { supplierId: supplier.id, supplier: supplier.name, changes: [] });
+      supplierChanges.get(supplier.id).changes.push(change);
+    };
 
     const buildItems = (rows, previousItems = []) => {
       const reusedIds = new Set();
@@ -1013,6 +1024,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       }
 
       if (existing) {
+        const before = emailDetails(existing);
         existing.scheduledDate = first.deliveryDate;
         existing.scheduledTime = first.deliveryTime;
         existing.scheduledEndTime = first.endTime || null;
@@ -1026,14 +1038,14 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
         existing.confirmedTruckLoads = [];
         updatedProposals += 1;
         importedRows += rows.length;
-        notifiedSupplierIds.add(supplier.id);
+        addSupplierChange(supplier, { kind: "RESCHEDULE", shipmentNumber: existing.shipmentNumber, before, after: emailDetails(existing) });
         addAudit(state, request.user, "SDS_UPDATED", `${existing.shipmentNumber} updated after spreadsheet comparison`, existing.shipmentNumber);
         continue;
       }
 
       const currentShipmentId = shipmentId++;
       const shipmentNumber = nextCode("SHP", currentShipmentId, first.deliveryDate);
-      state.shipments.push({
+      const proposal = {
         id: currentShipmentId, shipmentNumber, bookingReceipt: nextCode("BKG", currentShipmentId, first.deliveryDate), supplier: supplier.name, supplierId: supplier.id,
         deliveryCode: null, vendorCode: supplier.vendorCode, scheduledDate: first.deliveryDate, scheduledTime: first.deliveryTime, scheduledEndTime: first.endTime || null,
         availabilitySlotId: availabilitySlot.id, expectedDurationMinutes: first.endTime ? durationMinutes(first.deliveryTime, first.endTime) : null,
@@ -1043,10 +1055,11 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
         rejectionReason: null, supplierResponse: null, supplierResponseReason: null, supplierRespondedAt: null, alternativeDate: null, alternativeTime: null, alternativeEndTime: null,
         loadConfirmedAt: null, finalDecisionAt: null, finalDecisionBy: null, sdsProposalId: currentShipmentId, importBatchId: batchId, importSource: null,
         sdsImportIdentity: identity, sdsImportFingerprint: fingerprint, confirmedTruckLoads: [], items, palletsScanned: 0, palletsTotal: 0, palletIds: [],
-      });
+      };
+      state.shipments.push(proposal);
       createdProposals += 1;
       importedRows += rows.length;
-      notifiedSupplierIds.add(supplier.id);
+      addSupplierChange(supplier, { kind: "NEW", shipmentNumber, before: null, after: emailDetails(proposal) });
       addAudit(state, request.user, "SDS_IMPORTED", `${shipmentNumber} created and linked to ${supplier.name}`, shipmentNumber);
     }
     syncAvailableDates(state);
@@ -1054,21 +1067,31 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     const batch = { id: batchId, fileName: cached.preview.fileName, status: deliveryCount ? "IMPORTED" : "UNCHANGED", totalRows: cached.preview.summary.totalRows, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, createdAt: new Date().toISOString(), completedAt: new Date().toISOString(), notificationStatus: "PENDING", notificationsSent: 0, notificationsFailed: 0 };
     state.importBatches.unshift(batch);
     addAudit(state, request.user, "SDS_IMPORT_COMPLETED", `${createdProposals} created, ${updatedProposals} updated, ${unchangedProposals} unchanged after spreadsheet comparison`);
-    const recipients = state.users.filter((user) => user.role === "supplier" && user.emailVerifiedAt && notifiedSupplierIds.has(Number(user.supplierId))).map((user) => user.email).filter(Boolean);
-    return { batchId, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, recipients };
+    const notifications = [...supplierChanges.values()].map((entry) => ({
+      ...entry,
+      recipients: state.users.filter((user) => user.role === "supplier" && user.emailVerifiedAt && Number(user.supplierId) === Number(entry.supplierId)).map((user) => user.email).filter(Boolean),
+    }));
+    return { batchId, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, notifications };
   });
   if (result.missingAccounts) return response.status(409).json({ message: `Create and link a supplier account before importing: ${result.missingAccounts.join(", ")}` });
   if (result.conflictDecisionRequired) return response.status(409).json({ message: "Choose whether to keep or update every conflicting proposal before importing", conflicts: result.conflictDecisionRequired });
   importPreviews.delete(token);
-  let notification;
-  try { notification = await emailNotifications.sendNewSds({ sender: emailSender, recipients: result.recipients, fileName: cached.preview.fileName, proposalCount: result.deliveryCount }); }
-  catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] SDS notification failed: ${error.message}`); }
+  const supplierNotifications = [];
+  for (const notice of result.notifications) {
+    let delivery;
+    try { delivery = await emailNotifications.sendSdsChanges({ sender: emailSender, recipients: notice.recipients, supplier: notice.supplier, changes: notice.changes }); }
+    catch (error) { delivery = { status: "FAILED", sent: 0, failed: notice.recipients.length }; console.error(`[email] ${notice.supplier} schedule notification failed: ${error.message}`); }
+    supplierNotifications.push({ supplier: notice.supplier, status: delivery.status, sent: delivery.sent, failed: delivery.failed, changeCount: notice.changes.length, changeTypes: [...new Set(notice.changes.map((change) => change.kind))] });
+  }
+  const sent = supplierNotifications.reduce((sum, notice) => sum + notice.sent, 0);
+  const failed = supplierNotifications.reduce((sum, notice) => sum + notice.failed, 0);
+  const notification = { status: !supplierNotifications.length ? "NO_CHANGES" : failed ? sent ? "PARTIAL" : "FAILED" : supplierNotifications.every((notice) => notice.status === "NO_RECIPIENTS") ? "NO_RECIPIENTS" : "SENT", sent, failed, supplierNotifications };
   await store.update((state) => {
     const batch = state.importBatches.find((row) => row.id === result.batchId);
     if (batch) { batch.notificationStatus = notification.status; batch.notificationsSent = notification.sent; batch.notificationsFailed = notification.failed; }
   });
-  const { recipients: _recipients, ...publicResult } = result;
-  void _recipients;
+  const { notifications: _notifications, ...publicResult } = result;
+  void _notifications;
   response.status(201).json({ ...publicResult, notification });
 }));
 

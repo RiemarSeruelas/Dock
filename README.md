@@ -132,7 +132,7 @@ ETA address lookup and routing require internet access unless the provider URLs 
 3. Restart DockFlow so the API loads the private sender credentials.
 4. Sign in as Administrator and open **Administration → Accounts**.
 5. Select each account, replace its `@dockflow.local` trial address with the owner’s real email, then send and enter its six-digit verification code.
-6. Import a new SDS. The linked verified supplier receives a notice.
+6. Import a new SDS. Each linked, verified supplier receives only its own proposed deliveries. New proposals show their schedule and material-code details; rescheduled proposals show **Before** and **After** details. File-level SDS summaries and other suppliers’ changes are not included.
 7. Confirm or reject a proposal from the supplier account. Verified administrator and planner emails receive the result.
 
 The sender address and App Password stay in `.env`; they are not saved in trial JSON, returned by the API, or shown in the browser. In an offline trial, the rest of DockFlow still works, but Gmail delivery and public ETA lookup cannot be tested.

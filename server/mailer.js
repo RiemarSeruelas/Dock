@@ -25,6 +25,25 @@ const send = async ({ sender, recipients, subject, text, html }) => {
   return { status: sent === uniqueRecipients.length ? "SENT" : sent ? "PARTIAL" : "FAILED", sent, failed: uniqueRecipients.length - sent, ...(firstFailure ? { message: safeFailureMessage(firstFailure.reason), errorCode: String(firstFailure.reason?.code || firstFailure.reason?.responseCode || "SMTP_ERROR") } : {}) };
 };
 
+const scheduleText = (details) => `${details.date} at ${details.time}${details.endTime ? `–${details.endTime}` : ""}`;
+const itemText = (details) => (details.items || []).map((item) => `${item.materialCode}: ${item.quantity} ${item.uom}`).join("\n");
+const detailText = (label, details) => `${label}\nSchedule: ${scheduleText(details)}\nSite: ${details.site || "Not specified"}\nMaterial codes:\n${itemText(details) || "None"}`;
+const detailHtml = (label, details, tone) => `<div style="margin:12px 0;padding:14px;border:1px solid ${tone};border-radius:10px"><strong>${escapeHtml(label)}</strong><p style="margin:8px 0 4px"><b>Schedule:</b> ${escapeHtml(scheduleText(details))}<br><b>Site:</b> ${escapeHtml(details.site || "Not specified")}</p><p style="margin:8px 0 4px"><b>Material codes</b></p><ul style="margin-top:4px">${(details.items || []).map((item) => `<li><b>${escapeHtml(item.materialCode)}</b> — ${escapeHtml(item.quantity)} ${escapeHtml(item.uom)}</li>`).join("") || "<li>None</li>"}</ul></div>`;
+
+export const buildSdsChangeEmail = ({ supplier, changes }) => {
+  const hasReschedule = changes.some((change) => change.kind === "RESCHEDULE");
+  const subject = `${hasReschedule ? "Delivery reschedule" : "New proposed delivery"} – ${supplier}`;
+  const textBlocks = changes.map((change) => change.kind === "RESCHEDULE"
+    ? `Reschedule\nDelivery: ${change.shipmentNumber}\n\n${detailText("Before", change.before)}\n\n${detailText("After", change.after)}`
+    : `New proposed delivery\nDelivery: ${change.shipmentNumber}\n\n${detailText("Proposed", change.after)}`);
+  const htmlBlocks = changes.map((change) => `<section style="margin:18px 0;padding-top:4px;border-top:2px solid #e8edf5"><h2 style="font-size:18px">${change.kind === "RESCHEDULE" ? "Reschedule" : "New proposed delivery"}</h2><p><b>Delivery:</b> ${escapeHtml(change.shipmentNumber)}</p>${change.kind === "RESCHEDULE" ? `${detailHtml("Before", change.before, "#f2b8b5")}${detailHtml("After", change.after, "#9fd8ca")}` : detailHtml("Proposed", change.after, "#a9c7ff")}</section>`);
+  return {
+    subject,
+    text: `Hello ${supplier},\n\n${textBlocks.join("\n\n---\n\n")}\n\nSign in to DockFlow to review and confirm or reject your proposed delivery.`,
+    html: `<p>Hello <strong>${escapeHtml(supplier)}</strong>,</p>${htmlBlocks.join("")}<p>Sign in to DockFlow to review and confirm or reject your proposed delivery.</p>`,
+  };
+};
+
 export const emailNotifications = {
   async verifySender(sender) {
     if (testMode) return true;
@@ -34,8 +53,8 @@ export const emailNotifications = {
   async sendVerificationCode({ sender, recipient, code }) {
     return send({ sender, recipients: [recipient], subject: "Verify your DockFlow email", text: `Your DockFlow verification code is ${code}. It expires in 10 minutes.`, html: `<p>Your DockFlow verification code is:</p><p style="font-size:28px;font-weight:800;letter-spacing:6px">${escapeHtml(code)}</p><p>It expires in 10 minutes.</p>` });
   },
-  async sendNewSds({ sender, recipients, fileName, proposalCount }) {
-    return send({ sender, recipients, subject: "New SDS schedule ready in DockFlow", text: `A new SDS file (${fileName}) was uploaded with ${proposalCount} proposed delivery schedule${proposalCount === 1 ? "" : "s"}. Sign in to DockFlow to confirm or reject the proposed delivery.`, html: `<p>A new SDS file <strong>${escapeHtml(fileName)}</strong> was uploaded with <strong>${proposalCount}</strong> proposed delivery schedule${proposalCount === 1 ? "" : "s"}.</p><p>Sign in to DockFlow to confirm or reject the proposed delivery.</p>` });
+  async sendSdsChanges({ sender, recipients, supplier, changes }) {
+    return send({ sender, recipients, ...buildSdsChangeEmail({ supplier, changes }) });
   },
   async sendSupplierDecision({ sender, recipients, shipmentNumber, supplier, decision, reason, alternativeDate, alternativeTime }) {
     const rejected = decision === "REJECTED";
