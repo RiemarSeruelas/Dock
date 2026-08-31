@@ -13,7 +13,7 @@
     "siteName": "Cavite Foods Receiving · Trial",
     "dockCount": 2,
     "graceMinutes": 30,
-    "deliveryCodeSequence": 6,
+    "deliveryCodeSequence": 7,
     "flexibleScheduling": true,
     "availableDates": [
       "2026-07-20",
@@ -702,7 +702,11 @@
       "sdsProposalId": 1,
       "confirmedTruckLoads": [],
       "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsImportFingerprint": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 2,
@@ -773,7 +777,11 @@
       "sdsProposalId": 2,
       "confirmedTruckLoads": [],
       "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsImportFingerprint": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 3,
@@ -844,7 +852,11 @@
       "sdsProposalId": 3,
       "confirmedTruckLoads": [],
       "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsImportFingerprint": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 4,
@@ -916,7 +928,11 @@
       "sdsProposalId": 4,
       "confirmedTruckLoads": [],
       "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsImportFingerprint": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 5,
@@ -987,7 +1003,11 @@
       "sdsProposalId": 5,
       "confirmedTruckLoads": [],
       "sdsImportIdentity": null,
-      "sdsImportFingerprint": null
+      "sdsImportFingerprint": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 6,
@@ -1066,7 +1086,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 7,
@@ -1145,7 +1169,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 8,
@@ -1224,7 +1252,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 9,
@@ -1303,7 +1335,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 10,
@@ -1382,7 +1418,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 11,
@@ -1461,7 +1501,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 12,
@@ -1540,7 +1584,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 13,
@@ -1619,7 +1667,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 14,
@@ -1698,7 +1750,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 15,
@@ -1777,7 +1833,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 16,
@@ -1856,7 +1916,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 17,
@@ -1935,7 +1999,11 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 18,
@@ -2014,11 +2082,240 @@
       "palletIds": [],
       "estimatedTravelMinutes": null,
       "estimatedTravelDistanceKm": null,
-      "estimatedArrivalAt": null
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
+    },
+    {
+      "id": 19,
+      "shipmentNumber": "SHP-20260927-019",
+      "bookingReceipt": "BKG-20260927-019",
+      "supplier": "Ajinomoto",
+      "supplierId": 3,
+      "deliveryCode": null,
+      "vendorCode": "TRIAL-003",
+      "scheduledDate": "2026-09-27",
+      "scheduledTime": "09:00",
+      "scheduledEndTime": null,
+      "availabilitySlotId": 16,
+      "expectedDurationMinutes": null,
+      "timeSlot": "09:00",
+      "shift": "Flexible date",
+      "bookingStatus": "REJECTED",
+      "status": "REJECTED",
+      "truckPlate": "TO BE ASSIGNED",
+      "driverName": "To be assigned",
+      "driverPhone": "",
+      "materialWeightKg": 300,
+      "dock": null,
+      "arrivalTime": null,
+      "startedAt": null,
+      "completedAt": null,
+      "lastProcessAt": null,
+      "tripAt": null,
+      "gateInAt": null,
+      "unloadingAt": null,
+      "receivedAt": null,
+      "gateOutAt": null,
+      "rejectionReason": "h4htrhtrhtht",
+      "supplierResponse": "ALTERNATIVE_PROPOSED",
+      "supplierResponseReason": "fgegfdergwegerherwh",
+      "supplierRespondedAt": "2026-08-31T12:23:48.547Z",
+      "alternativeDate": "2026-09-27",
+      "alternativeTime": "09:00",
+      "alternativeEndTime": "10:00",
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 19,
+      "importBatchId": 8,
+      "importSource": null,
+      "sdsImportIdentity": "b0e7996fec2b85f2371a773fda318f10a4256b24e605863cccdca68cc48d743c",
+      "sdsImportFingerprint": "089bd126f772e1acfad20db0ab40c5ba694829e096554c8feec2372482871ee8",
+      "confirmedTruckLoads": [],
+      "items": [
+        {
+          "id": 19,
+          "presetId": null,
+          "poNumber": "",
+          "materialCode": "65013575",
+          "materialName": "Material to review",
+          "quantity": 300,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Dressing",
+          "deliveryWeek": "30",
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Needs review: description supplied with trial placeholders",
+          "supplierApprovedAt": null,
+          "assignedTruckPlate": null
+        }
+      ],
+      "palletsScanned": 0,
+      "palletsTotal": 0,
+      "palletIds": [],
+      "companyDecision": "REJECTED",
+      "companyDecisionReason": "h4htrhtrhtht",
+      "companyDecisionAt": "2026-08-31T12:25:14.708Z",
+      "companyDecisionBy": "System Administrator"
+    },
+    {
+      "id": 20,
+      "shipmentNumber": "SHP-20260823-020",
+      "bookingReceipt": "BKG-20260823-020",
+      "supplier": "Ajinomoto",
+      "supplierId": 3,
+      "deliveryCode": "DLV-20260823-007",
+      "vendorCode": "TRIAL-003",
+      "scheduledDate": "2026-08-23",
+      "scheduledTime": "09:00",
+      "scheduledEndTime": null,
+      "availabilitySlotId": 12,
+      "expectedDurationMinutes": null,
+      "timeSlot": "09:00",
+      "shift": "Flexible date",
+      "bookingStatus": "APPROVED",
+      "status": "BOOKED",
+      "truckPlate": "FEFE",
+      "driverName": "4324",
+      "driverPhone": "+635325425245",
+      "materialWeightKg": 60,
+      "dock": null,
+      "arrivalTime": null,
+      "startedAt": null,
+      "completedAt": null,
+      "lastProcessAt": null,
+      "tripAt": null,
+      "gateInAt": null,
+      "unloadingAt": null,
+      "receivedAt": null,
+      "gateOutAt": null,
+      "rejectionReason": null,
+      "supplierResponse": "ACCEPTED",
+      "supplierResponseReason": null,
+      "supplierRespondedAt": "2026-08-31T12:23:38.846Z",
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": "2026-08-31T12:23:38.846Z",
+      "finalDecisionAt": "2026-08-31T12:23:38.846Z",
+      "finalDecisionBy": "Ajinomoto",
+      "sdsProposalId": 20,
+      "importBatchId": 9,
+      "importSource": null,
+      "sdsImportIdentity": "ea56b0802c8c9d6a5a9b1dd60d18f8c4b90a52666e895c9280b0de44d8a1c8ee",
+      "sdsImportFingerprint": "445ca46c8dea975299beccf807fdca1b494e279f8d8bcd95468f6374b52aa1d1",
+      "confirmedTruckLoads": [],
+      "items": [
+        {
+          "id": 20,
+          "presetId": null,
+          "poNumber": "",
+          "materialCode": "63917239",
+          "materialName": "Material to review",
+          "quantity": 60,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Dressing",
+          "deliveryWeek": "30",
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Needs review: description supplied with trial placeholders",
+          "supplierApprovedAt": "2026-08-31T12:23:38.846Z",
+          "assignedTruckPlate": "FEFE"
+        }
+      ],
+      "palletsScanned": 0,
+      "palletsTotal": 0,
+      "palletIds": []
     }
   ],
   "rdsRequests": [],
   "audit": [
+    {
+      "id": 56,
+      "at": "2026-08-31T12:25:14.708Z",
+      "actor": "System Administrator",
+      "action": "COMPANY_ALTERNATIVE_REJECTED",
+      "shipmentNumber": "SHP-20260927-019",
+      "detail": "admin rejected Ajinomoto's proposed schedule: h4htrhtrhtht"
+    },
+    {
+      "id": 55,
+      "at": "2026-08-31T12:23:48.547Z",
+      "actor": "Ajinomoto",
+      "action": "SUPPLIER_ALTERNATIVE_PROPOSED",
+      "shipmentNumber": "SHP-20260927-019",
+      "detail": "Ajinomoto proposed 2026-09-27 at 09:00: fgegfdergwegerherwh"
+    },
+    {
+      "id": 54,
+      "at": "2026-08-31T12:23:38.846Z",
+      "actor": "Ajinomoto",
+      "action": "SUPPLIER_BOOKING_CONFIRMED",
+      "shipmentNumber": "SHP-20260823-020",
+      "detail": "DLV-20260823-007 confirmed for FEFE"
+    },
+    {
+      "id": 53,
+      "at": "2026-08-31T12:23:38.846Z",
+      "actor": "Ajinomoto",
+      "action": "SDS_TRUCK_CONFIRMED",
+      "shipmentNumber": "SHP-20260823-020",
+      "detail": "DLV-20260823-007 reserved for FEFE with 1 material code(s)"
+    },
+    {
+      "id": 52,
+      "at": "2026-08-31T12:23:11.543Z",
+      "actor": "System Administrator",
+      "action": "SDS_IMPORT_COMPLETED",
+      "detail": "1 created, 0 updated, 11 unchanged after spreadsheet comparison"
+    },
+    {
+      "id": 51,
+      "at": "2026-08-31T12:23:11.543Z",
+      "actor": "System Administrator",
+      "action": "SDS_IMPORTED",
+      "shipmentNumber": "SHP-20260823-020",
+      "detail": "SHP-20260823-020 created and linked to Ajinomoto"
+    },
+    {
+      "id": 50,
+      "at": "2026-08-31T12:21:54.717Z",
+      "actor": "System Administrator",
+      "action": "SDS_IMPORT_COMPLETED",
+      "detail": "1 created, 0 updated, 11 unchanged after spreadsheet comparison"
+    },
+    {
+      "id": 49,
+      "at": "2026-08-31T12:21:54.717Z",
+      "actor": "System Administrator",
+      "action": "SDS_IMPORTED",
+      "shipmentNumber": "SHP-20260927-019",
+      "detail": "SHP-20260927-019 created and linked to Ajinomoto"
+    },
+    {
+      "id": 48,
+      "at": "2026-08-31T12:21:48.568Z",
+      "actor": "System Administrator",
+      "action": "SDS_IMPORT_COMPLETED",
+      "detail": "0 created, 0 updated, 12 unchanged after spreadsheet comparison"
+    },
     {
       "id": 47,
       "at": "2026-08-31T08:14:15.230Z",
@@ -2378,6 +2675,60 @@
   ],
   "importBatches": [
     {
+      "id": 9,
+      "fileName": "Copy of sds summary PMRM wk30(RM) triall2.csv",
+      "status": "IMPORTED",
+      "totalRows": 12,
+      "importedRows": 1,
+      "unchangedRows": 11,
+      "skippedRows": 0,
+      "deliveryCount": 1,
+      "createdProposals": 1,
+      "updatedProposals": 0,
+      "unchangedProposals": 11,
+      "createdAt": "2026-08-31T12:23:11.543Z",
+      "completedAt": "2026-08-31T12:23:11.543Z",
+      "notificationStatus": "SENT",
+      "notificationsSent": 1,
+      "notificationsFailed": 0
+    },
+    {
+      "id": 8,
+      "fileName": "Copy of sds summary PMRM wk30(RM) triall.csv",
+      "status": "IMPORTED",
+      "totalRows": 12,
+      "importedRows": 1,
+      "unchangedRows": 11,
+      "skippedRows": 0,
+      "deliveryCount": 1,
+      "createdProposals": 1,
+      "updatedProposals": 0,
+      "unchangedProposals": 11,
+      "createdAt": "2026-08-31T12:21:54.717Z",
+      "completedAt": "2026-08-31T12:21:54.717Z",
+      "notificationStatus": "SENT",
+      "notificationsSent": 1,
+      "notificationsFailed": 0
+    },
+    {
+      "id": 7,
+      "fileName": "Copy of sds summary PMRM wk30(RM) triall2.csv",
+      "status": "UNCHANGED",
+      "totalRows": 12,
+      "importedRows": 0,
+      "unchangedRows": 12,
+      "skippedRows": 0,
+      "deliveryCount": 0,
+      "createdProposals": 0,
+      "updatedProposals": 0,
+      "unchangedProposals": 12,
+      "createdAt": "2026-08-31T12:21:48.568Z",
+      "completedAt": "2026-08-31T12:21:48.568Z",
+      "notificationStatus": "NO_CHANGES",
+      "notificationsSent": 0,
+      "notificationsFailed": 0
+    },
+    {
       "id": 6,
       "fileName": "Copy of sds summary PMRM wk30(RM) triall2.csv",
       "status": "IMPORTED",
@@ -2484,6 +2835,52 @@
       "notificationStatus": "NO_RECIPIENTS",
       "notificationsSent": 0,
       "notificationsFailed": 0
+    }
+  ],
+  "notifications": [
+    {
+      "id": 4,
+      "userId": 8,
+      "type": "ERROR",
+      "title": "Proposed schedule rejected",
+      "message": "2026-09-27 at 09:00 was not approved. Reason: h4htrhtrhtht",
+      "shipmentId": 19,
+      "shipmentNumber": "SHP-20260927-019",
+      "createdAt": "2026-08-31T12:25:14.708Z",
+      "readAt": "2026-08-31T12:25:50.787Z"
+    },
+    {
+      "id": 3,
+      "userId": 13,
+      "type": "WARNING",
+      "title": "Supplier proposed a schedule change",
+      "message": "Ajinomoto requested 2026-09-27 at 09:00. Reason: fgegfdergwegerherwh",
+      "shipmentId": 19,
+      "shipmentNumber": "SHP-20260927-019",
+      "createdAt": "2026-08-31T12:23:48.547Z",
+      "readAt": null
+    },
+    {
+      "id": 2,
+      "userId": 7,
+      "type": "WARNING",
+      "title": "Supplier proposed a schedule change",
+      "message": "Ajinomoto requested 2026-09-27 at 09:00. Reason: fgegfdergwegerherwh",
+      "shipmentId": 19,
+      "shipmentNumber": "SHP-20260927-019",
+      "createdAt": "2026-08-31T12:23:48.547Z",
+      "readAt": null
+    },
+    {
+      "id": 1,
+      "userId": 2,
+      "type": "WARNING",
+      "title": "Supplier proposed a schedule change",
+      "message": "Ajinomoto requested 2026-09-27 at 09:00. Reason: fgegfdergwegerherwh",
+      "shipmentId": 19,
+      "shipmentNumber": "SHP-20260927-019",
+      "createdAt": "2026-08-31T12:23:48.547Z",
+      "readAt": null
     }
   ]
 }
