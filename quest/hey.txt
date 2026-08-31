@@ -1,0 +1,30 @@
+For the Rejection:
+> First of all, fix the design, right now, it looks like this. Looks very unprofessional
+
+* INSERT SUPPLIER RESPONSE IMAGE *
+
+then, add borders to it, then make it scrollable. Like right now it's just adding and adding, but if it's happening in real time, then it'll be a pain and a hassle, so fix the design for that, I want it to look professional.
+
+For the Calendar:
+> It looks way too big, like there's a lot of unnecessary space, so make it much smaller and pack it up a bit more
+
+* INSET CALENDAR IMAGE *
+
+> Also can you remove the adjustable and draggable for now? Just make it focus on relying on the schedule, we can't drag or change anything for now.
+
+For Import SDS workbook:
+> Remove these, only put the upload: 
+Accepted details
+Week, site, supplier, material code, UOM, quantity, date, and time are the operational fields.
+
+Supplier account check
+Every supplier must have a linked supplier account before its delivery can be created.
+
+Safe comparison
+Identical proposals remain unchanged. Updated pending proposals are refreshed without creating duplicates.
+
+
+For the mobile:
+aside.sidebar::before, it's blocking the sidebar, I cant click it. Cant trial it as well since whenever I try to click sidebar, it wont click right? so i try to go to desktop mode, click scan, then click the mobile again, it puts me back to other sidebar right away.
+
+Add a mobile version for this? Even if it's a separated css, because everything looks so big, like it's as if you dont know how to make a mobile version haha.
