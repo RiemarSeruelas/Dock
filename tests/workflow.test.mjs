@@ -238,6 +238,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const rejectionSheet = rejectionWorkbook.addWorksheet("SDS Schedule");
   rejectionSheet.addRow(["Supplier", "Material Code", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time"]);
   rejectionSheet.addRow(["Trial Ingredients Supplier", "SDS-REJECT-1", "KG", 100, "30-Aug-2026", "15:00", "16:00"]);
+  rejectionSheet.addRow(["Trial Ingredients Supplier", "SDS-APPROVE-ALT-1", "KG", 120, "30-Aug-2026", "17:00", "18:00"]);
   const rejectionPreview = await uploadPreview(rejectionWorkbook, "supplier-rejection.xlsx");
   const rejectionCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: rejectionPreview.result.previewToken } });
   assert.equal(rejectionCommit.response.status, 201);
@@ -245,12 +246,34 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const rejectionProposal = beforeReject.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-REJECT-1"));
   const rejectedResponse = await call(`/api/shipments/${rejectionProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "Truck is unavailable", alternativeDate: "2026-08-31", alternativeTime: "10:00", alternativeEndTime: "11:00", loadConfirmed: false, trucks: [] } });
   assert.equal(rejectedResponse.response.status, 200);
-  assert.equal(rejectedResponse.result.rejected, true);
+  assert.equal(rejectedResponse.result.alternativeProposed, true);
   assert.equal(rejectedResponse.result.notification.status, "SENT");
+  const companyReview = await call("/api/bootstrap", { token: production.token });
+  assert.equal(companyReview.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "PENDING_COMPANY");
+  assert.equal(companyReview.result.audit.length, 0);
+  assert.ok(companyReview.result.notifications.some((notification) => notification.shipmentId === rejectionProposal.id && notification.type === "WARNING"));
+  const companyReject = await call(`/api/shipments/${rejectionProposal.id}/company-decision`, { token: production.token, method: "PATCH", body: { decision: "REJECT", reason: "Receiving capacity is full" } });
+  assert.equal(companyReject.response.status, 200);
+  assert.equal(companyReject.result.notification.status, "SENT");
   const afterReject = await call("/api/bootstrap", { token: admin.token });
   assert.equal(afterReject.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "REJECTED");
-  assert.equal(afterReject.result.audit.find((entry) => entry.shipmentNumber === rejectionProposal.shipmentNumber).action, "SUPPLIER_REJECTED");
+  assert.equal(afterReject.result.audit.find((entry) => entry.shipmentNumber === rejectionProposal.shipmentNumber).action, "COMPANY_ALTERNATIVE_REJECTED");
+  const supplierAfterCompanyReject = await call("/api/bootstrap", { token: supplier.token });
+  assert.ok(supplierAfterCompanyReject.result.notifications.some((notification) => notification.shipmentId === rejectionProposal.id && notification.type === "ERROR"));
   assert.equal((await call(`/api/shipments/${rejectionProposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
+
+  const approvalProposal = beforeReject.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-APPROVE-ALT-1"));
+  const approvalAlternative = await call(`/api/shipments/${approvalProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "A truck is available later", alternativeDate: "2026-09-01", alternativeTime: "08:00", alternativeEndTime: "09:00", loadConfirmed: false, trucks: [] } });
+  assert.equal(approvalAlternative.response.status, 200);
+  const companyApprove = await call(`/api/shipments/${approvalProposal.id}/company-decision`, { token: planner.token, method: "PATCH", body: { decision: "APPROVE" } });
+  assert.equal(companyApprove.response.status, 200);
+  assert.equal(companyApprove.result.notification.status, "SENT");
+  const supplierAfterCompanyApprove = await call("/api/bootstrap", { token: supplier.token });
+  const approvedAlternative = supplierAfterCompanyApprove.result.shipments.find((shipment) => shipment.id === approvalProposal.id);
+  assert.equal(approvedAlternative.bookingStatus, "PENDING_SUPPLIER");
+  assert.equal(approvedAlternative.scheduledDate, "2026-09-01");
+  assert.equal(approvedAlternative.scheduledTime, "08:00");
+  assert.ok(supplierAfterCompanyApprove.result.notifications.some((notification) => notification.shipmentId === approvalProposal.id && notification.type === "SUCCESS"));
 
   const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage } });
   const tripScan = await scan(supplier.token, "TRIP");

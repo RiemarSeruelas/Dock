@@ -169,6 +169,10 @@ const addAudit = (state, actor, action, detail, shipmentNumber) => state.audit.u
   shipmentNumber: shipmentNumber || undefined,
   detail,
 });
+const addNotification = (state, user, { type = "INFO", title, message, shipment }) => {
+  state.notifications ||= [];
+  state.notifications.unshift({ id: nextId(state.notifications), userId: user.id, type, title, message, shipmentId: shipment?.id || null, shipmentNumber: shipment?.shipmentNumber || null, createdAt: new Date().toISOString(), readAt: null });
+};
 const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", emailVerifiedAt: user.emailVerifiedAt || null, role: user.role, supplierId: user.supplierId ?? null });
 const companyScopedRoles = new Set(["supplier", "driver"]);
 const canAccessShipment = (user, shipment) => !companyScopedRoles.has(user.role) || Number(user.supplierId) === Number(shipment.supplierId);
@@ -292,6 +296,7 @@ async function createInitialState() {
       { id: 2, at: new Date(Date.now() - 20 * 60000).toISOString(), actor: "Security User", action: "AT_DOCK", shipmentNumber: shipments[3].shipmentNumber, detail: `${shipments[3].shipmentNumber} directed to Dock 1` },
       { id: 1, at: new Date(Date.now() - 45 * 60000).toISOString(), actor: "Driver User", action: "IN_TRANSIT", shipmentNumber: shipments[1].shipmentNumber, detail: `${shipments[1].shipmentNumber} started the trip` },
     ],
+    notifications: [],
     importBatches: [],
   };
 }
@@ -307,6 +312,7 @@ await store.update(async (state) => {
   state.suppliers = Array.isArray(state.suppliers) ? state.suppliers : [];
   state.materials = Array.isArray(state.materials) ? state.materials : [];
   state.audit = Array.isArray(state.audit) ? state.audit : [];
+  state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
   state.importBatches = Array.isArray(state.importBatches) ? state.importBatches : [];
   state.users = Array.isArray(state.users) ? state.users : [];
   if (!state.users.length) state.users = (await createInitialState()).users;
@@ -383,15 +389,12 @@ await store.update(async (state) => {
     shipment.status = statusMigration[legacyStatus] || (["PROPOSED", "BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"].includes(legacyStatus) ? legacyStatus : "BOOKED");
     if (shipment.bookingStatus === "PENDING_APPROVAL") shipment.bookingStatus = "PENDING_SUPPLIER";
     if (shipment.bookingStatus === "PENDING_SUPPLIER" && shipment.status !== "REJECTED") shipment.status = "PROPOSED";
-    if (shipment.bookingStatus === "SUPPLIER_ALTERNATIVE" && validDate(shipment.alternativeDate) && validTime(shipment.alternativeTime)) {
-      shipment.scheduledDate = shipment.alternativeDate;
-      shipment.scheduledTime = shipment.alternativeTime;
-      shipment.scheduledEndTime = validTime(shipment.alternativeEndTime) ? shipment.alternativeEndTime : shipment.scheduledEndTime;
-    }
-    if (["SUPPLIER_CONFIRMED", "SUPPLIER_ALTERNATIVE"].includes(shipment.bookingStatus)) {
+    if (shipment.bookingStatus === "SUPPLIER_ALTERNATIVE") shipment.bookingStatus = "PENDING_COMPANY";
+    if (shipment.bookingStatus === "SUPPLIER_CONFIRMED") {
       shipment.bookingStatus = "APPROVED";
       if (shipment.status !== "REJECTED") shipment.status = "BOOKED";
     }
+    if (shipment.bookingStatus === "PENDING_COMPANY") shipment.status = "PROPOSED";
     shipment.bookingStatus ||= shipment.status === "REJECTED" ? "REJECTED" : "APPROVED";
     shipment.shipmentNumber ||= nextCode("SHP", shipment.id, shipment.scheduledDate);
     shipment.bookingReceipt ||= nextCode("BKG", shipment.id, shipment.scheduledDate);
@@ -417,12 +420,16 @@ await store.update(async (state) => {
     shipment.estimatedTravelMinutes = Number(shipment.estimatedTravelMinutes || 0) || null;
     shipment.estimatedTravelDistanceKm = Number(shipment.estimatedTravelDistanceKm || 0) || null;
     shipment.estimatedArrivalAt ||= null;
-    shipment.supplierResponse ||= shipment.bookingStatus === "SUPPLIER_ALTERNATIVE" ? "ALTERNATIVE_PROPOSED" : shipment.bookingStatus === "SUPPLIER_CONFIRMED" || shipment.bookingStatus === "APPROVED" ? "ACCEPTED" : null;
+    shipment.supplierResponse ||= shipment.bookingStatus === "PENDING_COMPANY" ? "ALTERNATIVE_PROPOSED" : shipment.bookingStatus === "APPROVED" ? "ACCEPTED" : null;
     shipment.supplierResponseReason ||= null;
     shipment.supplierRespondedAt ||= null;
     shipment.alternativeDate ||= null;
     shipment.alternativeTime ||= null;
     shipment.alternativeEndTime ||= null;
+    shipment.companyDecision ||= null;
+    shipment.companyDecisionReason ||= null;
+    shipment.companyDecisionAt ||= null;
+    shipment.companyDecisionBy ||= null;
     shipment.loadConfirmedAt ||= null;
     shipment.finalDecisionAt ||= null;
     shipment.finalDecisionBy ||= null;
@@ -588,9 +595,25 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
     suppliers: companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : state.suppliers,
     users: _request.user.role === "admin" ? state.users.map(publicUser) : [],
     audit: ["admin", "planner"].includes(_request.user.role) ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : [],
+    notifications: state.notifications.filter((notification) => Number(notification.userId) === Number(_request.user.id)).slice(0, 50).map((notification) => {
+      const publicNotification = { ...notification };
+      delete publicNotification.userId;
+      return publicNotification;
+    }),
     importBatches: canManageSds ? state.importBatches : [],
     settings: { ...state.settings, emailNotifications: publicEmailSettings(), dockCount: 2 },
   });
+}));
+
+app.patch("/api/notifications/:id/read", auth, asyncRoute(async (request, response) => {
+  const result = await store.update((state) => {
+    const notification = (state.notifications || []).find((row) => Number(row.id) === Number(request.params.id) && Number(row.userId) === Number(request.user.id));
+    if (!notification) return null;
+    notification.readAt ||= new Date().toISOString();
+    return { ok: true };
+  });
+  if (!result) return response.status(404).json({ message: "Notification not found" });
+  response.json(result);
 }));
 
 app.get("/api/admin/database", auth, allow("admin"), asyncRoute(async (_request, response) => {
@@ -641,14 +664,18 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
       proposal.alternativeDate = alternativeDate;
       proposal.alternativeTime = alternativeTime;
       proposal.alternativeEndTime = alternativeEndTime;
-      proposal.bookingStatus = "REJECTED";
-      proposal.status = "REJECTED";
-      proposal.rejectionReason = reason;
-      proposal.finalDecisionAt = respondedAt;
-      proposal.finalDecisionBy = request.user.name;
-      addAudit(state, request.user, "SUPPLIER_REJECTED", `${proposal.supplier} rejected ${proposal.shipmentNumber}: ${reason}`, proposal.shipmentNumber);
-      const recipients = state.users.filter((user) => ["planner", "production"].includes(user.role) && user.emailVerifiedAt && user.email).map((user) => user.email);
-      return { rejected: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, scheduledDate: proposal.scheduledDate, scheduledTime: proposal.scheduledTime, scheduledEndTime: proposal.scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, recipients };
+      proposal.bookingStatus = "PENDING_COMPANY";
+      proposal.status = "PROPOSED";
+      proposal.rejectionReason = null;
+      proposal.companyDecision = null;
+      proposal.companyDecisionReason = null;
+      proposal.companyDecisionAt = null;
+      proposal.companyDecisionBy = null;
+      addAudit(state, request.user, "SUPPLIER_ALTERNATIVE_PROPOSED", `${proposal.supplier} proposed ${alternativeDate} at ${alternativeTime}: ${reason}`, proposal.shipmentNumber);
+      const companyUsers = state.users.filter((user) => ["planner", "production"].includes(user.role));
+      companyUsers.forEach((user) => addNotification(state, user, { type: "WARNING", title: "Supplier proposed a schedule change", message: `${proposal.supplier} requested ${alternativeDate} at ${alternativeTime}. Reason: ${reason}`, shipment: proposal }));
+      const recipients = companyUsers.filter((user) => user.emailVerifiedAt && user.email).map((user) => user.email);
+      return { alternativeProposed: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, scheduledDate: proposal.scheduledDate, scheduledTime: proposal.scheduledTime, scheduledEndTime: proposal.scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, recipients };
     }
     const expectedIds = new Set(proposal.items.map((item) => Number(item.id)));
     const existingLoads = Array.isArray(proposal.confirmedTruckLoads) ? proposal.confirmedTruckLoads : [];
@@ -725,9 +752,95 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   if (result.invalidAssignment) return response.status(400).json({ message: "Select unconfirmed material codes only; a material can belong to one truck" });
   if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
-  if ((result.rejected || !result.partial) && result.recipients) {
-    try { notification = await emailNotifications.sendSupplierDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.rejected ? "REJECTED" : "CONFIRMED", reason: result.reason, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime, scheduledEndTime: result.scheduledEndTime, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime, alternativeEndTime: result.alternativeEndTime }); }
+  if ((result.alternativeProposed || !result.partial) && result.recipients) {
+    try { notification = await emailNotifications.sendSupplierDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.alternativeProposed ? "REJECTED" : "CONFIRMED", reason: result.reason, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime, scheduledEndTime: result.scheduledEndTime, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime, alternativeEndTime: result.alternativeEndTime }); }
     catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Supplier decision notification failed: ${error.message}`); }
+  }
+  const { recipients: _recipients, ...publicResult } = result;
+  void _recipients;
+  response.json({ ...publicResult, notification });
+}));
+
+app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner", "production"), asyncRoute(async (request, response) => {
+  const decision = String(request.body?.decision || "").trim().toUpperCase();
+  const reason = String(request.body?.reason || "").trim();
+  if (!["APPROVE", "REJECT"].includes(decision)) return response.status(400).json({ message: "Approve or reject the supplier's proposed schedule" });
+  if (decision === "REJECT" && !reason) return response.status(400).json({ message: "A reason is required when rejecting the supplier's proposed schedule" });
+
+  const result = await store.update((state) => {
+    const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
+    if (!shipment) return null;
+    if (shipment.bookingStatus !== "PENDING_COMPANY" || shipment.supplierResponse !== "ALTERNATIVE_PROPOSED") return { alreadyDecided: true };
+    const decidedAt = new Date().toISOString();
+    const supplierUsers = state.users.filter((user) => user.role === "supplier" && Number(user.supplierId) === Number(shipment.supplierId));
+
+    shipment.companyDecision = decision === "APPROVE" ? "APPROVED" : "REJECTED";
+    shipment.companyDecisionReason = reason || null;
+    shipment.companyDecisionAt = decidedAt;
+    shipment.companyDecisionBy = request.user.name;
+
+    if (decision === "APPROVE") {
+      shipment.scheduledDate = shipment.alternativeDate;
+      shipment.scheduledTime = shipment.alternativeTime;
+      shipment.scheduledEndTime = shipment.alternativeEndTime;
+      shipment.timeSlot = scheduleLabel(shipment.scheduledTime, shipment.scheduledEndTime);
+      shipment.expectedDurationMinutes = durationMinutes(shipment.scheduledTime, shipment.scheduledEndTime);
+      shipment.availabilitySlotId = ensureAvailabilityForTime(state, shipment.scheduledDate, shipment.scheduledTime).id;
+      shipment.bookingStatus = "PENDING_SUPPLIER";
+      shipment.status = "PROPOSED";
+      shipment.supplierResponse = null;
+      shipment.rejectionReason = null;
+      addAudit(state, request.user, "COMPANY_ALTERNATIVE_APPROVED", `${request.user.role} approved ${shipment.supplier}'s proposed schedule for ${shipment.scheduledDate} at ${shipment.scheduledTime}`, shipment.shipmentNumber);
+      supplierUsers.forEach((user) => addNotification(state, user, {
+        type: "SUCCESS",
+        title: "Proposed schedule approved",
+        message: `${shipment.scheduledDate} at ${shipment.scheduledTime} was approved. Confirm the delivery and add the truck and driver details.`,
+        shipment,
+      }));
+    } else {
+      shipment.bookingStatus = "REJECTED";
+      shipment.status = "REJECTED";
+      shipment.rejectionReason = reason;
+      addAudit(state, request.user, "COMPANY_ALTERNATIVE_REJECTED", `${request.user.role} rejected ${shipment.supplier}'s proposed schedule: ${reason}`, shipment.shipmentNumber);
+      supplierUsers.forEach((user) => addNotification(state, user, {
+        type: "ERROR",
+        title: "Proposed schedule rejected",
+        message: `${shipment.alternativeDate} at ${shipment.alternativeTime} was not approved. Reason: ${reason}`,
+        shipment,
+      }));
+    }
+    syncAvailableDates(state);
+    return {
+      shipment: supplierSafeShipment(shipment),
+      shipmentNumber: shipment.shipmentNumber,
+      supplier: shipment.supplier,
+      scheduledDate: decision === "APPROVE" ? shipment.scheduledDate : shipment.alternativeDate,
+      scheduledTime: decision === "APPROVE" ? shipment.scheduledTime : shipment.alternativeTime,
+      decision: shipment.companyDecision,
+      reason,
+      recipients: supplierUsers.filter((user) => user.emailVerifiedAt && user.email).map((user) => user.email),
+    };
+  });
+
+  if (!result) return response.status(404).json({ message: "SDS proposal not found" });
+  if (result.alreadyDecided) return response.status(409).json({ message: "This proposed schedule has already been reviewed" });
+  let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
+  if (result.recipients.length) {
+    try {
+      notification = await emailNotifications.sendCompanyScheduleDecision({
+        sender: emailSender,
+        recipients: result.recipients,
+        shipmentNumber: result.shipmentNumber,
+        supplier: result.supplier,
+        decision: result.decision,
+        reason: result.reason,
+        scheduledDate: result.scheduledDate,
+        scheduledTime: result.scheduledTime,
+      });
+    } catch (error) {
+      notification = { status: "FAILED", sent: 0, failed: result.recipients.length };
+      console.error(`[email] Company schedule decision notification failed: ${error.message}`);
+    }
   }
   const { recipients: _recipients, ...publicResult } = result;
   void _recipients;
@@ -1350,9 +1463,9 @@ app.post("/api/shipment-items/:id/documents", auth, allow("admin", "supplier"), 
   response.status(201).json(result);
 }));
 
-app.get("/api/reports/export.xlsx", auth, allow("admin", "supplier"), asyncRoute(async (request, response) => {
+app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production", "warehouse", "supplier", "driver"), asyncRoute(async (request, response) => {
   const state = await store.read();
-  const requestedSupplierId = request.user.role === "supplier" ? Number(request.user.supplierId) : Number(request.query.supplierId || 0);
+  const requestedSupplierId = companyScopedRoles.has(request.user.role) ? Number(request.user.supplierId) : Number(request.query.supplierId || 0);
   const shipments = state.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED" && (!requestedSupplierId || Number(shipment.supplierId) === requestedSupplierId));
   const duration = (start, end) => start && end ? Math.max(0, Math.round((Date.parse(end) - Date.parse(start)) / 60000)) : null;
   const average = (values) => {

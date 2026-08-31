@@ -58,11 +58,13 @@ An imported row is only a proposed schedule. It is not a booking, does not appea
 
 The supplier opens **Schedule** or **My entries** and selects **Review & confirm delivery** on a proposal.
 
-1. Accept the proposed time, or reject it with a reason and one alternative date and time.
+1. Accept the proposed time, or propose an alternative with a reason and one alternative date and time.
 2. Enter one truck plate and driver name, choose the phone country code, then enter the numeric local phone number.
 3. Select all material codes carried by that truck.
 4. Select **Confirm Delivery**.
 5. If material codes remain, open the proposal again and confirm the next truck.
+
+If an alternative is proposed, Planner, Production, or Administrator reviews the original time, proposed time, and supplier reason. Company approval applies the new time and asks the supplier to return and confirm the truck details. Company rejection closes the proposal and sends the company reason to the supplier. Both outcomes appear as an in-app notification and are emailed to verified supplier accounts.
 
 A delivery code is reserved for every truck. As soon as every material code has been assigned and the supplier confirms the final truck, the proposal changes to **Booked** and its QR code, Monitoring card, and report entry become available.
 
@@ -133,7 +135,8 @@ ETA address lookup and routing require internet access unless the provider URLs 
 4. Sign in as Administrator and open **Administration → Accounts**.
 5. Select each account, replace its `@dockflow.local` trial address with the owner’s real email, then send and enter its six-digit verification code.
 6. Import a new SDS. Each linked, verified supplier receives only its own proposed deliveries. New proposals show their schedule and material-code details; rescheduled proposals show **Before** and **After** details. File-level SDS summaries and other suppliers’ changes are not included.
-7. Confirm or reject a proposal from the supplier account. Verified administrator and planner emails receive the result.
+7. Propose an alternative from the supplier account. Verified Planner and Production emails receive the reason and proposed time.
+8. Approve or reject the alternative from the company Schedule page. The verified supplier receives the decision and reason by email, and all linked supplier users receive an in-app notification.
 
 The sender address and App Password stay in `.env`; they are not saved in trial JSON, returned by the API, or shown in the browser. In an offline trial, the rest of DockFlow still works, but Gmail delivery and public ETA lookup cannot be tested.
 

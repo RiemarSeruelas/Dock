@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  Bell,
   Boxes,
   CalendarDays,
   Check,
@@ -44,9 +45,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, authenticatedFetch, clearApiSession, configureApiSession, getBootstrap, login as apiLogin, logoutSession } from "./api-client";
 import { localDate } from "./date-utils";
-import { FlexibleSchedulePage, HistoryPage, MonitoringPage, SupplierSdsModal, type SupplierResponsePayload } from "./dockflow-features";
+import { CompanyDecisionModal, FlexibleSchedulePage, HistoryPage, MonitoringPage, SupplierSdsModal, type CompanyDecisionPayload, type SupplierResponsePayload } from "./dockflow-features";
 import { ExcelImportModal, type ImportResult } from "./excel-import-modal";
-import type { AppData, AvailabilityInput, Role, ScanStage, SessionUser, Shipment, ShipmentStatus, SupplierAccount, SupplierPreset } from "./types";
+import type { AppData, AppNotification, AvailabilityInput, Role, ScanStage, SessionUser, Shipment, ShipmentStatus, SupplierAccount, SupplierPreset } from "./types";
 
 type View = "overview" | "monitoring" | "schedule" | "entries" | "operations" | "history" | "reports" | "admin";
 type Icon = typeof LayoutDashboard;
@@ -58,6 +59,7 @@ const EMPTY_DATA: AppData = {
   suppliers: [],
   users: [],
   audit: [],
+  notifications: [],
   importBatches: [],
   settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [] },
 };
@@ -363,7 +365,7 @@ function EntriesPage({ data, onOpenShipment }: { data: AppData; onOpenShipment: 
   return <div className="page-stack supplier-entries-page"><section className="hero-row"><div><span className="eyebrow">My supplier account</span><h1>My delivery entries</h1></div><span className="count-chip">{data.shipments.length} entries</span></section><section className="panel entries-panel"><div className="toolbar entries-toolbar"><label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search delivery code, truck, or driver" /></label><div className="view-toggle"><button className={status === "ALL" ? "active" : ""} onClick={() => setStatus("ALL")}>All</button><button className={status === "PENDING" ? "active" : ""} onClick={() => setStatus("PENDING")}>Pending</button><button className={status === "APPROVED" ? "active" : ""} onClick={() => setStatus("APPROVED")}>Approved</button></div></div><div className="entries-grid">{entries.map((shipment) => {
     const site = shipment.items.find((item) => item.deliverySite)?.deliverySite || "Site not supplied";
     const remaining = shipment.items.filter((item) => !item.supplierApprovedAt).length;
-    return <article className="entry-card" key={shipment.id}><div className="entry-card-head"><span className="truck-tile"><Truck size={18} /></span><div><strong>{shipment.truckPlate}</strong><small>{shipment.shipmentNumber}</small></div><StatusPill status={shipment.status} /></div><dl><div><dt>Site</dt><dd>{site}</dd></div><div><dt>Delivery</dt><dd>{formatDate(shipment.scheduledDate, "short")} · {shipment.scheduledTime}</dd></div><div><dt>Delivery code</dt><dd>{shipment.deliveryCode || shipment.confirmedTruckLoads?.[0]?.deliveryCode || "Generated after truck confirmation"}</dd></div><div><dt>Approval</dt><dd>{shipment.bookingStatus === "PENDING_SUPPLIER" ? `${remaining} material code${remaining === 1 ? "" : "s"} need a truck` : shipment.bookingStatus === "REJECTED" ? "Rejected" : "Confirmed"}</dd></div></dl><button className={`button full ${shipment.bookingStatus === "APPROVED" ? "primary" : shipment.bookingStatus === "PENDING_SUPPLIER" ? "primary" : "secondary"}`} onClick={() => onOpenShipment(shipment)}>{shipment.bookingStatus === "APPROVED" ? <><QrCode size={16} /> View entry & QR</> : shipment.bookingStatus === "PENDING_SUPPLIER" ? <><ClipboardList size={16} /> Review & confirm delivery</> : <><ClipboardList size={16} /> View entry</>}</button></article>;
+    return <article className="entry-card" key={shipment.id}><div className="entry-card-head"><span className="truck-tile"><Truck size={18} /></span><div><strong>{shipment.truckPlate}</strong><small>{shipment.shipmentNumber}</small></div><StatusPill status={shipment.status} /></div><dl><div><dt>Site</dt><dd>{site}</dd></div><div><dt>Delivery</dt><dd>{formatDate(shipment.scheduledDate, "short")} · {shipment.scheduledTime}</dd></div><div><dt>Delivery code</dt><dd>{shipment.deliveryCode || shipment.confirmedTruckLoads?.[0]?.deliveryCode || "Generated after truck confirmation"}</dd></div><div><dt>Approval</dt><dd>{shipment.bookingStatus === "PENDING_SUPPLIER" ? `${remaining} material code${remaining === 1 ? "" : "s"} need a truck` : shipment.bookingStatus === "PENDING_COMPANY" ? "Company reviewing proposed time" : shipment.bookingStatus === "REJECTED" ? "Rejected" : "Confirmed"}</dd></div></dl><button className={`button full ${shipment.bookingStatus === "APPROVED" ? "primary" : shipment.bookingStatus === "PENDING_SUPPLIER" ? "primary" : "secondary"}`} onClick={() => onOpenShipment(shipment)}>{shipment.bookingStatus === "APPROVED" ? <><QrCode size={16} /> View entry & QR</> : shipment.bookingStatus === "PENDING_SUPPLIER" ? <><ClipboardList size={16} /> Review & confirm delivery</> : <><ClipboardList size={16} /> View entry</>}</button></article>;
   })}</div>{!entries.length && <EmptyState icon={ClipboardList} title="No matching entries" body="Your SDS proposals and approved truck deliveries will appear here." />}</section></div>;
 }
 
@@ -478,6 +480,12 @@ function ShipmentModal({ shipment, token, onClose, onDownloadPdf }: { shipment: 
   return <Modal className="booking-receipt-modal" title={shipment.shipmentNumber} subtitle={`${shipment.bookingReceipt} · ${shipment.supplier}`} onClose={onClose} wide><div className="shipment-detail"><div className="receipt-head"><div><span className="brand-mark"><Route size={20} /></span><span><b>DockFlow</b><small>Booking receipt</small></span></div><StatusPill status={shipment.status} /></div><div className="shipment-summary"><div><span className="truck-tile large"><Truck size={26} /></span><div><small>Truck & driver</small><strong>{shipment.truckPlate}</strong><span>{shipment.driverName}{shipment.driverPhone ? ` · ${shipment.driverPhone}` : ""}</span></div></div>{shipment.bookingStatus === "APPROVED" ? <ProtectedQrImage shipment={shipment} token={token} /> : <span className="qr-locked"><QrCode size={27} /><small>QR created after supplier confirmation</small></span>}</div><dl className="detail-grid"><div><dt>Delivery code</dt><dd>{shipment.deliveryCode || shipment.confirmedTruckLoads?.[0]?.deliveryCode || "Generated after truck confirmation"}</dd></div><div><dt>Delivery date</dt><dd>{formatDate(shipment.scheduledDate)}</dd></div><div><dt>Entrance time</dt><dd>{shipment.scheduledTime}</dd></div><div><dt>Site</dt><dd>{deliverySite}</dd></div><div><dt>Week</dt><dd>{deliveryWeek}</dd></div><div><dt>Approval stage</dt><dd>{shipment.supplierAccountLinked === false ? "No supplier account linked" : shipment.bookingStatus === "PENDING_SUPPLIER" ? "Supplier response required" : shipment.bookingStatus === "REJECTED" ? "Rejected" : "Confirmed"}</dd></div><div><dt>ETA</dt><dd>{shipment.estimatedArrivalAt ? formatTime(shipment.estimatedArrivalAt) : shipment.tripAt ? "Route not configured" : "Starts at Trip scan"}</dd></div></dl>{shipment.supplierResponseReason && <div className="approval-waiting-banner"><CalendarDays size={17} /><span><b>Supplier alternative reason</b>{shipment.supplierResponseReason}</span></div>}{shipment.rejectionReason && <div className="rejection-banner"><AlertTriangle size={17} /><span><b>Request rejected</b>{shipment.rejectionReason}</span></div>}<section className="process-tracker"><div className="panel-head"><div><span className="eyebrow">Scan timestamps</span><h3>Process tracker · Manila time</h3></div></div><div className="process-stage-row">{stages.map((stage, index) => <div className={stage.at ? "complete" : ""} key={stage.label}><i>{stage.at ? <Check size={13} /> : index + 1}</i><b>{stage.label}</b><small>{stage.at ? `${new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }).format(new Date(stage.at))}` : "Waiting"}</small></div>)}</div><div className="process-duration-grid"><span><small>Trip → Gate in</small><b>{duration(shipment.tripAt, shipment.gateInAt)}</b></span><span><small>Gate in → Unloading</small><b>{duration(shipment.gateInAt, shipment.unloadingAt)}</b></span><span><small>Unloading → Received</small><b>{duration(shipment.unloadingAt, shipment.receivedAt)}</b></span><span><small>Received → Gate out</small><b>{duration(shipment.receivedAt, shipment.gateOutAt)}</b></span><span><small>Total site time</small><b>{duration(shipment.gateInAt, shipment.gateOutAt)}</b></span></div></section><div className="table-wrap detail-items"><table><thead><tr><th>Material code</th><th>Amount / weight</th><th>UOM</th></tr></thead><tbody>{shipment.items.map((item) => <tr key={item.id}><td><b>{item.materialCode}</b></td><td>{item.quantity.toLocaleString()}</td><td>{item.uom}</td></tr>)}</tbody></table></div><div className="shipment-actions">{shipment.bookingStatus === "APPROVED" && <button className="button secondary" onClick={() => void onDownloadPdf(shipment)}><Download size={17} /> Download booking PDF</button>}<button className="button primary" onClick={onClose}>Done</button></div></div></Modal>;
 }
 
+function NotificationCenter({ notifications, onOpen, onDismiss }: { notifications: AppNotification[]; onOpen: (notification: AppNotification) => void; onDismiss: (notification: AppNotification) => void }) {
+  const unread = notifications.filter((notification) => !notification.readAt).slice(0, 4);
+  if (!unread.length) return null;
+  return <section className="app-notification-center" aria-label="New DockFlow notifications"><div className="app-notification-head"><span><Bell size={18} /><b>Notifications</b></span><small>{unread.length} new</small></div><div className="app-notification-list">{unread.map((notification) => <article className={`app-notification app-notification-${notification.type.toLowerCase()}`} key={notification.id}><span className="app-notification-icon"><Bell size={16} /></span><button type="button" className="app-notification-copy" onClick={() => onOpen(notification)}><b>{notification.title}</b><span>{notification.message}</span>{notification.shipmentNumber && <small>{notification.shipmentNumber}</small>}</button><button type="button" className="icon-button" onClick={() => onDismiss(notification)} aria-label="Mark notification as read"><X size={16} /></button></article>)}</div></section>;
+}
+
 export default function DockFlowApp() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [token, setToken] = useState("");
@@ -490,6 +498,7 @@ export default function DockFlowApp() {
   const [toast, setToast] = useState("");
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
   const [supplierResponseShipment, setSupplierResponseShipment] = useState<Shipment | null>(null);
+  const [companyDecisionShipment, setCompanyDecisionShipment] = useState<Shipment | null>(null);
   const [excelImport, setExcelImport] = useState(false);
   const [selfVerificationOpen, setSelfVerificationOpen] = useState(false);
 
@@ -517,6 +526,14 @@ export default function DockFlowApp() {
     let active = true;
     getBootstrap(token).then(result => { if (active) setData(result); }).catch(() => { if (active) setToast("Could not refresh operations data."); });
     return () => { active = false; };
+  }, [user, token]);
+  useEffect(() => {
+    if (!user || !token) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      getBootstrap(token).then((result) => { if (active) setData(result); }).catch(() => undefined);
+    }, 30_000);
+    return () => { active = false; window.clearInterval(timer); };
   }, [user, token]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("dockflow-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { localStorage.setItem("dockflow-sidebar", sidebarCollapsed ? "collapsed" : "expanded"); }, [sidebarCollapsed]);
@@ -568,9 +585,25 @@ export default function DockFlowApp() {
   const deleteAvailability = async (id: number) => persist(`/api/availability/${id}`, "DELETE", undefined, "Availability window removed.");
   const moveShipment = async (shipment: Shipment, scheduledDate: string, scheduledTime: string, scheduledEndTime: string) => persist(`/api/shipments/${shipment.id}/schedule`, "PATCH", { scheduledDate, scheduledTime, scheduledEndTime }, `${shipment.shipmentNumber} moved to ${formatDate(scheduledDate, "short")}, ${scheduledTime}.`);
   const respondToSds = async (shipment: Shipment, payload: SupplierResponsePayload) => {
-    const result = await apiRequest<{ partial: boolean; rejected?: boolean; remainingMaterialCount: number; notification?: { status: string } }>(token, `/api/shipments/${shipment.id}/supplier-response`, "PATCH", payload);
+    const result = await apiRequest<{ partial: boolean; alternativeProposed?: boolean; remainingMaterialCount: number; notification?: { status: string } }>(token, `/api/shipments/${shipment.id}/supplier-response`, "PATCH", payload);
     await refresh();
-    notify(result.rejected ? `Delivery rejected. Planner and administrator notification: ${result.notification?.status || "NOT_SENT"}.` : result.partial ? `Truck confirmed. ${result.remainingMaterialCount} material code${result.remainingMaterialCount === 1 ? "" : "s"} still need a truck.` : "Delivery confirmed. The QR code and report entry are ready.");
+    notify(result.alternativeProposed ? `Alternative sent for Planner / Production review. Email: ${result.notification?.status || "NOT_SENT"}.` : result.partial ? `Truck confirmed. ${result.remainingMaterialCount} material code${result.remainingMaterialCount === 1 ? "" : "s"} still need a truck.` : "Delivery confirmed. The QR code and report entry are ready.");
+  };
+  const decideAlternative = async (shipment: Shipment, payload: CompanyDecisionPayload) => {
+    const result = await apiRequest<{ notification?: { status: string } }>(token, `/api/shipments/${shipment.id}/company-decision`, "PATCH", payload);
+    await refresh();
+    notify(`${payload.decision === "APPROVE" ? "Proposed schedule approved" : "Proposed schedule rejected"}. Supplier email: ${result.notification?.status || "NOT_SENT"}.`);
+  };
+  const markNotificationRead = async (notification: AppNotification) => {
+    setData((current) => ({ ...current, notifications: current.notifications.map((row) => row.id === notification.id ? { ...row, readAt: new Date().toISOString() } : row) }));
+    await apiRequest(token, `/api/notifications/${notification.id}/read`, "PATCH", {}).catch(() => undefined);
+  };
+  const openNotification = (notification: AppNotification) => {
+    void markNotificationRead(notification);
+    const shipment = data.shipments.find((row) => row.id === notification.shipmentId || row.shipmentNumber === notification.shipmentNumber);
+    if (!shipment) return;
+    if (["admin", "planner", "production"].includes(user?.role || "") && shipment.bookingStatus === "PENDING_COMPANY") setCompanyDecisionShipment(shipment);
+    else openShipment(shipment);
   };
   const openShipment = (shipment: Shipment) => {
     if (user?.role === "supplier" && shipment.bookingStatus === "PENDING_SUPPLIER") {
@@ -578,7 +611,13 @@ export default function DockFlowApp() {
       setSupplierResponseShipment(shipment);
       return;
     }
+    if (["admin", "planner", "production"].includes(user?.role || "") && shipment.bookingStatus === "PENDING_COMPANY") {
+      setSelectedShipment(null);
+      setCompanyDecisionShipment(shipment);
+      return;
+    }
     setSupplierResponseShipment(null);
+    setCompanyDecisionShipment(null);
     setSelectedShipment(shipment);
   };
   const addUser = async (form: Record<string, string | number>) => persist("/api/users", "POST", form, `${form.name} added as ${ROLE_LABELS[String(form.role) as Role]}.`);
@@ -612,10 +651,11 @@ export default function DockFlowApp() {
     <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""} ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b></span></div><button className="sidebar-collapse" onClick={() => setSidebarCollapsed((current) => !current)} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <ChevronsRight size={20} /> : <ChevronsLeft size={20} />}</button><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} title={sidebarCollapsed ? item.label : undefined} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b></div></button>; })}</nav><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{ROLE_LABELS[user.role]}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><span className="role-badge"><RoleIcon size={15} /> {ROLE_LABELS[user.role]}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><span className="user-mini profile-only" aria-label={`${user.name} profile`} title={user.name}><span>{initials(user.name)}</span></span></div></header>
-      <div className="page-content">{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={openShipment} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={openShipment} />}{view === "schedule" && <FlexibleSchedulePage data={data} user={user} onOpenShipment={openShipment} onSaveAvailability={saveAvailability} onDeleteAvailability={deleteAvailability} onMoveShipment={moveShipment} onImportSds={() => setExcelImport(true)} />}{view === "entries" && <>{user.role === "supplier" && !user.emailVerifiedAt && <section className="verification-reminder"><ShieldCheck size={22} /><div><b>Verify your account email</b><span>This reminder stays here until your email is verified.</span></div><button className="button primary compact" onClick={() => setSelfVerificationOpen(true)}>Verify now</button></section>}<EntriesPage data={data} onOpenShipment={openShipment} /></>}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onOpenShipment={openShipment} />}{view === "history" && <HistoryPage data={data} user={user} onOpenShipment={openShipment} />}{view === "reports" && <ReportsPage data={data} user={user} token={token} onOpenShipment={openShipment} />}{view === "admin" && <AdminPage data={data} currentUser={user} onAddUser={addUser} onDeleteUser={deleteUser} onSaveSiteAddress={saveSiteAddress} onCalculateSupplierEta={calculateSupplierEta} onSaveSupplierPresets={saveSupplierPresets} />}</div>
+      <div className="page-content"><NotificationCenter notifications={data.notifications} onOpen={openNotification} onDismiss={(notification) => void markNotificationRead(notification)} />{view === "overview" && <OverviewPage data={data} user={user} onOpenShipment={openShipment} />}{view === "monitoring" && <MonitoringPage data={data} onOpenShipment={openShipment} />}{view === "schedule" && <FlexibleSchedulePage data={data} user={user} onOpenShipment={openShipment} onSaveAvailability={saveAvailability} onDeleteAvailability={deleteAvailability} onMoveShipment={moveShipment} onImportSds={() => setExcelImport(true)} onReviewAlternative={setCompanyDecisionShipment} />}{view === "entries" && <>{user.role === "supplier" && !user.emailVerifiedAt && <section className="verification-reminder"><ShieldCheck size={22} /><div><b>Verify your account email</b><span>This reminder stays here until your email is verified.</span></div><button className="button primary compact" onClick={() => setSelfVerificationOpen(true)}>Verify now</button></section>}<EntriesPage data={data} onOpenShipment={openShipment} /></>}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onOpenShipment={openShipment} />}{view === "history" && <HistoryPage data={data} user={user} onOpenShipment={openShipment} />}{view === "reports" && <ReportsPage data={data} user={user} token={token} onOpenShipment={openShipment} />}{view === "admin" && <AdminPage data={data} currentUser={user} onAddUser={addUser} onDeleteUser={deleteUser} onSaveSiteAddress={saveSiteAddress} onCalculateSupplierEta={calculateSupplierEta} onSaveSupplierPresets={saveSupplierPresets} />}</div>
     </main>
     {loading && <div className="loading-line" />}{toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
     {supplierResponseShipment && <SupplierSdsModal shipment={supplierResponseShipment} onClose={() => setSupplierResponseShipment(null)} onSubmit={respondToSds} />}
+    {companyDecisionShipment && <CompanyDecisionModal shipment={companyDecisionShipment} onClose={() => setCompanyDecisionShipment(null)} onSubmit={decideAlternative} />}
     {selectedShipment && <ShipmentModal shipment={selectedShipment} token={token} onClose={() => setSelectedShipment(null)} onDownloadPdf={downloadBookingPdf} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}{selfVerificationOpen && <VerifyAccountEmailModal account={user} onClose={() => setSelfVerificationOpen(false)} onSaveEmail={saveAccountEmail} onSendCode={sendEmailCode} onVerify={verifyEmail} />}
   </div>;
 }

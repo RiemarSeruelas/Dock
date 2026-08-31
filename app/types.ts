@@ -10,7 +10,7 @@ export type ShipmentStatus =
   | "GATE_OUT"
   | "REJECTED";
 
-export type BookingStatus = "PENDING_SUPPLIER" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
+export type BookingStatus = "PENDING_SUPPLIER" | "PENDING_COMPANY" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
 export type ScanStage = "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
 
 export interface AvailabilitySlot {
@@ -113,6 +113,10 @@ export interface Shipment {
   alternativeDate?: string | null;
   alternativeTime?: string | null;
   alternativeEndTime?: string | null;
+  companyDecision?: "APPROVED" | "REJECTED" | null;
+  companyDecisionReason?: string | null;
+  companyDecisionAt?: string | null;
+  companyDecisionBy?: string | null;
   loadConfirmedAt?: string | null;
   finalDecisionAt?: string | null;
   finalDecisionBy?: string | null;
@@ -182,6 +186,17 @@ export interface AuditEntry {
   detail: string;
 }
 
+export interface AppNotification {
+  id: number;
+  type: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
+  title: string;
+  message: string;
+  shipmentId?: number | null;
+  shipmentNumber?: string | null;
+  createdAt: string;
+  readAt?: string | null;
+}
+
 export interface AppData {
   shipments: Shipment[];
   rdsRequests: RdsRequest[];
@@ -189,6 +204,7 @@ export interface AppData {
   suppliers: SupplierAccount[];
   users: SessionUser[];
   audit: AuditEntry[];
+  notifications: AppNotification[];
   importBatches: {
     id: number;
     fileName: string;
