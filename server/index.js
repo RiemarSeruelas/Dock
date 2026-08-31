@@ -196,7 +196,7 @@ const ensureSupplier = (state, name) => {
   const supplierName = String(name || "").trim() || "Supplier to assign";
   let supplier = state.suppliers.find((row) => row.name.toLowerCase() === supplierName.toLowerCase());
   if (!supplier) {
-    supplier = { id: nextId(state.suppliers), vendorCode: `TRIAL-${String(nextId(state.suppliers)).padStart(3, "0")}`, name: supplierName, productPresets: [], originAddress: "", originCoordinates: null, routeDistanceKm: null, routeDurationMinutes: null, routeCalculatedAt: null, routeProvider: null };
+    supplier = { id: nextId(state.suppliers), vendorCode: `SUP-${String(nextId(state.suppliers)).padStart(3, "0")}`, name: supplierName, productPresets: [], originAddress: "", originCoordinates: null, routeDistanceKm: null, routeDurationMinutes: null, routeCalculatedAt: null, routeProvider: null };
     state.suppliers.push(supplier);
   }
   return supplier;
@@ -226,76 +226,18 @@ const makeItem = (id, data) => ({
 });
 
 async function createInitialState() {
-  const accountRows = [
-    ["System Administrator", "admin", "admin123", "admin", null, "admin@dockflow.local"],
-    ["Supplier User", "supplier", "supplier123", "supplier", 1, "supplier@dockflow.local"],
-    ["Planner User", "planner", "planner123", "planner", null, "planner@dockflow.local"],
-    ["Production User", "production", "production123", "production", null, "production@dockflow.local"],
-    ["Driver User", "driver", "driver123", "driver", 1, "driver@dockflow.local"],
-    ["Security User", "security", "security123", "security", null, "security@dockflow.local"],
-    ["Warehouse User", "warehouse", "warehouse123", "warehouse", null, "warehouse@dockflow.local"],
-  ];
-  const users = await Promise.all(accountRows.map(async (row, index) => ({
-    id: index + 1,
-    name: row[0],
-    username: row[1],
-    passwordHash: await bcrypt.hash(row[2], 10),
-    role: row[3],
-    supplierId: row[4],
-    email: row[5],
-    emailVerifiedAt: null,
-  })));
-  const dates = [localDate(), localDate(1), localDate(2), localDate(3), localDate(5)];
-  const materials = [
-    { id: 1, code: "65013575", name: "Aspartame Powder", type: "RM", uom: "KG", shelfLifeDays: 730, unitsPerPallet: 500, storageZone: "Dry store" },
-    { id: 2, code: "65013507", name: "Mustard Pure", type: "RM", uom: "KG", shelfLifeDays: 365, unitsPerPallet: 1044, storageZone: "Dry store" },
-    { id: 3, code: "65013743", name: "Delta Cap 470/700/940 ML", type: "PM", uom: "PC", shelfLifeDays: 0, unitsPerPallet: 18480, storageZone: "Packaging" },
-    { id: 4, code: "65013333", name: "Corn Starch", type: "RM", uom: "KG", shelfLifeDays: 730, unitsPerPallet: 600, storageZone: "Dry store" },
-  ];
-  const shipments = [
-    { id: 1, supplier: "Trial Ingredients Supplier", vendorCode: "TRIAL-001", scheduledDate: dates[0], scheduledTime: "08:20", scheduledEndTime: null, status: "PLANNED", truckPlate: "ABC 1234", driverName: "Driver User", driverPhone: "09170000001", materialWeightKg: 300, dock: null, items: [makeItem(1, { poNumber: "450000101", materialCode: materials[0].code, materialName: materials[0].name, quantity: 300, uom: "KG", palletCount: 1 })], palletsScanned: 0 },
-    { id: 2, supplier: "Trial Packaging Supplier", vendorCode: "TRIAL-002", scheduledDate: dates[0], scheduledTime: "10:45", scheduledEndTime: "11:30", status: "IN_TRANSIT", truckPlate: "DEF 5678", driverName: "Driver User", driverPhone: "09170000002", materialWeightKg: 0, dock: null, items: [makeItem(2, { poNumber: "450000102", materialCode: materials[2].code, materialName: materials[2].name, quantity: 18480, uom: "PC", palletCount: 2 })], palletsScanned: 0 },
-    { id: 3, supplier: "Trial Ingredients Supplier", vendorCode: "TRIAL-001", scheduledDate: dates[1], scheduledTime: "13:10", scheduledEndTime: null, status: "ARRIVED", truckPlate: "GHI 9012", driverName: "Alex Santos", driverPhone: "09170000003", materialWeightKg: 1044, dock: null, items: [makeItem(3, { poNumber: "450000103", materialCode: materials[1].code, materialName: materials[1].name, quantity: 1044, uom: "KG", palletCount: 2 })], palletsScanned: 0 },
-    { id: 4, supplier: "Trial Starch Supplier", vendorCode: "TRIAL-003", scheduledDate: dates[2], scheduledTime: "15:35", scheduledEndTime: "16:30", status: "AT_DOCK", truckPlate: "JKL 3456", driverName: "Ben Cruz", driverPhone: "09170000004", materialWeightKg: 600, dock: "Dock 1", items: [makeItem(4, { poNumber: "450000104", materialCode: materials[3].code, materialName: materials[3].name, quantity: 600, uom: "KG", palletCount: 2 })], palletsScanned: 0 },
-    { id: 5, supplier: "Trial Packaging Supplier", vendorCode: "TRIAL-002", scheduledDate: dates[3], scheduledTime: "19:25", scheduledEndTime: null, status: "UNLOADING", truckPlate: "MNO 7890", driverName: "Carlo Reyes", driverPhone: "09170000005", materialWeightKg: 0, dock: "Dock 2", items: [makeItem(5, { poNumber: "450000105", materialCode: materials[2].code, materialName: materials[2].name, quantity: 9200, uom: "PC", palletCount: 3 })], palletsScanned: 1 },
-    { id: 6, supplier: "Trial Ingredients Supplier", vendorCode: "TRIAL-001", scheduledDate: dates[4], scheduledTime: "07:05", scheduledEndTime: null, status: "RECEIVED", truckPlate: "PQR 1122", driverName: "Dana Flores", driverPhone: "09170000006", materialWeightKg: 500, dock: "Dock 1", items: [makeItem(6, { poNumber: "450000106", materialCode: materials[0].code, materialName: materials[0].name, quantity: 500, uom: "KG", palletCount: 1 })], palletsScanned: 1 },
-  ].map((shipment) => ({
-    ...shipment,
-    shipmentNumber: nextCode("SHP", shipment.id, shipment.scheduledDate),
-    bookingReceipt: nextCode("BKG", shipment.id, shipment.scheduledDate),
-    expectedDurationMinutes: shipment.scheduledEndTime ? durationMinutes(shipment.scheduledTime, shipment.scheduledEndTime) : null,
-    timeSlot: scheduleLabel(shipment.scheduledTime, shipment.scheduledEndTime),
-    shift: "Flexible date",
-    bookingStatus: "APPROVED",
-    arrivalTime: null,
-    startedAt: shipment.status === "IN_TRANSIT" ? new Date().toISOString() : null,
-    completedAt: shipment.status === "RECEIVED" ? new Date().toISOString() : null,
-    rejectionReason: null,
-    importBatchId: null,
-    importSource: "Trial placeholder",
-    palletsTotal: shipment.items.reduce((sum, item) => sum + item.palletCount, 0),
-    palletIds: [],
-  }));
+  const adminUsername = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim().toLowerCase();
+  const adminPassword = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "admin123");
+  const adminEmail = String(process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@dockflow.local").trim().toLowerCase();
   return {
-    version: 1,
-    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", siteAddress: "", siteCoordinates: null, availableDates: dates, availableSlots: defaultAvailabilityForDates(dates), emailNotifications: {} },
-    users,
-    suppliers: [
-      { id: 1, vendorCode: "TRIAL-001", name: "Trial Ingredients Supplier", productPresets: [{ id: 1, materialCode: "65013575", uom: "KG", defaultAmount: 300 }, { id: 2, materialCode: "65013507", uom: "KG", defaultAmount: 500 }] },
-      { id: 2, vendorCode: "TRIAL-002", name: "Trial Packaging Supplier", productPresets: [{ id: 3, materialCode: "65013743", uom: "PC", defaultAmount: 18480 }] },
-      { id: 3, vendorCode: "TRIAL-003", name: "Trial Starch Supplier", productPresets: [{ id: 4, materialCode: "65013333", uom: "KG", defaultAmount: 600 }] },
-    ],
-    materials,
-    shipments,
-    rdsRequests: [
-      { id: 1, rdsNumber: "RDS-TRIAL-001", dppNumber: "DPP-TRIAL-001", supplier: "Trial Packaging Supplier", supplierId: 2, requestedDate: dates[2], requestedTime: "15:00", availabilitySlotId: 6, status: "PENDING", notes: "Placeholder request for testing", items: [makeItem(7, { poNumber: "450000201", materialCode: materials[2].code, materialName: materials[2].name, quantity: 12000, uom: "PC", palletCount: 2 })] },
-      { id: 2, rdsNumber: "RDS-TRIAL-002", dppNumber: "DPP-TRIAL-002", supplier: "Trial Ingredients Supplier", supplierId: 1, requestedDate: dates[3], requestedTime: "16:00", availabilitySlotId: 8, status: "CONFIRMED", notes: "Ready to schedule in the selected availability window", items: [makeItem(8, { poNumber: "450000202", materialCode: materials[1].code, materialName: materials[1].name, quantity: 500, uom: "KG", palletCount: 1 })] },
-    ],
-    audit: [
-      { id: 3, at: new Date().toISOString(), actor: "Warehouse User", action: "UNLOADING", shipmentNumber: shipments[4].shipmentNumber, detail: `${shipments[4].shipmentNumber} started unloading at Dock 2` },
-      { id: 2, at: new Date(Date.now() - 20 * 60000).toISOString(), actor: "Security User", action: "AT_DOCK", shipmentNumber: shipments[3].shipmentNumber, detail: `${shipments[3].shipmentNumber} directed to Dock 1` },
-      { id: 1, at: new Date(Date.now() - 45 * 60000).toISOString(), actor: "Driver User", action: "IN_TRANSIT", shipmentNumber: shipments[1].shipmentNumber, detail: `${shipments[1].shipmentNumber} started the trip` },
-    ],
+    version: 11,
+    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
+    users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, email: adminEmail, emailVerifiedAt: null }],
+    suppliers: [],
+    materials: [],
+    shipments: [],
+    rdsRequests: [],
+    audit: [],
     notifications: [],
     importBatches: [],
   };
@@ -335,12 +277,11 @@ await store.update(async (state) => {
     if (!user.passwordHash) user.passwordHash = await bcrypt.hash(`${user.username}123`, 10);
     delete user.password;
   }
-  if (!state.users.some((user) => user.role === "production")) state.users.push({ id: nextId(state.users), name: "Production User", username: "production", email: "production@dockflow.local", passwordHash: await bcrypt.hash("production123", 10), role: "production", supplierId: null });
   state.settings.dockCount = 2;
   state.settings.flexibleScheduling = true;
   state.settings.graceMinutes = Number(state.settings.graceMinutes ?? 30);
   state.settings.deliveryCodeSequence = Number(state.settings.deliveryCodeSequence || Math.max(0, ...state.shipments.map((shipment) => Number(String(shipment.deliveryCode || "").split("-").at(-1)) || 0)));
-  state.settings.siteName = String(state.settings.siteName || "Cavite Foods Receiving · Trial");
+  state.settings.siteName = String(state.settings.siteName || "Cavite Foods Receiving");
   state.settings.siteAddress = String(state.settings.siteAddress || "");
   state.settings.siteCoordinates = validCoordinates(state.settings.siteCoordinates) ? { lat: Number(state.settings.siteCoordinates.lat), lon: Number(state.settings.siteCoordinates.lon) } : null;
   // Gmail credentials belong only in the server environment. Remove any sender
@@ -360,7 +301,7 @@ await store.update(async (state) => {
   for (const supplier of state.suppliers) {
     supplier.id ||= nextSupplierId++;
     supplier.name = String(supplier.name || "Supplier to assign");
-    supplier.vendorCode = String(supplier.vendorCode || `TRIAL-${String(supplier.id).padStart(3, "0")}`);
+    supplier.vendorCode = String(supplier.vendorCode || `SUP-${String(supplier.id).padStart(3, "0")}`);
     supplier.originAddress = String(supplier.originAddress || "");
     supplier.originCoordinates = validCoordinates(supplier.originCoordinates) ? { lat: Number(supplier.originCoordinates.lat), lon: Number(supplier.originCoordinates.lon) } : null;
     supplier.routeDistanceKm = Number(supplier.routeDistanceKm || 0) || null;
@@ -399,7 +340,7 @@ await store.update(async (state) => {
     shipment.shipmentNumber ||= nextCode("SHP", shipment.id, shipment.scheduledDate);
     shipment.bookingReceipt ||= nextCode("BKG", shipment.id, shipment.scheduledDate);
     shipment.supplier = String(shipment.supplier || "Supplier to assign");
-    shipment.vendorCode = String(shipment.vendorCode || "TRIAL");
+    shipment.vendorCode = String(shipment.vendorCode || "SUPPLIER");
     shipment.supplierId = Number(shipment.supplierId) || state.suppliers.find((supplier) => supplier.vendorCode === shipment.vendorCode || supplier.name === shipment.supplier)?.id || null;
     delete shipment.dppNumber;
     shipment.deliveryCode = shipment.deliveryCode || (shipment.bookingStatus === "APPROVED" ? nextCode("DLV", shipment.id, shipment.scheduledDate) : null);

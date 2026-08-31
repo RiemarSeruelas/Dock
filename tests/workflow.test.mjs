@@ -76,8 +76,20 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const blockedCors = await fetch(`${baseUrl}/api/auth/login`, { method: "OPTIONS", headers: { Origin: "http://evil.example", "Access-Control-Request-Method": "POST" } });
   assert.equal(blockedCors.status, 403);
 
-  const supplier = await login("supplier", "supplier123");
   const admin = await login("admin", "admin123");
+  const createAccount = async (body) => {
+    const created = await call("/api/users", { token: admin.token, method: "POST", body });
+    assert.equal(created.response.status, 201);
+    return created.result;
+  };
+  const supplierAccount = await createAccount({ name: "Supplier User", username: "supplier", email: "supplier@dockflow.local", password: "supplier123", role: "supplier", supplierName: "Trial Ingredients Supplier" });
+  assert.equal((await call(`/api/suppliers/${supplierAccount.supplierId}/presets`, { token: admin.token, method: "PATCH", body: { presets: [{ materialCode: "65013575", uom: "KG", defaultAmount: 300 }, { materialCode: "65013507", uom: "KG", defaultAmount: 500 }] } })).response.status, 200);
+  await createAccount({ name: "Planner User", username: "planner", email: "planner@dockflow.local", password: "planner123", role: "planner" });
+  await createAccount({ name: "Production User", username: "production", email: "production@dockflow.local", password: "production123", role: "production" });
+  await createAccount({ name: "Driver User", username: "driver", email: "driver@dockflow.local", password: "driver123", role: "driver", supplierId: supplierAccount.supplierId });
+  await createAccount({ name: "Security User", username: "security", email: "security@dockflow.local", password: "security123", role: "security" });
+  await createAccount({ name: "Warehouse User", username: "warehouse", email: "warehouse@dockflow.local", password: "warehouse123", role: "warehouse" });
+  const supplier = await login("supplier", "supplier123");
   const planner = await login("planner", "planner123");
   const production = await login("production", "production123");
   const driver = await login("driver", "driver123");

@@ -17,6 +17,7 @@ import {
   Download,
   Gauge,
   History,
+  ImageUp,
   LayoutDashboard,
   Loader2,
   LogOut,
@@ -43,6 +44,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import jsQR from "jsqr";
 import { apiRequest, authenticatedFetch, clearApiSession, configureApiSession, getBootstrap, login as apiLogin, logoutSession } from "./api-client";
 import { localDate } from "./date-utils";
 import { CompanyDecisionModal, FlexibleSchedulePage, HistoryPage, MonitoringPage, SupplierSdsModal, type CompanyDecisionPayload, type SupplierResponsePayload } from "./dockflow-features";
@@ -61,7 +63,7 @@ const EMPTY_DATA: AppData = {
   audit: [],
   notifications: [],
   importBatches: [],
-  settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving · Trial", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [] },
+  settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [] },
 };
 
 const NAV_ITEMS: { id: View; label: string; icon: Icon; roles?: Role[] }[] = [
@@ -221,7 +223,7 @@ function OverviewPage({ data, user, onOpenShipment }: { data: AppData; user: Ses
   return <div className="page-stack overview-page">
     <section className="hero-row">
       <div><span className="eyebrow">{formatDate(today)} · Live operations</span><h1>Good day, {user.name.split(" ")[0]}.</h1><p>Here’s what is moving through receiving right now.</p></div>
-      <div className="hero-actions"><button className="button secondary" onClick={() => window.location.reload()}><RefreshCw size={16} /> Refresh</button></div>
+      <div className="hero-actions"><button className="button secondary overview-refresh" onClick={() => window.location.reload()} aria-label="Refresh overview"><RefreshCw size={16} /><span>Refresh</span></button></div>
     </section>
     {nextAction && <section className="action-banner"><div className="action-banner-icon"><Gauge size={23} /></div><div><span>Your next action</span><strong>{nextAction.shipmentNumber} · {nextAction.supplier}</strong><p>{user.role === "driver" ? "Update the trip milestone when you are ready." : user.role === "security" ? "Validate the booking and direct the truck." : "Receive pallets and close the delivery."}</p></div><button className="button light" onClick={() => onOpenShipment(nextAction)}>Open shipment <ArrowRight size={16} /></button></section>}
     <section className="metrics-grid">
@@ -269,12 +271,19 @@ function BarcodeScanner({ stageLabel, onRead }: { stageLabel: string; onRead: (v
   const [manual, setManual] = useState("");
   const [camera, setCamera] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const [secureCamera, setSecureCamera] = useState(false);
   const [reading, setReading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const manualRef = useRef<HTMLInputElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSecureCamera(window.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia)), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   useEffect(() => { if (!camera) manualRef.current?.focus(); }, [camera, stageLabel]);
 
   const submitScan = async (value: string) => {
@@ -305,7 +314,40 @@ function BarcodeScanner({ stageLabel, onRead }: { stageLabel: string; onRead: (v
     } catch { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); setUnsupported(true); }
   };
 
-  return <div className="scanner-box">{camera ? <div className="camera-frame"><video ref={videoRef} playsInline muted /><span><ScanLine size={22} /> Point at shipment QR</span><button onClick={() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); }}>Cancel</button></div> : <><div className="scan-graphic"><span /><QrCode size={58} /><i /></div><h3>Scan for {stageLabel}</h3><button className="button primary" onClick={startCamera} disabled={reading}><ScanLine size={17} /> Open camera</button>{unsupported && <small className="scanner-note">Camera access needs a supported browser and secure connection. A USB scanner or manual shipment number still works.</small>}<div className="manual-entry"><input ref={manualRef} aria-label="Scanned QR value or shipment number" autoComplete="off" placeholder="Scan QR or enter SHP-YYYYMMDD-001" value={manual} onChange={(event) => setManual(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void submitScan(manual); } }} /><button disabled={!manual.trim() || reading} onClick={() => void submitScan(manual)} aria-label={`Record ${stageLabel} scan`}>{reading ? <Loader2 className="spin" size={17} /> : <ArrowRight size={17} />}</button></div></>}</div>;
+  const scanPhoto = async (file?: File) => {
+    if (!file || reading) return;
+    setPhotoError("");
+    setReading(true);
+    const source = URL.createObjectURL(file);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("The selected image could not be opened"));
+        element.src = source;
+      });
+      const scale = Math.min(1, 1800 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("The QR image could not be processed");
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: "attemptBoth" });
+      if (!result?.data) throw new Error("No QR code was found. Retake the photo closer and in good light.");
+      await onRead(result.data.trim());
+      setManual("");
+    } catch (reason) {
+      setPhotoError(reason instanceof Error ? reason.message : "The QR photo could not be read.");
+    } finally {
+      URL.revokeObjectURL(source);
+      if (photoRef.current) photoRef.current.value = "";
+      setReading(false);
+    }
+  };
+
+  return <div className="scanner-box">{camera ? <div className="camera-frame"><video ref={videoRef} playsInline muted /><span><ScanLine size={22} /> Point at shipment QR</span><button onClick={() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); }}>Cancel</button></div> : <><div className="scan-graphic"><span /><QrCode size={58} /><i /></div><h3>Scan for {stageLabel}</h3><div className="scanner-actions"><input ref={photoRef} className="scan-photo-input" type="file" accept="image/*" capture="environment" aria-label="Take or choose a QR photo" onChange={(event) => void scanPhoto(event.target.files?.[0])} /><button className="button primary" onClick={() => photoRef.current?.click()} disabled={reading}>{reading ? <Loader2 className="spin" size={17} /> : <ImageUp size={17} />} Take QR photo</button>{secureCamera && <button className="button secondary" onClick={startCamera} disabled={reading}><ScanLine size={17} /> Live camera</button>}</div>{!secureCamera && <small className="scanner-note">HTTP trial mode: take a QR photo, use a hardware scanner, or enter the shipment number.</small>}{unsupported && <small className="scanner-note">Live camera was unavailable. QR photo scanning still works over HTTP.</small>}{photoError && <small className="scanner-note error">{photoError}</small>}<div className="manual-entry"><input ref={manualRef} aria-label="Scanned QR value or shipment number" autoComplete="off" placeholder="Scan QR or enter SHP-YYYYMMDD-001" value={manual} onChange={(event) => setManual(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void submitScan(manual); } }} /><button disabled={!manual.trim() || reading} onClick={() => void submitScan(manual)} aria-label={`Record ${stageLabel} scan`}>{reading ? <Loader2 className="spin" size={17} /> : <ArrowRight size={17} />}</button></div></>}</div>;
 }
 
 function OperationsPage({ data, user, onScanStage, onOpenShipment }: { data: AppData; user: SessionUser; onScanStage: (scanValue: string, stage: ScanStage) => Promise<Shipment>; onOpenShipment: (shipment: Shipment) => void }) {

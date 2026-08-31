@@ -2,19 +2,17 @@
 
 DockFlow manages SDS delivery schedules, supplier truck confirmations, QR scanning, monitoring, history, and reports in Manila time (GMT+8).
 
-## Trial accounts
+## First administrator
 
-| Account | Username | Password | Main use |
-|---|---|---|---|
-| Administrator | `admin` | `admin123` | Accounts, supplier catalogs, ETA routes, and company views |
-| Planner | `planner` | `planner123` | Import and compare SDS schedules |
-| Production | `production` | `production123` | View monitoring, schedule, history, and reports |
-| Supplier | `supplier` | `supplier123` | Confirm truck loads, view entries, and scan Trip |
-| Driver | `driver` | `driver123` | Read-only company monitoring, schedule, QR entries, history, and reports |
-| Security | `security` | `security123` | Scan Gate in and Gate out |
-| Warehouse | `warehouse` | `warehouse123` | Scan Unloading and Received |
+DockFlow now starts clean: no sample suppliers, staff accounts, schedules, or delivery records are preloaded.
 
-Change every trial password before using the system outside a controlled demo.
+On the first run, it creates one administrator using these private `.env` settings:
+
+- `BOOTSTRAP_ADMIN_USERNAME`
+- `BOOTSTRAP_ADMIN_PASSWORD`
+- `BOOTSTRAP_ADMIN_EMAIL`
+
+After copying `.env.example` to `.env`, set those three values before starting DockFlow. Use the same username and password on the login screen. Create every other account from **Administration → Accounts**.
 
 ## Before importing an SDS
 
@@ -85,6 +83,8 @@ The confirmed delivery follows this order:
 - Warehouse scans **Unloading** and **Received**.
 - Driver accounts can inspect their company’s approved QR entries but cannot change schedules or other delivery data.
 
+For the temporary HTTP trial, use **Take QR photo** to open the phone camera and scan the saved photo, or use a USB scanner/manual delivery-code entry. Browsers block a continuous live-camera stream on normal HTTP pages. The **Live camera** option appears automatically when DockFlow is later served through HTTPS.
+
 ## Trial storage
 
 This trial runs without PostgreSQL. Business data is stored in `data/trial-data.json`. Stop the API or Docker containers before manually editing the file, and back it up before replacing the project.
@@ -133,7 +133,7 @@ ETA address lookup and routing require internet access unless the provider URLs 
 2. Set `SMTP_USER` to the dedicated administrator Gmail and `SMTP_APP_PASSWORD` to its Google App Password. Do not use the normal Gmail password.
 3. Restart DockFlow so the API loads the private sender credentials.
 4. Sign in as Administrator and open **Administration → Accounts**.
-5. Select each account, replace its `@dockflow.local` trial address with the owner’s real email, then send and enter its six-digit verification code.
+5. Select each account, enter the owner’s real email, then send and enter its six-digit verification code.
 6. Import a new SDS. Each linked, verified supplier receives only its own proposed deliveries. New proposals show their schedule and material-code details; rescheduled proposals show **Before** and **After** details. File-level SDS summaries and other suppliers’ changes are not included.
 7. Propose an alternative from the supplier account. Verified Planner and Production emails receive the reason and proposed time.
 8. Approve or reject the alternative from the company Schedule page. The verified supplier receives the decision and reason by email, and all linked supplier users receive an in-app notification.
