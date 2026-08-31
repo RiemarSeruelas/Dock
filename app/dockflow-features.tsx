@@ -1,10 +1,10 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, FileSpreadsheet, History, Loader2, Maximize2, Minimize2, Plus, Search, ShieldCheck, Trash2, Truck, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, FileSpreadsheet, History, Loader2, Maximize2, Minimize2, Search, ShieldCheck, Truck, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { localDate } from "./date-utils";
-import type { AppData, AvailabilityInput, AvailabilitySlot, SessionUser, Shipment, ShipmentStatus } from "./types";
+import type { AppData, AvailabilityInput, SessionUser, Shipment, ShipmentStatus } from "./types";
 
 const STATUS_META: Record<ShipmentStatus, { label: string; color: string }> = {
   PROPOSED: { label: "Supplier approval", color: "purple" }, BOOKED: { label: "Booked", color: "slate" }, IN_TRANSIT: { label: "Trip", color: "blue" }, GATE_IN: { label: "Gate in", color: "amber" },
@@ -59,8 +59,6 @@ const layoutDayBookings = (shipments: Shipment[], date: string): PositionedBooki
   placeCluster();
   return positioned;
 };
-
-type CalendarDrag = { kind: "booking"; shipment: Shipment; duration: number } | { kind: "availability"; slot: AvailabilitySlot; duration: number };
 
 const minutesToTime = (minutes: number) => {
   const normalized = ((minutes % 1440) + 1440) % 1440;
@@ -130,80 +128,24 @@ function CustomDateRangePicker({ start, end, active, onChange }: { start: string
   </div>;
 }
 
-function ScheduleTimeline({ shipments, availableSlots, anchorDate, mode, editable, showPending, onOpenShipment, onMoveShipment, onMoveAvailability }: { shipments: Shipment[]; availableSlots: AppData["settings"]["availableSlots"]; anchorDate: string; mode: "day" | "week"; editable: boolean; showPending: boolean; onOpenShipment: (shipment: Shipment) => void; onMoveShipment: (shipment: Shipment, date: string, startTime: string, endTime: string) => Promise<void> | void; onMoveAvailability: (slot: AvailabilityInput) => Promise<void> | void }) {
+function ScheduleTimeline({ shipments, availableSlots, anchorDate, mode, showPending, onOpenShipment }: { shipments: Shipment[]; availableSlots: AppData["settings"]["availableSlots"]; anchorDate: string; mode: "day" | "week"; showPending: boolean; onOpenShipment: (shipment: Shipment) => void }) {
   const dayStart = 0, dayEnd = 24 * 60;
-  const [dragging, setDragging] = useState<CalendarDrag | null>(null);
-  const [dropDay, setDropDay] = useState<string | null>(null);
   const days = mode === "day" ? [anchorDate] : Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchorDate), index));
   const hours = Array.from({ length: 25 }, (_, index) => index);
-  const drop = async (event: React.DragEvent<HTMLDivElement>, date: string) => {
-    event.preventDefault();
-    if (!dragging) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const pointerMinutes = Math.round(Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) * 1440 / 15) * 15;
-    const maxStart = dragging.kind === "availability" ? Math.max(0, 1439 - dragging.duration) : Math.max(0, 1440 - dragging.duration);
-    const start = Math.min(maxStart, pointerMinutes);
-    const end = start + dragging.duration;
-    try {
-      if (dragging.kind === "booking") await onMoveShipment(dragging.shipment, date, minutesToTime(start), minutesToTime(end));
-      else await onMoveAvailability({ ...dragging.slot, date, startTime: minutesToTime(start), endTime: minutesToTime(end) });
-    } finally { setDragging(null); setDropDay(null); }
-  };
-  const startBookingDrag = (event: React.DragEvent<HTMLButtonElement>, shipment: Shipment) => {
-    const start = toMinutes(shipment.scheduledTime), rawEnd = toMinutes(shipment.scheduledEndTime || shipment.scheduledTime);
-    const duration = shipment.scheduledEndTime ? Math.max(30, rawEnd > start ? rawEnd - start : rawEnd + 1440 - start) : 30;
-    event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", shipment.shipmentNumber);
-    setDragging({ kind: "booking", shipment, duration });
-  };
-  const startAvailabilityDrag = (event: React.DragEvent<HTMLButtonElement>, slot: AvailabilitySlot) => {
-    event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `availability-${slot.id}`);
-    setDragging({ kind: "availability", slot, duration: Math.max(15, toMinutes(slot.endTime) - toMinutes(slot.startTime)) });
-  };
-  return <div className={`schedule-timeline mode-${mode} unified-schedule ${dragging ? "is-dragging" : ""}`}>
+  return <div className={`schedule-timeline mode-${mode} unified-schedule`}>
     <div className="schedule-time-corner"><Clock3 size={15} /></div>
     {days.map((day) => <div className={`schedule-day-title ${day === localDate() ? "today" : ""}`} key={day}><small>{new Intl.DateTimeFormat("en-PH", { weekday: "short" }).format(new Date(`${day}T12:00:00`))}</small><b>{new Date(`${day}T12:00:00`).getDate()}</b></div>)}
     <div className="schedule-time-axis">{hours.map((hour) => <span style={{ top: `${hour / 24 * 100}%` }} key={hour}>{clockLabel(hour)}</span>)}</div>
-    {days.map((day) => <div className={`schedule-day-lane ${dropDay === day ? "drop-target" : ""}`} key={day} onDragOver={(event) => { if (!dragging) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropDay(day); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropDay(null); }} onDrop={(event) => void drop(event, day)}>
+    {days.map((day) => <div className="schedule-day-lane" key={day}>
       {hours.slice(0, -1).map((hour) => <i style={{ top: `${hour / 24 * 100}%` }} key={hour} />)}
-      {availableSlots.filter((slot) => slot.date === day).map((slot) => <button type="button" draggable={editable} className={`schedule-open-window ${editable ? "draggable" : ""}`} style={{ top: `${toMinutes(slot.startTime) / 1440 * 100}%`, height: `${Math.max(2.1, (toMinutes(slot.endTime) - toMinutes(slot.startTime)) / 1440 * 100)}%` }} key={slot.id} title={`${slot.startTime}–${slot.endTime} · ${slot.label}`} onDragStart={(event) => startAvailabilityDrag(event, slot)} onDragEnd={() => { setDragging(null); setDropDay(null); }}><b>{slot.startTime}–{slot.endTime}</b><span>{slot.label || "Available for booking"}</span>{editable && <small>Drag availability</small>}</button>)}
+      {availableSlots.filter((slot) => slot.date === day).map((slot) => <div className="schedule-open-window" style={{ top: `${toMinutes(slot.startTime) / 1440 * 100}%`, height: `${Math.max(2.1, (toMinutes(slot.endTime) - toMinutes(slot.startTime)) / 1440 * 100)}%` }} key={slot.id} title={`${slot.startTime}–${slot.endTime} · ${slot.label}`}><b>{slot.startTime}–{slot.endTime}</b><span>{slot.label || "Available for booking"}</span></div>)}
       {shipments.filter((shipment) => shipment.scheduledDate === day && shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED").map((shipment) => { const start = toMinutes(shipment.scheduledTime); const end = shipment.scheduledEndTime ? Math.max(start + 30, toMinutes(shipment.scheduledEndTime)) : start + 30; return <span className="schedule-booked-mask" aria-hidden="true" key={`mask-${shipment.id}`} style={{ top: `${start / 1440 * 100}%`, height: `${Math.max(2.1, (end - start) / 1440 * 100)}%` }} />; })}
       {layoutDayBookings(shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" || (showPending && shipment.bookingStatus === "PENDING_SUPPLIER")), day).map(({ shipment, lane, lanes, start, end }) => {
-        const canDrag = editable && shipment.status === "BOOKED";
         const pending = shipment.bookingStatus === "PENDING_SUPPLIER";
-        return <button type="button" draggable={canDrag && !pending} className={`schedule-entry ${pending ? "proposal" : "approved"} ${canDrag && !pending ? "draggable" : ""}`} style={{ "--event-hue": colorFor(shipment), top: `${Math.max(dayStart, start) / dayEnd * 100}%`, height: `${Math.max(2.1, (Math.min(dayEnd, end) - Math.max(dayStart, start)) / dayEnd * 100)}%`, left: `calc(${lane / lanes * 100}% + 4px)`, width: `calc(${100 / lanes}% - 8px)` } as CSSProperties} key={shipment.id} onDragStart={(event) => !pending && startBookingDrag(event, shipment)} onDragEnd={() => { setDragging(null); setDropDay(null); }} onClick={() => onOpenShipment(shipment)}><b>{shipment.scheduledTime}</b><span>{pending ? "Awaiting supplier" : shipment.truckPlate}</span><small>{shipment.supplier}{pending ? " · not booked yet" : canDrag ? " · drag to move" : " · booked"}</small></button>;
+        return <button type="button" className={`schedule-entry ${pending ? "proposal" : "approved"}`} style={{ "--event-hue": colorFor(shipment), top: `${Math.max(dayStart, start) / dayEnd * 100}%`, height: `${Math.max(2.1, (Math.min(dayEnd, end) - Math.max(dayStart, start)) / dayEnd * 100)}%`, left: `calc(${lane / lanes * 100}% + 4px)`, width: `calc(${100 / lanes}% - 8px)` } as CSSProperties} key={shipment.id} onClick={() => onOpenShipment(shipment)}><b>{shipment.scheduledTime}</b><span>{pending ? "Awaiting supplier" : shipment.truckPlate}</span><small>{shipment.supplier}{pending ? " · not booked yet" : " · booked"}</small></button>;
       })}
     </div>)}
   </div>;
-}
-
-function ReceivingHoursControl({ date, slots, onSave, onDelete }: { date: string; slots: AvailabilitySlot[]; onSave: (slot: AvailabilityInput) => Promise<void> | void; onDelete: (id: number) => Promise<void> | void }) {
-  const daySlots = slots.filter((slot) => slot.date === date).sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const initial = daySlots[0];
-  const [selectedId, setSelectedId] = useState<number | null>(initial?.id || null);
-  const [startTime, setStartTime] = useState(initial?.startTime || "08:00");
-  const [endTime, setEndTime] = useState(initial?.endTime || "09:00");
-  const [label, setLabel] = useState(initial?.label || "Available time");
-  const [saving, setSaving] = useState(false);
-  const valid = startTime < endTime;
-  const reset = () => { setSelectedId(null); setStartTime("08:00"); setEndTime("10:00"); setLabel("Open receiving window"); };
-  const select = (id: number | null) => {
-    if (!id) return reset();
-    const slot = daySlots.find((item) => item.id === id);
-    if (!slot) return reset();
-    setSelectedId(slot.id); setStartTime(slot.startTime); setEndTime(slot.endTime); setLabel(slot.label || "Open receiving window");
-  };
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!valid || saving) return;
-    setSaving(true);
-    try { await onSave({ id: selectedId || undefined, date, startTime, endTime, label }); reset(); }
-    finally { setSaving(false); }
-  };
-  return <form className="receiving-hours-control" onSubmit={save}>
-    <div className="receiving-hours-top"><div className="receiving-hours-copy"><span className="settings-icon"><Clock3 size={18} /></span><div><b>Availability setup</b><small>{formatDate(date, true)} · drag a saved block on the calendar or edit it here</small></div></div><div className="receiving-hours-actions">{selectedId && <button type="button" className="button danger compact" onClick={async () => { await onDelete(selectedId); reset(); }}><Trash2 size={14} /> Remove</button>}<button className="button primary compact" disabled={!valid || saving}>{selectedId ? <Check size={14} /> : <Plus size={14} />}{saving ? "Saving" : selectedId ? "Update window" : "Add window"}</button></div></div>
-    <div className="receiving-hours-fields"><label>Saved window<select value={selectedId || ""} onChange={(event) => select(event.target.value ? Number(event.target.value) : null)}><option value="">+ New window</option>{daySlots.map((slot) => <option value={slot.id} key={slot.id}>{slot.startTime}–{slot.endTime} · {slot.label}</option>)}</select></label><label>From<input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required /></label><label>To<input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required /></label><label className="receiving-label">Internal label<input value={label} onChange={(event) => setLabel(event.target.value)} /></label></div>
-    {!valid && <small className="receiving-hours-error">The end time must be later than the start time.</small>}
-  </form>;
 }
 
 export type SupplierResponsePayload = {
@@ -294,14 +236,13 @@ function SdsWorkflowPanel({ data, onImportSds, onOpenShipment }: { data: AppData
   const confirmed = data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && shipment.status === "BOOKED" && `${shipment.scheduledDate}${shipment.scheduledTime}` >= nowKey).sort((a, b) => String(b.supplierRespondedAt || b.finalDecisionAt || "").localeCompare(String(a.supplierRespondedAt || a.finalDecisionAt || "")));
   const rejected = data.shipments.filter((shipment) => shipment.bookingStatus === "REJECTED" || shipment.status === "REJECTED").sort((a, b) => String(b.supplierRespondedAt || "").localeCompare(String(a.supplierRespondedAt || "")));
   return <section className="sds-command-grid"><article className="panel sds-import-panel"><div className="panel-head"><div><span className="eyebrow">SDS workflow</span><h2>Import & account checks</h2></div><button className="button primary" onClick={onImportSds}><FileSpreadsheet size={17} /> Import SDS</button></div>{unlinked.length ? <div className="sds-account-issues">{unlinked.map((shipment) => <button key={shipment.id} onClick={() => onOpenShipment(shipment)}><AlertTriangle size={16} /><span><b>{shipment.supplier}</b><small>No supplier account · {formatDate(shipment.scheduledDate, true)} {shipment.scheduledTime}</small></span></button>)}</div> : <div className="feature-empty management-empty"><ShieldCheck size={24} /><strong>No account issues</strong><span>Every imported supplier is linked to an account.</span></div>}</article>
-    <article className="panel sds-outcomes-panel"><div className="panel-head"><div><span className="eyebrow">Supplier responses</span><h2>Confirmed and rejected</h2></div></div><div className="sds-outcome-columns"><section className="confirmed"><header><Check size={16} /><b>Confirmed</b><span>{confirmed.length}</span></header><div>{confirmed.slice(0, 8).map((shipment) => <button key={shipment.id} onClick={() => onOpenShipment(shipment)}><span><b>{shipment.supplier}</b><small>{shipment.scheduledDate} · {shipment.scheduledTime}</small></span><strong>{shipment.truckPlate}</strong></button>)}</div>{!confirmed.length && <small className="outcome-empty">No upcoming confirmations</small>}</section><section className="rejected"><header><X size={16} /><b>Rejected</b><span>{rejected.length}</span></header><div>{rejected.slice(0, 8).map((shipment) => <button key={shipment.id} onClick={() => onOpenShipment(shipment)}><span><b>{shipment.supplier}</b><small>{shipment.rejectionReason || "Reason not recorded"}</small></span><strong>{shipment.alternativeDate || shipment.scheduledDate}</strong></button>)}</div>{!rejected.length && <small className="outcome-empty">No rejections</small>}</section></div></article>
+    <article className="panel sds-outcomes-panel"><div className="panel-head"><div><span className="eyebrow">Supplier responses</span><h2>Confirmed and rejected</h2></div><span className="count-chip">{confirmed.length + rejected.length} responses</span></div><div className="sds-outcome-columns"><section className="confirmed"><header><span className="outcome-icon"><Check size={16} /></span><div><b>Confirmed</b><small>Upcoming accepted deliveries</small></div><span className="outcome-count">{confirmed.length}</span></header><div className="sds-response-scroll">{confirmed.map((shipment) => <button className="sds-response-row" key={shipment.id} onClick={() => onOpenShipment(shipment)}><span className="response-status-icon"><Check size={15} /></span><span className="response-copy"><b>{shipment.supplier}</b><small>{shipment.scheduledDate} · {shipment.scheduledTime}</small><em>{shipment.truckPlate}</em></span><span className="response-open">View <ArrowRight size={14} /></span></button>)}{!confirmed.length && <span className="outcome-empty"><Check size={18} />No upcoming confirmations</span>}</div></section><section className="rejected"><header><span className="outcome-icon"><X size={16} /></span><div><b>Rejected / unavailable</b><small>Alternative schedules requested</small></div><span className="outcome-count">{rejected.length}</span></header><div className="sds-response-scroll">{rejected.map((shipment) => <button className="sds-response-row" key={shipment.id} onClick={() => onOpenShipment(shipment)}><span className="response-status-icon"><X size={15} /></span><span className="response-copy"><b>{shipment.supplier}</b><small>Original: {shipment.scheduledDate} · {shipment.scheduledTime}</small><em>{shipment.rejectionReason || "Reason not recorded"}</em></span><span className="response-proposed"><small>Proposed</small><strong>{shipment.alternativeDate || "—"}</strong><em>{shipment.alternativeTime || "—"}</em><ArrowRight size={14} /></span></button>)}{!rejected.length && <span className="outcome-empty"><Check size={18} />No rejected schedules</span>}</div></section></div></article>
   </section>;
 }
 
-export function FlexibleSchedulePage({ data, user, onOpenShipment, onSaveAvailability, onDeleteAvailability, onMoveShipment, onImportSds }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void; onSaveAvailability: (slot: AvailabilityInput) => Promise<void> | void; onDeleteAvailability: (id: number) => Promise<void> | void; onMoveShipment: (shipment: Shipment, date: string, startTime: string, endTime: string) => Promise<void> | void; onImportSds: () => void }) {
+export function FlexibleSchedulePage({ data, user, onOpenShipment, onImportSds }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void; onSaveAvailability: (slot: AvailabilityInput) => Promise<void> | void; onDeleteAvailability: (id: number) => Promise<void> | void; onMoveShipment: (shipment: Shipment, date: string, startTime: string, endTime: string) => Promise<void> | void; onImportSds: () => void }) {
   const [date, setDate] = useState(data.settings.availableDates.find((item) => item >= localDate()) || localDate());
   const [mode, setMode] = useState<"day" | "week">("week");
-  const canEdit = ["admin", "planner"].includes(user.role);
   const canImport = ["admin", "planner"].includes(user.role);
   const move = (direction: number) => setDate(addDays(date, direction * (mode === "day" ? 1 : 7)));
   const visibleDates = mode === "day" ? [date] : Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(date), index));
@@ -314,10 +255,9 @@ export function FlexibleSchedulePage({ data, user, onOpenShipment, onSaveAvailab
     {canImport && <SdsWorkflowPanel data={data} onImportSds={onImportSds} onOpenShipment={onOpenShipment} />}
     {pendingSupplierBookings.length > 0 && <section className="panel supplier-booking-queue"><div className="panel-head"><div><span className="eyebrow">Action required</span><h2>Deliveries waiting for your confirmation</h2></div><span className="count-chip">{pendingSupplierBookings.length} pending</span></div><div className="supplier-booking-list">{pendingSupplierBookings.map((shipment) => <button type="button" key={shipment.id} onClick={() => onOpenShipment(shipment)}><span className="booking-date"><b>{formatDate(shipment.scheduledDate, true)}</b><small>{shipment.scheduledTime}</small></span><span><b>{shipment.items.length} material code{shipment.items.length === 1 ? "" : "s"}</b><small>{shipment.items.map((item) => item.materialCode).join(", ")}</small></span><strong>Review & confirm <ArrowRight size={16} /></strong></button>)}</div></section>}
     <section className="panel schedule-board overlap-schedule schedule-section-panel unified">
-      <div className="panel-head"><div><span className="eyebrow">{period}</span><h2>{canEdit ? "Availability and confirmed deliveries" : "Times available to book"}</h2></div><span className="policy-chip"><Clock3 size={14} /> Manila time · GMT+8</span></div>
-      {canEdit && <ReceivingHoursControl key={`${date}-${data.settings.availableSlots.filter((slot) => slot.date === date).map((slot) => `${slot.id}:${slot.startTime}:${slot.endTime}`).join("|")}`} date={date} slots={data.settings.availableSlots} onSave={onSaveAvailability} onDelete={onDeleteAvailability} />}
+      <div className="panel-head"><div><span className="eyebrow">{period}</span><h2>{canImport ? "Delivery schedule" : "Times available to book"}</h2></div><span className="policy-chip"><Clock3 size={14} /> Manila time · GMT+8</span></div>
       <div className="schedule-calendar-summary"><span className="availability"><i /><b>{availabilityCount}</b> open window{availabilityCount === 1 ? "" : "s"}</span><span className="bookings"><i /><b>{bookingCount}</b> approved deliver{bookingCount === 1 ? "y" : "ies"}</span></div>
-      <ScheduleTimeline shipments={data.shipments} availableSlots={data.settings.availableSlots} anchorDate={date} mode={mode} editable={canEdit} showPending={["admin", "planner", "supplier"].includes(user.role)} onOpenShipment={onOpenShipment} onMoveShipment={onMoveShipment} onMoveAvailability={onSaveAvailability} />
+      <div className="schedule-timeline-viewport"><ScheduleTimeline shipments={data.shipments} availableSlots={data.settings.availableSlots} anchorDate={date} mode={mode} showPending={["admin", "planner", "supplier"].includes(user.role)} onOpenShipment={onOpenShipment} /></div>
     </section>
   </div>;
 }
