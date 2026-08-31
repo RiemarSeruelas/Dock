@@ -18,7 +18,21 @@
     "siteCoordinates": null,
     "emailNotifications": {}
   },
-  "users": [],
+  "users": [
+    {
+      "id": 1,
+      "name": "System Administrator",
+      "username": "admin",
+      "passwordHash": "$2b$10$fheSzkBdsWuc4nyJLs.58OZqTkShgUIgrghSWWKQbm2dZRdIVVZt6",
+      "role": "admin",
+      "supplierId": null,
+      "email": "admin@dockflow.local",
+      "emailVerifiedAt": null,
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0
+    }
+  ],
   "suppliers": [],
   "materials": [],
   "shipments": [],
