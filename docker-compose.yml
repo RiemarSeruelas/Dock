@@ -41,8 +41,14 @@ services:
       GEOCODING_API_URL: ${GEOCODING_API_URL:-https://nominatim.openstreetmap.org/search}
       GEOCODING_FALLBACK_API_URL: ${GEOCODING_FALLBACK_API_URL:-https://photon.komoot.io/api/}
       ROUTING_API_URL: ${ROUTING_API_URL:-https://router.project-osrm.org/route/v1/driving}
+      TRAFFIC_ETA_ENABLED: ${TRAFFIC_ETA_ENABLED:-true}
+      GOOGLE_ROUTES_API_URL: ${GOOGLE_ROUTES_API_URL:-https://routes.googleapis.com/directions/v2:computeRoutes}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       ETA_USER_AGENT: ${ETA_USER_AGENT:-DockFlow/0.1}
       ETA_API_TIMEOUT_MS: ${ETA_API_TIMEOUT_MS:-10000}
+      ETA_RATE_LIMIT_WINDOW_MS: ${ETA_RATE_LIMIT_WINDOW_MS:-900000}
+      ETA_RATE_LIMIT_MAX: ${ETA_RATE_LIMIT_MAX:-30}
+      LOCATION_ENCRYPTION_KEY: ${LOCATION_ENCRYPTION_KEY:-}
       DB_ENABLED: "false"
       EMAIL_NOTIFICATIONS_ENABLED: ${EMAIL_NOTIFICATIONS_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}

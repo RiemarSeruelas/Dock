@@ -8,7 +8,7 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, randomUUID, scryptSync } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { parseDeliveryWorkbook } from "./excel-import.js";
@@ -33,8 +33,14 @@ const TIME_ZONE = process.env.TZ || "Asia/Manila";
 const GEOCODING_API_URL = process.env.GEOCODING_API_URL || "https://nominatim.openstreetmap.org/search";
 const GEOCODING_FALLBACK_API_URL = process.env.GEOCODING_FALLBACK_API_URL || "https://photon.komoot.io/api/";
 const ROUTING_API_URL = process.env.ROUTING_API_URL || "https://router.project-osrm.org/route/v1/driving";
+const GOOGLE_ROUTES_API_URL = process.env.GOOGLE_ROUTES_API_URL || "https://routes.googleapis.com/directions/v2:computeRoutes";
+const GOOGLE_MAPS_API_KEY = String(process.env.GOOGLE_MAPS_API_KEY || "").trim();
+const TRAFFIC_ETA_ENABLED = String(process.env.TRAFFIC_ETA_ENABLED || "true").toLowerCase() === "true";
 const ETA_USER_AGENT = process.env.ETA_USER_AGENT || "DockFlow/0.1 (configure ETA_USER_AGENT with an administrator contact)";
 const ETA_API_TIMEOUT_MS = Math.max(1000, Number(process.env.ETA_API_TIMEOUT_MS || 10000));
+const LOCATION_ENCRYPTION_SECRET = String(process.env.LOCATION_ENCRYPTION_KEY || "");
+if (LOCATION_ENCRYPTION_SECRET && LOCATION_ENCRYPTION_SECRET.length < 32) throw new Error("LOCATION_ENCRYPTION_KEY must contain at least 32 characters");
+const LOCATION_CIPHER_KEY = LOCATION_ENCRYPTION_SECRET ? scryptSync(LOCATION_ENCRYPTION_SECRET, "dockflow-location-v1", 32) : null;
 const EMAIL_NOTIFICATIONS_ENABLED = String(process.env.EMAIL_NOTIFICATIONS_ENABLED || "false").toLowerCase() === "true";
 const SMTP_USER = String(process.env.SMTP_USER || "").trim().toLowerCase();
 const SMTP_APP_PASSWORD = String(process.env.SMTP_APP_PASSWORD || "").replace(/\s/g, "");
@@ -103,6 +109,36 @@ const normalizeWorkArea = (value) => {
 };
 const shipmentWorkArea = (shipment) => normalizeWorkArea((shipment.items || []).find((item) => item.deliverySite)?.deliverySite);
 const validCoordinates = (value) => value && Number.isFinite(Number(value.lat)) && Number.isFinite(Number(value.lon));
+const LOCATION_ENCRYPTION_PREFIX = "enc:v1:";
+const sealLocation = (value) => {
+  if (!LOCATION_CIPHER_KEY || value === null || value === undefined || value === "") return value;
+  if (typeof value === "string" && value.startsWith(LOCATION_ENCRYPTION_PREFIX)) return value;
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", LOCATION_CIPHER_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
+  return `${LOCATION_ENCRYPTION_PREFIX}${iv.toString("base64url")}:${cipher.getAuthTag().toString("base64url")}:${encrypted.toString("base64url")}`;
+};
+const openLocation = (value) => {
+  if (typeof value !== "string" || !value.startsWith(LOCATION_ENCRYPTION_PREFIX)) return value;
+  if (!LOCATION_CIPHER_KEY) throw new Error("Encrypted location data requires LOCATION_ENCRYPTION_KEY");
+  const [ivValue, tagValue, encryptedValue] = value.slice(LOCATION_ENCRYPTION_PREFIX.length).split(":");
+  if (!ivValue || !tagValue || !encryptedValue) throw new Error("Encrypted location data is invalid");
+  const decipher = createDecipheriv("aes-256-gcm", LOCATION_CIPHER_KEY, Buffer.from(ivValue, "base64url"));
+  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  return JSON.parse(Buffer.concat([decipher.update(Buffer.from(encryptedValue, "base64url")), decipher.final()]).toString("utf8"));
+};
+const transformStoredLocations = (source, protect) => {
+  const state = structuredClone(source);
+  const transform = protect ? sealLocation : openLocation;
+  state.settings ||= {};
+  state.settings.siteAddress = transform(state.settings.siteAddress || "");
+  state.settings.siteCoordinates = transform(state.settings.siteCoordinates || null);
+  for (const supplier of state.suppliers || []) {
+    supplier.originAddress = transform(supplier.originAddress || "");
+    supplier.originCoordinates = transform(supplier.originCoordinates || null);
+  }
+  return state;
+};
 const parseCoordinateReference = (value) => {
   const reference = String(value || "").trim();
   if (!reference) return null;
@@ -163,7 +199,47 @@ const geocodeAddress = async (address, coordinateReference = "") => {
   }
   throw new Error(`${[...new Set(failures)].join("; ")}. Paste a Google Maps link for a more exact location.`);
 };
-const calculateRoute = async (origin, destination) => {
+const routeDurationSeconds = (value) => {
+  const seconds = Number.parseFloat(String(value || "").replace(/s$/i, ""));
+  return Number.isFinite(seconds) ? seconds : null;
+};
+const calculateGoogleTrafficRoute = async (origin, destination, departureTime = new Date().toISOString()) => {
+  const response = await fetch(GOOGLE_ROUTES_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+      "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.staticDuration",
+    },
+    body: JSON.stringify({
+      origin: { location: { latLng: { latitude: Number(origin.lat), longitude: Number(origin.lon) } } },
+      destination: { location: { latLng: { latitude: Number(destination.lat), longitude: Number(destination.lon) } } },
+      travelMode: "DRIVE",
+      routingPreference: "TRAFFIC_AWARE",
+      departureTime,
+      computeAlternativeRoutes: false,
+      languageCode: "en-PH",
+      units: "METRIC",
+    }),
+    signal: AbortSignal.timeout(ETA_API_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`Traffic provider returned ${response.status}`);
+  const route = (await response.json())?.routes?.[0];
+  const trafficSeconds = routeDurationSeconds(route?.duration);
+  const staticSeconds = routeDurationSeconds(route?.staticDuration);
+  if (!Number.isFinite(Number(route?.distanceMeters)) || trafficSeconds === null) throw new Error("The traffic provider did not return a usable route");
+  const durationMinutes = Math.max(1, Math.ceil(trafficSeconds / 60));
+  const staticDurationMinutes = staticSeconds === null ? null : Math.max(1, Math.ceil(staticSeconds / 60));
+  return {
+    distanceKm: Math.round(Number(route.distanceMeters) / 100) / 10,
+    durationMinutes,
+    staticDurationMinutes,
+    trafficDelayMinutes: staticDurationMinutes === null ? null : Math.max(0, durationMinutes - staticDurationMinutes),
+    trafficAware: true,
+    provider: "Google Routes · live traffic",
+  };
+};
+const calculateOsrmRoute = async (origin, destination) => {
   const base = ROUTING_API_URL.replace(/\/$/, "");
   const url = new URL(`${base}/${origin.lon},${origin.lat};${destination.lon},${destination.lat}`);
   url.searchParams.set("overview", "false");
@@ -173,14 +249,42 @@ const calculateRoute = async (origin, destination) => {
   const result = await response.json();
   const route = result?.routes?.[0];
   if (!route || !Number.isFinite(Number(route.distance)) || !Number.isFinite(Number(route.duration))) throw new Error("No drivable route was found between these addresses.");
-  return { distanceKm: Math.round(Number(route.distance) / 100) / 10, durationMinutes: Math.max(1, Math.round(Number(route.duration) / 60)) };
+  const durationMinutes = Math.max(1, Math.ceil(Number(route.duration) / 60));
+  return { distanceKm: Math.round(Number(route.distance) / 100) / 10, durationMinutes, staticDurationMinutes: durationMinutes, trafficDelayMinutes: null, trafficAware: false, provider: "OpenStreetMap / OSRM · traffic unavailable" };
+};
+const calculateRoute = async (origin, destination, departureTime = new Date().toISOString()) => {
+  if (TRAFFIC_ETA_ENABLED && GOOGLE_MAPS_API_KEY) {
+    try { return await calculateGoogleTrafficRoute(origin, destination, departureTime); }
+    catch (error) { console.warn(`[eta] Traffic-aware route failed; using OSRM fallback: ${error.message}`); }
+  }
+  return calculateOsrmRoute(origin, destination);
 };
 const applyShipmentEta = (state, shipment, tripAt) => {
   const supplier = state.suppliers.find((row) => Number(row.id) === Number(shipment.supplierId));
   const travelMinutes = Number(supplier?.routeDurationMinutes || 0);
   shipment.estimatedTravelMinutes = travelMinutes || null;
   shipment.estimatedTravelDistanceKm = Number(supplier?.routeDistanceKm || 0) || null;
+  shipment.estimatedTrafficDelayMinutes = Number(supplier?.routeTrafficDelayMinutes || 0) || null;
+  shipment.etaTrafficAware = Boolean(supplier?.routeTrafficAware);
+  shipment.etaProvider = supplier?.routeProvider || null;
   shipment.estimatedArrivalAt = travelMinutes ? new Date(Date.parse(tripAt) + travelMinutes * 60000).toISOString() : null;
+};
+const refreshShipmentEta = async (state, shipment, tripAt) => {
+  const supplier = state.suppliers.find((row) => Number(row.id) === Number(shipment.supplierId));
+  if (!supplier || !validCoordinates(supplier.originCoordinates) || !validCoordinates(state.settings.siteCoordinates)) return applyShipmentEta(state, shipment, tripAt);
+  try {
+    const route = await calculateRoute(supplier.originCoordinates, state.settings.siteCoordinates, tripAt);
+    supplier.routeDistanceKm = route.distanceKm;
+    supplier.routeDurationMinutes = route.durationMinutes;
+    supplier.routeStaticDurationMinutes = route.staticDurationMinutes;
+    supplier.routeTrafficDelayMinutes = route.trafficDelayMinutes;
+    supplier.routeTrafficAware = route.trafficAware;
+    supplier.routeCalculatedAt = new Date().toISOString();
+    supplier.routeProvider = route.provider;
+  } catch (error) {
+    console.warn(`[eta] Trip scan kept the saved route because recalculation failed: ${error.message}`);
+  }
+  applyShipmentEta(state, shipment, tripAt);
 };
 const availabilityForShipment = (state, shipment) => {
   const selected = (state.settings.availableSlots || []).find((slot) => slot.id === Number(shipment.availabilitySlotId));
@@ -240,6 +344,12 @@ const addNotification = (state, user, { type = "INFO", title, message, shipment 
   state.notifications.unshift({ id: nextId(state.notifications), userId: user.id, type, title, message, shipmentId: shipment?.id || null, shipmentNumber: shipment?.shipmentNumber || null, createdAt: new Date().toISOString(), readAt: null });
 };
 const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", emailVerifiedAt: user.emailVerifiedAt || null, role: user.role, supplierId: user.supplierId ?? null, workArea: normalizeWorkArea(user.workArea) });
+const supplierForClient = (supplier, includeAddress = false) => {
+  const output = { ...supplier };
+  delete output.originCoordinates;
+  if (!includeAddress) delete output.originAddress;
+  return output;
+};
 const companyScopedRoles = new Set(["supplier", "driver"]);
 const canAccessShipment = (user, shipment) => {
   if (companyScopedRoles.has(user.role)) return Number(user.supplierId) === Number(shipment.supplierId);
@@ -316,7 +426,10 @@ async function createInitialState() {
   };
 }
 
-const store = new JsonStore(DATA_FILE, createInitialState);
+const store = new JsonStore(DATA_FILE, createInitialState, {
+  serialize: (state) => transformStoredLocations(state, true),
+  deserialize: (state) => transformStoredLocations(state, false),
+});
 await mkdir(UPLOAD_DIR, { recursive: true });
 await store.initialize();
 await store.update(async (state) => {
@@ -380,6 +493,9 @@ await store.update(async (state) => {
     supplier.originCoordinates = validCoordinates(supplier.originCoordinates) ? { lat: Number(supplier.originCoordinates.lat), lon: Number(supplier.originCoordinates.lon) } : null;
     supplier.routeDistanceKm = Number(supplier.routeDistanceKm || 0) || null;
     supplier.routeDurationMinutes = Number(supplier.routeDurationMinutes || 0) || null;
+    supplier.routeStaticDurationMinutes = Number(supplier.routeStaticDurationMinutes || 0) || null;
+    supplier.routeTrafficDelayMinutes = Number(supplier.routeTrafficDelayMinutes || 0) || null;
+    supplier.routeTrafficAware = Boolean(supplier.routeTrafficAware);
     supplier.routeCalculatedAt = supplier.routeCalculatedAt || null;
     supplier.routeProvider = supplier.routeProvider || null;
     supplier.productPresets = Array.isArray(supplier.productPresets) ? supplier.productPresets.map((preset) => { const rawCode = String(preset.materialCode || preset.name || `CODE-${nextPresetId}`).trim().toUpperCase(); return { id: Number(preset.id) || nextPresetId++, materialCode: legacyPresetCodes.get(rawCode) || rawCode, uom: String(preset.uom || "KG"), defaultAmount: Number(preset.defaultAmount || 0) }; }) : [];
@@ -434,6 +550,9 @@ await store.update(async (state) => {
     shipment.gateOutAt ||= legacyStatus === "RECEIVED" && shipment.completedAt ? shipment.completedAt : null;
     shipment.estimatedTravelMinutes = Number(shipment.estimatedTravelMinutes || 0) || null;
     shipment.estimatedTravelDistanceKm = Number(shipment.estimatedTravelDistanceKm || 0) || null;
+    shipment.estimatedTrafficDelayMinutes = Number(shipment.estimatedTrafficDelayMinutes || 0) || null;
+    shipment.etaTrafficAware = Boolean(shipment.etaTrafficAware);
+    shipment.etaProvider ||= null;
     shipment.estimatedArrivalAt ||= null;
     shipment.supplierResponse ||= shipment.bookingStatus === "PENDING_COMPANY" ? "ALTERNATIVE_PROPOSED" : shipment.bookingStatus === "APPROVED" ? "ACCEPTED" : null;
     shipment.supplierResponseReason ||= null;
@@ -529,6 +648,7 @@ const rateLimitHandler = (request, response) => response.status(429).json({ mess
 const apiLimiter = rateLimit({ windowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60000), limit: Number(process.env.API_RATE_LIMIT_MAX || 300), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
 const loginLimiter = rateLimit({ windowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.LOGIN_RATE_LIMIT_MAX || 10), standardHeaders: "draft-8", legacyHeaders: false, skipSuccessfulRequests: true, handler: rateLimitHandler });
 const refreshLimiter = rateLimit({ windowMs: Number(process.env.REFRESH_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.REFRESH_RATE_LIMIT_MAX || 30), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
+const etaLimiter = rateLimit({ windowMs: Number(process.env.ETA_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.ETA_RATE_LIMIT_MAX || 30), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
 app.use("/api", apiLimiter);
 
 const parseCookies = (request) => Object.fromEntries(String(request.headers.cookie || "").split(";").map((item) => item.trim()).filter(Boolean).map((item) => { const index = item.indexOf("="); return [decodeURIComponent(index >= 0 ? item.slice(0, index) : item), decodeURIComponent(index >= 0 ? item.slice(index + 1) : "")]; }));
@@ -604,6 +724,10 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const shipmentNumbers = new Set(shipments.map((shipment) => shipment.shipmentNumber));
   const visibleSupplierIds = new Set(shipments.map((shipment) => Number(shipment.supplierId)).filter(Number.isFinite));
   const shipmentDates = [...new Set(shipments.map((shipment) => shipment.scheduledDate).filter(validDate))].sort();
+  const scopedSuppliers = companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : ["planner", "warehouse"].includes(_request.user.role) && normalizeWorkArea(_request.user.workArea) ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers;
+  const publicSettings = { ...state.settings, availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 2 };
+  delete publicSettings.siteCoordinates;
+  if (_request.user.role !== "admin") delete publicSettings.siteAddress;
   response.json({
     shipments: shipments.map((shipment) => {
       const linked = supplierHasAccount(state, shipment.supplierId);
@@ -611,7 +735,7 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
     }).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
     rdsRequests: [],
     materials: [],
-    suppliers: companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : ["planner", "warehouse"].includes(_request.user.role) && normalizeWorkArea(_request.user.workArea) ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers,
+    suppliers: scopedSuppliers.map((supplier) => supplierForClient(supplier, _request.user.role === "admin")),
     users: _request.user.role === "admin" ? state.users.map(publicUser) : [],
     audit: ["admin", "planner"].includes(_request.user.role) ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : [],
     notifications: state.notifications.filter((notification) => Number(notification.userId) === Number(_request.user.id)).slice(0, 50).map((notification) => {
@@ -620,12 +744,12 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
       return publicNotification;
     }),
     importBatches: canManageSds ? state.importBatches : [],
-    settings: { ...state.settings, availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 2 },
+    settings: publicSettings,
   });
 }));
 
 app.patch("/api/notifications/:id/read", auth, asyncRoute(async (request, response) => {
-  const result = await store.update((state) => {
+  const result = await store.update(async (state) => {
     const notification = (state.notifications || []).find((row) => Number(row.id) === Number(request.params.id) && Number(row.userId) === Number(request.user.id));
     if (!notification) return null;
     notification.readAt ||= new Date().toISOString();
@@ -935,7 +1059,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
   if (!configuration.roles.includes(request.user.role)) return response.status(403).json({ message: `Your role cannot record the ${configuration.label} scan` });
   const shipmentNumber = scanShipmentNumber(request.body?.scanValue);
   if (!shipmentNumber) return response.status(400).json({ message: "The QR code does not contain a shipment number" });
-  const result = await store.update((state) => {
+  const result = await store.update(async (state) => {
     const shipment = state.shipments.find((row) => row.shipmentNumber.toUpperCase() === shipmentNumber || String(row.id) === shipmentNumber);
     if (!shipment) return null;
     if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
@@ -947,7 +1071,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     shipment.status = targetStatus;
     const scannedAt = new Date().toISOString();
     shipment.lastProcessAt = scannedAt;
-    if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; applyShipmentEta(state, shipment, shipment.tripAt); }
+    if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; await refreshShipmentEta(state, shipment, shipment.tripAt); }
     if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
     if (stage === "RECEIVED") shipment.receivedAt ||= scannedAt;
@@ -985,7 +1109,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
 app.patch("/api/shipments/:id/status", auth, asyncRoute(async (request, response) => {
   const roleTransitions = { supplier: ["IN_TRANSIT"], security: ["GATE_IN", "GATE_OUT"], warehouse: ["UNLOADING", "RECEIVED"], admin: ["BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"] };
   if (!(roleTransitions[request.user.role] || []).includes(request.body?.status)) return response.status(403).json({ message: "This status change is not available for your role" });
-  const result = await store.update((state) => {
+  const result = await store.update(async (state) => {
     const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
     if (!shipment) return null;
     if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
@@ -1001,7 +1125,7 @@ app.patch("/api/shipments/:id/status", auth, asyncRoute(async (request, response
     shipment.status = status;
     if (request.body.dock !== undefined) shipment.dock = request.body.dock || null;
     const changedAt = new Date().toISOString();
-    if (status === "IN_TRANSIT") { shipment.tripAt ||= changedAt; shipment.startedAt ||= changedAt; applyShipmentEta(state, shipment, shipment.tripAt); }
+    if (status === "IN_TRANSIT") { shipment.tripAt ||= changedAt; shipment.startedAt ||= changedAt; await refreshShipmentEta(state, shipment, shipment.tripAt); }
     if (status === "GATE_IN") { shipment.gateInAt ||= changedAt; shipment.arrivalTime ||= changedAt; }
     if (status === "UNLOADING") shipment.unloadingAt ||= changedAt;
     if (status === "RECEIVED") shipment.receivedAt ||= changedAt;
@@ -1379,7 +1503,7 @@ app.delete("/api/users/:id", auth, allow("admin"), asyncRoute(async (request, re
   response.json(result);
 }));
 
-app.patch("/api/settings/site-address", auth, allow("admin"), asyncRoute(async (request, response) => {
+app.patch("/api/settings/site-address", auth, allow("admin"), etaLimiter, asyncRoute(async (request, response) => {
   const address = String(request.body?.siteAddress || "").trim();
   const mapReference = String(request.body?.mapReference || "").trim();
   if (address.length < 6) return response.status(400).json({ message: "Enter the complete receiving-site address" });
@@ -1392,16 +1516,19 @@ app.patch("/api/settings/site-address", auth, allow("admin"), asyncRoute(async (
     for (const supplier of state.suppliers) {
       supplier.routeDistanceKm = null;
       supplier.routeDurationMinutes = null;
+      supplier.routeStaticDurationMinutes = null;
+      supplier.routeTrafficDelayMinutes = null;
+      supplier.routeTrafficAware = false;
       supplier.routeCalculatedAt = null;
       supplier.routeProvider = null;
     }
     addAudit(state, request.user, "RECEIVING_ADDRESS_UPDATED", coordinates ? `Receiving-site address updated; ETA matched ${coordinates.displayName}` : "Receiving-site address updated; the ETA location still needs a Google Maps link");
-    return { ok: true, geocoded: Boolean(coordinates), siteAddress: address, siteCoordinates: state.settings.siteCoordinates, matchedAddress: coordinates?.displayName || null, lookupQuery: coordinates?.lookupQuery || null, warning: lookupWarning };
+    return { ok: true, geocoded: Boolean(coordinates), siteAddress: address, matchedAddress: coordinates?.displayName || null, warning: lookupWarning };
   });
   response.json(result);
 }));
 
-app.patch("/api/suppliers/:id/route", auth, allow("admin"), asyncRoute(async (request, response) => {
+app.patch("/api/suppliers/:id/route", auth, allow("admin"), etaLimiter, asyncRoute(async (request, response) => {
   const originAddress = String(request.body?.originAddress || "").trim();
   const mapReference = String(request.body?.mapReference || "").trim();
   if (originAddress.length < 6) return response.status(400).json({ message: "Enter the supplier's complete dispatch address" });
@@ -1422,11 +1549,16 @@ app.patch("/api/suppliers/:id/route", auth, allow("admin"), asyncRoute(async (re
       currentSupplier.originCoordinates = { lat: origin.lat, lon: origin.lon };
       currentSupplier.routeDistanceKm = route.distanceKm;
       currentSupplier.routeDurationMinutes = route.durationMinutes;
+      currentSupplier.routeStaticDurationMinutes = route.staticDurationMinutes;
+      currentSupplier.routeTrafficDelayMinutes = route.trafficDelayMinutes;
+      currentSupplier.routeTrafficAware = route.trafficAware;
       currentSupplier.routeCalculatedAt = new Date().toISOString();
-      currentSupplier.routeProvider = "OpenStreetMap / OSRM · no traffic";
+      currentSupplier.routeProvider = route.provider;
       if (!validCoordinates(draft.settings.siteCoordinates)) draft.settings.siteCoordinates = { lat: destination.lat, lon: destination.lon };
-      addAudit(draft, request.user, "SUPPLIER_ETA_UPDATED", `${currentSupplier.name} route estimated at ${route.distanceKm} km / ${route.durationMinutes} minutes without traffic`);
-      return { ok: true, supplier: currentSupplier, matchedOrigin: origin.displayName, matchedDestination: destination.displayName };
+      addAudit(draft, request.user, "SUPPLIER_ETA_UPDATED", `${currentSupplier.name} route estimated at ${route.distanceKm} km / ${route.durationMinutes} minutes${route.trafficAware ? ` with live traffic${route.trafficDelayMinutes ? ` (+${route.trafficDelayMinutes} min)` : ""}` : " without traffic"}`);
+      const publicSupplier = { ...currentSupplier };
+      delete publicSupplier.originCoordinates;
+      return { ok: true, supplier: publicSupplier, matchedOrigin: origin.displayName, matchedDestination: destination.displayName, trafficAware: route.trafficAware };
     });
     response.json(result);
   } catch (error) {

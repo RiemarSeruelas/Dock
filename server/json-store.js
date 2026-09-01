@@ -2,9 +2,11 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export class JsonStore {
-  constructor(filePath, createInitialState) {
+  constructor(filePath, createInitialState, transforms = {}) {
     this.filePath = filePath;
     this.createInitialState = createInitialState;
+    this.serialize = transforms.serialize || ((state) => state);
+    this.deserialize = transforms.deserialize || ((state) => state);
     this.queue = Promise.resolve();
   }
 
@@ -20,12 +22,12 @@ export class JsonStore {
 
   async read() {
     await this.queue;
-    return JSON.parse(await readFile(this.filePath, "utf8"));
+    return this.deserialize(JSON.parse(await readFile(this.filePath, "utf8")));
   }
 
   update(mutator) {
     const operation = this.queue.then(async () => {
-      const state = JSON.parse(await readFile(this.filePath, "utf8"));
+      const state = this.deserialize(JSON.parse(await readFile(this.filePath, "utf8")));
       const result = await mutator(state);
       await this.write(state);
       return result;
@@ -36,7 +38,7 @@ export class JsonStore {
 
   async write(state) {
     const temporary = `${this.filePath}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    await writeFile(temporary, `${JSON.stringify(this.serialize(state), null, 2)}\n`, "utf8");
     await rename(temporary, this.filePath);
   }
 }

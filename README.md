@@ -68,7 +68,7 @@ A delivery code is reserved for every truck. As soon as every material code has 
 
 ## Monitoring and history
 
-**Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan and uses the saved supplier route.
+**Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan. It uses live road traffic when the protected traffic service is configured and clearly marks the traffic-free fallback otherwise.
 
 **History** is one total-record view for previous deliveries and rejected proposals. Company users only see their own company. Supplier and driver views keep the useful material, driver, and date filters without the supplier, outcome, or time controls.
 
@@ -119,13 +119,13 @@ Open `http://127.0.0.1:3000`.
 
 ## Test ETA
 
-ETA address lookup and routing require internet access unless the provider URLs point to services hosted on your own network.
+ETA address lookup and routing require internet access unless the provider URLs point to services hosted on your own network. Live traffic additionally requires a server-configured Google Routes key; the key is never entered in the browser.
 
 1. Sign in as Administrator and open **Administration → Accounts**.
 2. Save the receiving-site address.
 3. Select the route icon on a supplier account and save its dispatch address.
 4. Confirm a supplier delivery and scan **Trip**.
-5. Open Monitoring. The truck card should show the calculated distance, travel minutes, and arrival time.
+5. Open Monitoring. The truck card should show distance, travel minutes, arrival time, and either **Traffic-aware ETA** or **traffic unavailable**.
 
 ## Test email notifications
 

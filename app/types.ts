@@ -118,6 +118,9 @@ export interface Shipment {
   estimatedArrivalAt?: string | null;
   estimatedTravelMinutes?: number | null;
   estimatedTravelDistanceKm?: number | null;
+  estimatedTrafficDelayMinutes?: number | null;
+  etaTrafficAware?: boolean;
+  etaProvider?: string | null;
   rejectionReason?: string | null;
   supplierResponse?: "ACCEPTED" | "ALTERNATIVE_PROPOSED" | null;
   supplierResponseReason?: string | null;
@@ -174,6 +177,9 @@ export interface SupplierAccount {
   originCoordinates?: { lat: number; lon: number } | null;
   routeDistanceKm?: number | null;
   routeDurationMinutes?: number | null;
+  routeStaticDurationMinutes?: number | null;
+  routeTrafficDelayMinutes?: number | null;
+  routeTrafficAware?: boolean;
   routeCalculatedAt?: string | null;
   routeProvider?: string | null;
 }

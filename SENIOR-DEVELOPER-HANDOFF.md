@@ -2,7 +2,7 @@
 
 **System:** DockFlow Delivery Scheduling  
 **Build:** Trial JSON edition, application version 0.1.0  
-**Report date:** 2026-08-31  
+**Report date:** 2026-09-01  
 **Operational timezone:** Asia/Manila (GMT+8)
 
 ## 1. Executive summary
@@ -14,7 +14,7 @@ The current package is deliberately configured as a **single-instance trial**:
 - Business data is stored in `data/trial-data.json`.
 - PostgreSQL is disabled by Docker Compose (`DB_ENABLED=false`).
 - Email uses a private SMTP account configured only in `.env`.
-- ETA uses external OpenStreetMap Nominatim and OSRM endpoints unless replaced with internal services.
+- ETA uses Google Routes traffic data when a protected server key is configured, with OSRM as an explicitly labeled traffic-free fallback.
 - The browser talks to the Next.js server, which proxies `/api/*` to the Express API. The API container is not published directly by Docker Compose.
 
 The most important scheduling rule is now:
@@ -163,10 +163,12 @@ The API rejects skipped stages, wrong-role scans, another supplier’s shipment,
 ### 4.8 ETA
 
 - Administrator saves the receiving-site address and each supplier’s dispatch address.
-- Nominatim converts the addresses to coordinates.
-- OSRM estimates road distance and travel time without traffic.
+- Nominatim/Photon converts addresses to coordinates, or an administrator can provide an exact Maps coordinate link.
+- Google Routes calculates traffic-aware driving duration when its server-only key is configured. If that provider is unavailable, OSRM supplies a traffic-free fallback and the UI labels it accordingly.
 - The route is saved per supplier.
-- Trip scan adds the route duration to the scan timestamp and displays estimated arrival in Monitoring.
+- Trip scan refreshes the route, adds its duration to the scan timestamp, and displays arrival, distance, provider state, and any traffic delay in Monitoring.
+- Exact coordinates are removed from API bootstrap responses. Non-administrators do not receive supplier/site addresses.
+- With `LOCATION_ENCRYPTION_KEY` configured, addresses and coordinates are AES-256-GCM encrypted in the JSON file.
 - All displayed operational timestamps use Asia/Manila.
 
 ### 4.9 Monitoring, history, and reports
@@ -185,7 +187,7 @@ The API rejects skipped stages, wrong-role scans, another supplier’s shipment,
 | Area | Current implementation | What it means |
 |---|---|---|
 | Security | JWT access tokens, rotating refresh tokens, hashed passwords, role checks, supplier scoping, Helmet, CORS, rate limits | Common unauthenticated and cross-role access attempts are rejected server-side |
-| Privacy | Supplier-safe response mapping; SMTP secrets kept in `.env`; refresh tokens stored as SHA-256 hashes | Supplier users do not receive descriptions/internal import metadata or reusable secrets |
+| Privacy | Supplier-safe response mapping; server-only SMTP/Maps secrets; encrypted stored locations; refresh tokens stored as SHA-256 hashes | Supplier users do not receive descriptions/internal import metadata, exact coordinates, or reusable secrets |
 | Reliability | Queued JSON writes and atomic rename; idempotent import comparison; duplicate material/truck checks | Concurrent updates in one API process do not overwrite one another; repeated imports do not spam records |
 | Performance | Static Next.js production build; compact bootstrap; 30-second notification polling; session-level DB log summaries | Appropriate for a small single-instance trial, not yet a high-volume platform |
 | Usability | Responsive desktop/mobile CSS, full-page modals, role-specific navigation, light/dark modes | Core tasks work on desktop and mobile-sized screens |
@@ -313,6 +315,7 @@ Legacy availability and manual schedule endpoints remain in the API for compatib
 JWT_SECRET=<long random secret>
 ACCESS_TOKEN_SECRET=<different long random secret>
 REFRESH_TOKEN_SECRET=<different long random secret>
+LOCATION_ENCRYPTION_KEY=<stable random secret, at least 32 characters>
 APP_ORIGIN=https://dockflow.example.com
 CORS_ORIGINS=https://dockflow.example.com
 ALLOW_PRIVATE_NETWORK_ORIGINS=false
@@ -338,12 +341,18 @@ MAIL_FROM=
 
 ```env
 GEOCODING_API_URL=https://nominatim.openstreetmap.org/search
+GEOCODING_FALLBACK_API_URL=https://photon.komoot.io/api/
 ROUTING_API_URL=https://router.project-osrm.org/route/v1/driving
+TRAFFIC_ETA_ENABLED=true
+GOOGLE_ROUTES_API_URL=https://routes.googleapis.com/directions/v2:computeRoutes
+GOOGLE_MAPS_API_KEY=<server-only Google Routes key>
 ETA_USER_AGENT=DockFlow/0.1 (operations-contact@example.com)
 ETA_API_TIMEOUT_MS=10000
+ETA_RATE_LIMIT_WINDOW_MS=900000
+ETA_RATE_LIMIT_MAX=30
 ```
 
-Public ETA and Gmail require outbound internet. For an offline site, point these variables to internal providers or accept that those two functions are unavailable.
+Enable the Google Routes API for the key, restrict it to that API, and restrict server use to the DigitalOcean egress IP where possible. Do not expose the key through a `NEXT_PUBLIC_` variable. Public ETA and Gmail require outbound internet. For an offline site, point these variables to internal providers or accept that those two functions are unavailable.
 
 ## 10. Deployment
 
@@ -433,15 +442,14 @@ Security smoke tests should verify HTTP 401 without a bearer token, HTTP 403 for
 3. **Notifications use polling.** The UI refreshes state every 30 seconds. Use WebSocket or Server-Sent Events if sub-second push is required.
 4. **Rate limits are per API process.** Use a shared Redis-backed limiter behind multiple replicas.
 5. **Email delivery is best effort.** Business state is committed even if SMTP fails. A durable job/outbox queue with retry and admin delivery status is recommended.
-6. **ETA has no traffic.** Public Nominatim/OSRM are unsuitable for guaranteed commercial SLA without reviewing provider policies. Use a contracted or internally hosted service.
+6. **Traffic ETA depends on Google Routes.** Without a valid key or network access, the app intentionally falls back to OSRM and labels the result traffic unavailable. Provider estimates are operational guidance, not a guaranteed arrival SLA.
 7. **No MFA or password reset.** Add MFA, password rotation/reset, account lockout policy, and privileged-action reauthentication for production.
 8. **No formal malware scanning.** Uploaded DN/COA files are allowlisted by MIME and size but should be scanned and stored in private object storage.
 9. **No formal accessibility or penetration audit.** Automated tests prove expected application behavior, not the absence of every vulnerability.
 10. **Availability/manual schedule endpoints are legacy.** Remove them after confirming no external consumer depends on them.
 11. **Trial credentials are seeded.** Change or remove every default account before exposure outside a controlled environment.
-12. **Use HTTPS.** Set secure cookies and terminate TLS at a trusted reverse proxy before an internet deployment such as DigitalOcean.
+12. **Use HTTPS.** Set secure cookies and terminate TLS at a trusted reverse proxy before an internet deployment such as DigitalOcean. Store the Maps key and location-encryption key as deployment secrets, never in the image or repository.
 
 ## 13. Short explanation for a senior review
 
 > DockFlow is an SDS-driven delivery workflow. Imports create supplier proposals, never immediate bookings. The supplier either confirms truck loads or proposes an alternative with a reason. A company reviewer approves or rejects that alternative; the supplier receives both an in-app alert and verified-email notification. Only complete truck/material confirmation produces the protected QR, report entry, and operational scan journey. The API—not the UI—enforces roles, supplier ownership, workflow order, validation, CORS, and rate limits. This trial uses atomic JSON storage, while PostgreSQL remains optional for sessions and summarized telemetry. The next production milestone is migrating business data and background email work to shared durable infrastructure.
-
