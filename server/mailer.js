@@ -55,17 +55,20 @@ export const emailNotifications = {
   async sendSdsChanges({ sender, recipients, supplier, changes }) {
     return send({ sender, recipients, ...buildSdsChangeEmail({ supplier, changes }) });
   },
-  async sendSupplierDecision({ sender, recipients, shipmentNumber, supplier, decision, reason, scheduledDate, scheduledTime, scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime }) {
-    const rejected = decision === "REJECTED";
+  async sendSupplierReschedule({ sender, recipients, shipmentNumber, supplier, reason, scheduledDate, scheduledTime, scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime }) {
     const scheduled = `${scheduledDate || "—"} at ${scheduledTime || "—"}${scheduledEndTime ? `–${scheduledEndTime}` : ""}`;
     const proposed = `${alternativeDate || "—"} at ${alternativeTime || "—"}${alternativeEndTime ? `–${alternativeEndTime}` : ""}`;
-    return send({ sender, recipients, subject: `${supplier} ${rejected ? "requested a schedule change" : "confirmed"} – ${shipmentNumber}`, text: rejected ? `Dear Planner & Production team,\n\nSupplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule for approval.\n\nSupplier: ${supplier}\nDelivery: ${shipmentNumber}\nReason: ${reason}\nScheduled time: ${scheduled}\nProposed time: ${proposed}` : `${supplier} confirmed delivery ${shipmentNumber}.`, html: rejected ? `<p>Dear Planner &amp; Production team,</p><p>Supplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule for approval.</p><div style="margin-top:16px;padding:14px;border:1px solid #f0c7a7;border-radius:10px"><p><b>Supplier:</b> ${escapeHtml(supplier)}<br><b>Delivery:</b> ${escapeHtml(shipmentNumber)}<br><b>Reason:</b> ${escapeHtml(reason)}<br><b>Scheduled time:</b> ${escapeHtml(scheduled)}<br><b>Proposed time:</b> ${escapeHtml(proposed)}</p></div>` : `<p><strong>${escapeHtml(supplier)}</strong> confirmed delivery <strong>${escapeHtml(shipmentNumber)}</strong>.</p>` });
+    return send({ sender, recipients, subject: `${supplier} requested a schedule change – ${shipmentNumber}`, text: `Dear Admin & Planner team,\n\nSupplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule.\n\nSupplier: ${supplier}\nDelivery: ${shipmentNumber}\nReason: ${reason}\nScheduled time: ${scheduled}\nProposed time: ${proposed}`, html: `<p>Dear Admin &amp; Planner team,</p><p>Supplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule.</p><div style="margin-top:16px;padding:14px;border:1px solid #f0c7a7;border-radius:10px"><p><b>Supplier:</b> ${escapeHtml(supplier)}<br><b>Delivery:</b> ${escapeHtml(shipmentNumber)}<br><b>Reason:</b> ${escapeHtml(reason)}<br><b>Scheduled time:</b> ${escapeHtml(scheduled)}<br><b>Proposed time:</b> ${escapeHtml(proposed)}</p></div>` });
   },
-  async sendCompanyScheduleDecision({ sender, recipients, shipmentNumber, supplier, decision, reason, scheduledDate, scheduledTime }) {
-    const approved = decision === "APPROVED";
-    const title = approved ? "Proposed delivery schedule approved" : "Proposed delivery schedule rejected";
-    const action = approved ? "Your proposed delivery schedule has been approved. Please sign in to confirm the delivery and provide the truck and driver details." : "Your proposed delivery schedule was not approved. Please sign in to review the company decision.";
-    const schedule = `${scheduledDate || "—"} at ${scheduledTime || "—"}`;
-    return send({ sender, recipients, subject: `${title} – ${shipmentNumber}`, text: `Dear Supplier,\n\n${action}\n\nDelivery: ${shipmentNumber}\nSchedule: ${schedule}${reason ? `\nReason: ${reason}` : ""}`, html: `<p>Dear Supplier,</p><p>${escapeHtml(action)}</p><div style="margin-top:16px;padding:14px;border:1px solid ${approved ? "#9fd8ca" : "#f2b8b5"};border-radius:10px"><p><b>Delivery:</b> ${escapeHtml(shipmentNumber)}<br><b>Supplier:</b> ${escapeHtml(supplier)}<br><b>Schedule:</b> ${escapeHtml(schedule)}${reason ? `<br><b>Reason:</b> ${escapeHtml(reason)}` : ""}</p></div>` });
+  async sendItemsReceived({ sender, recipients, shipmentNumber, deliveryCode, supplier, truckPlate, receivedAt, materialCodes }) {
+    const codes = (materialCodes || []).join(", ") || "Not listed";
+    const when = receivedAt ? new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }).format(new Date(receivedAt)) : "Recorded now";
+    return send({
+      sender,
+      recipients,
+      subject: `Delivery received – ${shipmentNumber}`,
+      text: `Dear Supplier,\n\nYour delivery has been marked as received.\n\nSupplier: ${supplier}\nDelivery: ${shipmentNumber}\nDelivery code: ${deliveryCode || "—"}\nTruck: ${truckPlate || "—"}\nReceived: ${when}\nMaterial codes: ${codes}`,
+      html: `<p>Dear Supplier,</p><p>Your delivery has been marked as <strong>received</strong>.</p><div style="margin-top:16px;padding:14px;border:1px solid #9fd8ca;border-radius:10px"><p><b>Supplier:</b> ${escapeHtml(supplier)}<br><b>Delivery:</b> ${escapeHtml(shipmentNumber)}<br><b>Delivery code:</b> ${escapeHtml(deliveryCode || "—")}<br><b>Truck:</b> ${escapeHtml(truckPlate || "—")}<br><b>Received:</b> ${escapeHtml(when)}<br><b>Material codes:</b> ${escapeHtml(codes)}</p></div>`,
+    });
   },
 };

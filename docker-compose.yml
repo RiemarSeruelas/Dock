@@ -39,6 +39,7 @@ services:
       REFRESH_RATE_LIMIT_WINDOW_MS: ${REFRESH_RATE_LIMIT_WINDOW_MS:-900000}
       REFRESH_RATE_LIMIT_MAX: ${REFRESH_RATE_LIMIT_MAX:-30}
       GEOCODING_API_URL: ${GEOCODING_API_URL:-https://nominatim.openstreetmap.org/search}
+      GEOCODING_FALLBACK_API_URL: ${GEOCODING_FALLBACK_API_URL:-https://photon.komoot.io/api/}
       ROUTING_API_URL: ${ROUTING_API_URL:-https://router.project-osrm.org/route/v1/driving}
       ETA_USER_AGENT: ${ETA_USER_AGENT:-DockFlow/0.1}
       ETA_API_TIMEOUT_MS: ${ETA_API_TIMEOUT_MS:-10000}

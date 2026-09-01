@@ -37,7 +37,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const etaPort = await freePort();
   const etaServer = createHttpServer((request, response) => {
     response.setHeader("content-type", "application/json");
-    if (request.url?.startsWith("/search")) response.end(JSON.stringify([{ lat: "14.3000", lon: "120.9000", display_name: "Mock address" }]));
+    if (request.url?.startsWith("/blocked")) { response.statusCode = 403; response.end(JSON.stringify({ message: "Provider blocked" })); }
+    else if (request.url?.startsWith("/search")) response.end(JSON.stringify(request.url.includes("Unfindable") ? [] : [{ lat: "14.3000", lon: "120.9000", display_name: "Mock address" }]));
     else response.end(JSON.stringify({ routes: [{ distance: 12300, duration: 2520 }] }));
   });
   await new Promise((resolve) => etaServer.listen(etaPort, "127.0.0.1", resolve));
@@ -45,7 +46,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   let serverOutput = "";
   const apiProcess = spawn(process.execPath, ["server/index.js"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, NODE_ENV: "test", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
+    env: { ...process.env, NODE_ENV: "test", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/blocked`, GEOCODING_FALLBACK_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   apiProcess.stdout.on("data", (chunk) => { serverOutput += chunk; });
@@ -84,15 +85,11 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   };
   const supplierAccount = await createAccount({ name: "Supplier User", username: "supplier", email: "supplier@dockflow.local", password: "supplier123", role: "supplier", supplierName: "Trial Ingredients Supplier" });
   assert.equal((await call(`/api/suppliers/${supplierAccount.supplierId}/presets`, { token: admin.token, method: "PATCH", body: { presets: [{ materialCode: "65013575", uom: "KG", defaultAmount: 300 }, { materialCode: "65013507", uom: "KG", defaultAmount: 500 }] } })).response.status, 200);
-  await createAccount({ name: "Planner User", username: "planner", email: "planner@dockflow.local", password: "planner123", role: "planner" });
-  await createAccount({ name: "Production User", username: "production", email: "production@dockflow.local", password: "production123", role: "production" });
-  await createAccount({ name: "Driver User", username: "driver", email: "driver@dockflow.local", password: "driver123", role: "driver", supplierId: supplierAccount.supplierId });
+  await createAccount({ name: "Planner Dressings", username: "planner", email: "planner@dockflow.local", password: "planner123", role: "planner", workArea: "DRESSINGS" });
   await createAccount({ name: "Security User", username: "security", email: "security@dockflow.local", password: "security123", role: "security" });
-  await createAccount({ name: "Warehouse User", username: "warehouse", email: "warehouse@dockflow.local", password: "warehouse123", role: "warehouse" });
+  await createAccount({ name: "Warehouse Dressings", username: "warehouse", email: "warehouse@dockflow.local", password: "warehouse123", role: "warehouse", workArea: "DRESSINGS" });
   const supplier = await login("supplier", "supplier123");
   const planner = await login("planner", "planner123");
-  const production = await login("production", "production123");
-  const driver = await login("driver", "driver123");
   const security = await login("security", "security123");
   const warehouse = await login("warehouse", "warehouse123");
 
@@ -100,7 +97,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const placeholderRecipient = await call(`/api/users/${admin.user.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
   assert.equal(placeholderRecipient.response.status, 409);
   assert.match(placeholderRecipient.result.message, /trial placeholder/i);
-  for (const account of [supplier.user, planner.user, admin.user, production.user, driver.user, security.user, warehouse.user]) {
+  for (const account of [supplier.user, planner.user, admin.user, security.user, warehouse.user]) {
     const accountEmail = `${account.username}.dockflow.test@gmail.com`;
     assert.equal((await call(`/api/users/${account.id}/email`, { token: admin.token, method: "PATCH", body: { email: accountEmail } })).response.status, 200);
     const sent = await call(`/api/users/${account.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
@@ -123,10 +120,9 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(supplierBefore.result.settings.emailNotifications.senderEmail, "");
   assert.equal(JSON.stringify(supplierBefore.result).includes("abcdefghijklmnop"), false);
   assert.equal(JSON.stringify(supplierBefore.result.settings).includes("encryptedAppPassword"), false);
-  const driverBootstrap = await call("/api/bootstrap", { token: driver.token });
-  assert.ok(driverBootstrap.result.shipments.every((shipment) => shipment.supplierId === driver.user.supplierId));
-  assert.equal(driverBootstrap.result.importBatches.length, 0);
-  assert.equal((await call("/api/availability", { token: production.token, method: "POST", body: { date: "2026-08-28", startTime: "12:00", endTime: "13:00" } })).response.status, 403);
+  assert.equal(planner.user.workArea, "DRESSINGS");
+  assert.equal(warehouse.user.workArea, "DRESSINGS");
+  assert.equal((await call("/api/availability", { token: warehouse.token, method: "POST", body: { date: "2026-08-28", startTime: "12:00", endTime: "13:00" } })).response.status, 403);
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("SDS Schedule");
@@ -176,6 +172,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(missingCommit.response.status, 409);
 
   const supplierAfterImport = await call("/api/bootstrap", { token: supplier.token });
+  assert.deepEqual(supplierAfterImport.result.settings.availableSlots, []);
   const proposal = supplierAfterImport.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-1001"));
   assert.equal(proposal.bookingStatus, "PENDING_SUPPLIER");
   assert.equal(proposal.status, "PROPOSED");
@@ -217,15 +214,15 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(secondTruckResponse.result.deliveries.length, 2);
   assert.ok(secondTruckResponse.result.deliveries.every((delivery) => /^DLV-/.test(delivery.deliveryCode)));
 
-  const productionQueue = await call("/api/bootstrap", { token: production.token });
-  assert.ok(productionQueue.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item))));
-  assert.equal(productionQueue.result.materials.length, 0);
-  const group = productionQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
+  const plannerQueue = await call("/api/bootstrap", { token: planner.token });
+  assert.ok(plannerQueue.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item))));
+  assert.equal(plannerQueue.result.materials.length, 0);
+  const group = plannerQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
   assert.equal(group.length, 2);
   assert.ok(group.every((shipment) => shipment.bookingStatus === "APPROVED"));
   assert.ok(group.every((shipment) => shipment.status === "BOOKED"));
   assert.ok(group.every((shipment) => shipment.supplierResponse === "ACCEPTED"));
-  assert.equal((await call(`/api/shipments/${proposal.id}/final-decision`, { token: production.token, method: "PATCH", body: { decision: "APPROVE" } })).response.status, 404);
+  assert.equal((await call(`/api/shipments/${proposal.id}/final-decision`, { token: planner.token, method: "PATCH", body: { decision: "APPROVE" } })).response.status, 404);
 
   const approvedBootstrap = await call("/api/bootstrap", { token: supplier.token });
   const approvedGroup = approvedBootstrap.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
@@ -241,6 +238,13 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   const siteRoute = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Mock receiving site, Cavite" } });
   assert.equal(siteRoute.response.status, 200);
+  const unresolvedSite = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Unfindable private receiving building" } });
+  assert.equal(unresolvedSite.response.status, 200);
+  assert.equal(unresolvedSite.result.geocoded, false);
+  assert.equal(unresolvedSite.result.siteAddress, "Unfindable private receiving building");
+  const coordinateSite = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Exact private Google Maps place", mapReference: "14.3000, 120.9000" } });
+  assert.equal(coordinateSite.response.status, 200);
+  assert.equal(coordinateSite.result.geocoded, true);
   const supplierRoute = await call(`/api/suppliers/${supplier.user.supplierId}/route`, { token: admin.token, method: "PATCH", body: { originAddress: "Mock supplier origin, Manila" } });
   assert.equal(supplierRoute.response.status, 200);
   assert.equal(supplierRoute.result.supplier.routeDistanceKm, 12.3);
@@ -260,13 +264,12 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(rejectedResponse.response.status, 200);
   assert.equal(rejectedResponse.result.alternativeProposed, true);
   assert.equal(rejectedResponse.result.notification.status, "SENT");
-  const companyReview = await call("/api/bootstrap", { token: production.token });
+  const companyReview = await call("/api/bootstrap", { token: planner.token });
   assert.equal(companyReview.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "PENDING_COMPANY");
-  assert.equal(companyReview.result.audit.length, 0);
   assert.ok(companyReview.result.notifications.some((notification) => notification.shipmentId === rejectionProposal.id && notification.type === "WARNING"));
-  const companyReject = await call(`/api/shipments/${rejectionProposal.id}/company-decision`, { token: production.token, method: "PATCH", body: { decision: "REJECT", reason: "Receiving capacity is full" } });
+  const companyReject = await call(`/api/shipments/${rejectionProposal.id}/company-decision`, { token: planner.token, method: "PATCH", body: { decision: "REJECT", reason: "Receiving capacity is full" } });
   assert.equal(companyReject.response.status, 200);
-  assert.equal(companyReject.result.notification.status, "SENT");
+  assert.equal(companyReject.result.notification.status, "NOT_SENT");
   const afterReject = await call("/api/bootstrap", { token: admin.token });
   assert.equal(afterReject.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "REJECTED");
   assert.equal(afterReject.result.audit.find((entry) => entry.shipmentNumber === rejectionProposal.shipmentNumber).action, "COMPANY_ALTERNATIVE_REJECTED");
@@ -279,7 +282,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(approvalAlternative.response.status, 200);
   const companyApprove = await call(`/api/shipments/${approvalProposal.id}/company-decision`, { token: planner.token, method: "PATCH", body: { decision: "APPROVE" } });
   assert.equal(companyApprove.response.status, 200);
-  assert.equal(companyApprove.result.notification.status, "SENT");
+  assert.equal(companyApprove.result.notification.status, "NOT_SENT");
   const supplierAfterCompanyApprove = await call("/api/bootstrap", { token: supplier.token });
   const approvedAlternative = supplierAfterCompanyApprove.result.shipments.find((shipment) => shipment.id === approvalProposal.id);
   assert.equal(approvedAlternative.bookingStatus, "PENDING_SUPPLIER");
@@ -293,9 +296,18 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(tripScan.result.shipment.estimatedTravelMinutes, 42);
   assert.ok(tripScan.result.shipment.estimatedArrivalAt);
   assert.equal((await scan(security.token, "GATE")).result.shipment.status, "GATE_IN");
-  assert.equal((await scan(warehouse.token, "UNLOADING")).result.shipment.status, "UNLOADING");
-  assert.equal((await scan(warehouse.token, "RECEIVED")).result.shipment.status, "RECEIVED");
-  assert.equal((await scan(security.token, "GATE")).result.shipment.status, "GATE_OUT");
+  const unloadingScan = await scan(warehouse.token, "UNLOADING");
+  assert.equal(unloadingScan.result.shipment.status, "UNLOADING");
+  assert.match(unloadingScan.result.shipment.dock, /^Dock [12]$/);
+  assert.equal(unloadingScan.result.shipment.scanHistory.at(-1).actor, "Warehouse Dressings");
+  const receivedScan = await scan(warehouse.token, "RECEIVED");
+  assert.equal(receivedScan.result.shipment.status, "RECEIVED");
+  assert.equal(receivedScan.result.notification.status, "SENT");
+  assert.equal(receivedScan.result.shipment.dock, unloadingScan.result.shipment.dock);
+  const gateOutScan = await scan(security.token, "GATE");
+  assert.equal(gateOutScan.result.shipment.status, "GATE_OUT");
+  assert.equal(gateOutScan.result.shipment.dock, null);
+  assert.deepEqual(gateOutScan.result.shipment.scanHistory.map((record) => record.actor), ["Supplier User", "Security User", "Warehouse Dressings", "Warehouse Dressings", "Security User"]);
 
   const report = await call("/api/reports/export.xlsx?supplierId=1", { token: admin.token });
   assert.equal(report.response.status, 200);

@@ -1,4 +1,5 @@
 export type Role = "admin" | "planner" | "production" | "supplier" | "driver" | "security" | "warehouse";
+export type WorkArea = "DRESSINGS" | "SAVOURY";
 
 export type ShipmentStatus =
   | "PROPOSED"
@@ -29,6 +30,7 @@ export interface SessionUser {
   username: string;
   role: Role;
   supplierId?: number | null;
+  workArea?: WorkArea | null;
   email?: string;
   emailVerifiedAt?: string | null;
 }
@@ -71,6 +73,15 @@ export interface ConfirmedTruckLoad {
   confirmedAt: string;
 }
 
+export interface ShipmentScanRecord {
+  stage: string;
+  status: ShipmentStatus;
+  scannedAt: string;
+  userId: number;
+  actor: string;
+  role: Role;
+}
+
 export interface Shipment {
   id: number;
   shipmentNumber: string;
@@ -103,6 +114,7 @@ export interface Shipment {
   unloadingAt?: string | null;
   receivedAt?: string | null;
   gateOutAt?: string | null;
+  scanHistory?: ShipmentScanRecord[];
   estimatedArrivalAt?: string | null;
   estimatedTravelMinutes?: number | null;
   estimatedTravelDistanceKm?: number | null;

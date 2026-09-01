@@ -31,6 +31,7 @@ const ALLOWED_ORIGINS = [...new Set(`${APP_ORIGIN},${process.env.CORS_ORIGINS ||
 const ALLOW_PRIVATE_NETWORK_ORIGINS = String(process.env.ALLOW_PRIVATE_NETWORK_ORIGINS || "true").toLowerCase() === "true";
 const TIME_ZONE = process.env.TZ || "Asia/Manila";
 const GEOCODING_API_URL = process.env.GEOCODING_API_URL || "https://nominatim.openstreetmap.org/search";
+const GEOCODING_FALLBACK_API_URL = process.env.GEOCODING_FALLBACK_API_URL || "https://photon.komoot.io/api/";
 const ROUTING_API_URL = process.env.ROUTING_API_URL || "https://router.project-osrm.org/route/v1/driving";
 const ETA_USER_AGENT = process.env.ETA_USER_AGENT || "DockFlow/0.1 (configure ETA_USER_AGENT with an administrator contact)";
 const ETA_API_TIMEOUT_MS = Math.max(1000, Number(process.env.ETA_API_TIMEOUT_MS || 10000));
@@ -93,18 +94,74 @@ const defaultAvailabilityForDates = (dates) => dates.flatMap((date, index) => [
 const slotContains = (slot, date, startTime, endTime = null) => slot?.date === date && startTime >= slot.startTime && startTime < slot.endTime && (!endTime || endTime <= slot.endTime);
 const matchingAvailability = (state, date, startTime, endTime) => (state.settings.availableSlots || []).find((slot) => slotContains(slot, date, startTime, endTime));
 const planningRoles = ["admin", "planner"];
+const WORK_AREAS = new Set(["DRESSINGS", "SAVOURY"]);
+const normalizeWorkArea = (value) => {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (/DRESS/.test(normalized)) return "DRESSINGS";
+  if (/SAVOU?R/.test(normalized)) return "SAVOURY";
+  return null;
+};
+const shipmentWorkArea = (shipment) => normalizeWorkArea((shipment.items || []).find((item) => item.deliverySite)?.deliverySite);
 const validCoordinates = (value) => value && Number.isFinite(Number(value.lat)) && Number.isFinite(Number(value.lon));
-const geocodeAddress = async (address) => {
-  const url = new URL(GEOCODING_API_URL);
+const parseCoordinateReference = (value) => {
+  const reference = String(value || "").trim();
+  if (!reference) return null;
+  const patterns = [
+    /@(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/,
+    /[?&](?:q|query|destination|center)=(-?\d{1,2}(?:\.\d+)?)(?:%2C|,|\s+)(-?\d{1,3}(?:\.\d+)?)/i,
+    /!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/,
+    /^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/,
+  ];
+  for (const pattern of patterns) {
+    const match = reference.match(pattern);
+    if (!match) continue;
+    const lat = Number(match[1]), lon = Number(match[2]);
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) return { lat, lon, displayName: "Coordinates supplied by administrator" };
+  }
+  return null;
+};
+const geocodeWithProvider = async (providerUrl, address) => {
+  const url = new URL(providerUrl);
   url.searchParams.set("q", address);
-  url.searchParams.set("format", "jsonv2");
   url.searchParams.set("limit", "1");
-  const response = await fetch(url, { headers: { "User-Agent": ETA_USER_AGENT, Accept: "application/json" }, signal: AbortSignal.timeout(ETA_API_TIMEOUT_MS) });
+  const photonProvider = url.hostname.includes("photon.komoot.io") || /\/api\/?$/.test(url.pathname);
+  if (!photonProvider) url.searchParams.set("format", "jsonv2");
+  const response = await fetch(url, {
+    headers: { "User-Agent": ETA_USER_AGENT, Accept: "application/json", "Accept-Language": "en-PH,en;q=0.9" },
+    signal: AbortSignal.timeout(ETA_API_TIMEOUT_MS),
+  });
   if (!response.ok) throw new Error(`Address provider returned ${response.status}`);
-  const matches = await response.json();
-  const match = Array.isArray(matches) ? matches[0] : null;
-  if (!match || !Number.isFinite(Number(match.lat)) || !Number.isFinite(Number(match.lon))) throw new Error("The address could not be located. Add a city, province, or postal code and try again.");
+  const payload = await response.json();
+  if (photonProvider) {
+    const feature = payload?.features?.[0];
+    const [lon, lat] = Array.isArray(feature?.geometry?.coordinates) ? feature.geometry.coordinates : [];
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) throw new Error("The address could not be located");
+    const details = feature.properties || {};
+    const displayName = [details.name, details.street, details.city || details.county, details.state, details.country].filter(Boolean).join(", ");
+    return { lat: Number(lat), lon: Number(lon), displayName: displayName || address };
+  }
+  const match = Array.isArray(payload) ? payload[0] : null;
+  if (!match || !Number.isFinite(Number(match.lat)) || !Number.isFinite(Number(match.lon))) throw new Error("The address could not be located");
   return { lat: Number(match.lat), lon: Number(match.lon), displayName: String(match.display_name || address) };
+};
+const geocodeAddress = async (address, coordinateReference = "") => {
+  const suppliedCoordinates = parseCoordinateReference(coordinateReference) || parseCoordinateReference(address);
+  if (suppliedCoordinates) return suppliedCoordinates;
+  const providers = [...new Set([GEOCODING_API_URL, GEOCODING_FALLBACK_API_URL].filter(Boolean))];
+  const failures = [];
+  const parts = String(address).split(",").map((part) => part.trim()).filter(Boolean);
+  const candidates = [...new Set([
+    String(address).trim(),
+    parts.length >= 4 ? parts.slice(-4).join(", ") : "",
+    parts.length >= 3 ? parts.slice(-3).join(", ") : "",
+  ].filter(Boolean))];
+  for (const candidate of candidates) {
+    for (const provider of providers) {
+      try { return { ...(await geocodeWithProvider(provider, candidate)), lookupQuery: candidate }; }
+      catch (error) { failures.push(error instanceof Error ? error.message : "Address lookup failed"); }
+    }
+  }
+  throw new Error(`${[...new Set(failures)].join("; ")}. Paste a Google Maps link for a more exact location.`);
 };
 const calculateRoute = async (origin, destination) => {
   const base = ROUTING_API_URL.replace(/\/$/, "");
@@ -147,6 +204,15 @@ const SCAN_STAGES = {
   UNLOADING: { status: "UNLOADING", label: "Unloading", roles: ["admin", "warehouse"], from: ["GATE_IN"] },
   RECEIVED: { status: "RECEIVED", label: "Received", roles: ["admin", "warehouse"], from: ["UNLOADING"] },
 };
+const dockStatuses = new Set(["UNLOADING", "RECEIVED"]);
+const assignAvailableDock = (state, shipment) => {
+  if (shipment.dock) return shipment.dock;
+  const occupied = new Set(state.shipments.filter((row) => row.id !== shipment.id && dockStatuses.has(row.status) && row.dock).map((row) => row.dock));
+  const dockCount = Math.max(1, Number(state.settings.dockCount || 2));
+  const available = Array.from({ length: dockCount }, (_, index) => `Dock ${index + 1}`).find((dock) => !occupied.has(dock));
+  if (available) shipment.dock = available;
+  return available || null;
+};
 const syncAvailableDates = (state) => {
   state.settings.availableDates = [...new Set((state.settings.availableSlots || []).map((slot) => slot.date))].sort();
 };
@@ -173,9 +239,16 @@ const addNotification = (state, user, { type = "INFO", title, message, shipment 
   state.notifications ||= [];
   state.notifications.unshift({ id: nextId(state.notifications), userId: user.id, type, title, message, shipmentId: shipment?.id || null, shipmentNumber: shipment?.shipmentNumber || null, createdAt: new Date().toISOString(), readAt: null });
 };
-const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", emailVerifiedAt: user.emailVerifiedAt || null, role: user.role, supplierId: user.supplierId ?? null });
+const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", emailVerifiedAt: user.emailVerifiedAt || null, role: user.role, supplierId: user.supplierId ?? null, workArea: normalizeWorkArea(user.workArea) });
 const companyScopedRoles = new Set(["supplier", "driver"]);
-const canAccessShipment = (user, shipment) => !companyScopedRoles.has(user.role) || Number(user.supplierId) === Number(shipment.supplierId);
+const canAccessShipment = (user, shipment) => {
+  if (companyScopedRoles.has(user.role)) return Number(user.supplierId) === Number(shipment.supplierId);
+  if (["planner", "warehouse"].includes(user.role) && normalizeWorkArea(user.workArea)) {
+    const area = shipmentWorkArea(shipment);
+    return !area || area === normalizeWorkArea(user.workArea);
+  }
+  return true;
+};
 const supplierHasAccount = (state, supplierId) => state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplierId));
 const supplierSafeShipment = (shipment) => ({
   ...shipment,
@@ -232,7 +305,7 @@ async function createInitialState() {
   return {
     version: 11,
     settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
-    users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, email: adminEmail, emailVerifiedAt: null }],
+    users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, workArea: null, email: adminEmail, emailVerifiedAt: null }],
     suppliers: [],
     materials: [],
     shipments: [],
@@ -268,6 +341,7 @@ await store.update(async (state) => {
     if (user.username === "planner") user.role = "planner";
     user.role = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse"].includes(user.role) ? user.role : "admin";
     if (user.role === "driver" && !user.supplierId) user.supplierId = state.suppliers[0]?.id || 1;
+    user.workArea = ["planner", "warehouse"].includes(user.role) ? normalizeWorkArea(user.workArea) : null;
     user.email = String(user.email || `${user.username}@dockflow.local`).trim().toLowerCase();
     user.emailVerifiedAt ||= null;
     user.emailVerificationHash ||= null;
@@ -378,10 +452,12 @@ await store.update(async (state) => {
     shipment.confirmedTruckLoads = Array.isArray(shipment.confirmedTruckLoads) ? shipment.confirmedTruckLoads : [];
     shipment.sdsImportIdentity ||= null;
     shipment.sdsImportFingerprint ||= null;
+    shipment.scanHistory = Array.isArray(shipment.scanHistory) ? shipment.scanHistory : [];
     if (shipment.tripAt && !shipment.estimatedArrivalAt) applyShipmentEta(state, shipment, shipment.tripAt);
     if (legacyStatus === "RECEIVED" && shipment.completedAt) shipment.status = "GATE_OUT";
     shipment.lastProcessAt ||= shipment.gateOutAt || shipment.receivedAt || shipment.unloadingAt || shipment.gateInAt || shipment.tripAt || null;
   }
+  for (const shipment of state.shipments.filter((row) => dockStatuses.has(row.status))) assignAvailableDock(state, shipment);
   state.rdsRequests = [];
   syncAvailableDates(state);
 });
@@ -457,11 +533,11 @@ app.use("/api", apiLimiter);
 
 const parseCookies = (request) => Object.fromEntries(String(request.headers.cookie || "").split(";").map((item) => item.trim()).filter(Boolean).map((item) => { const index = item.indexOf("="); return [decodeURIComponent(index >= 0 ? item.slice(0, index) : item), decodeURIComponent(index >= 0 ? item.slice(index + 1) : "")]; }));
 const refreshCookieOptions = { httpOnly: true, sameSite: "strict", secure: COOKIE_SECURE, path: "/api/auth", maxAge: REFRESH_TOKEN_DAYS * 86400000 };
-const signAccessToken = (user, sessionId) => jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, name: user.name, sid: sessionId, type: "access" }, ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_TTL, jwtid: randomUUID() });
+const signAccessToken = (user, sessionId) => jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, workArea: normalizeWorkArea(user.workArea), name: user.name, sid: sessionId, type: "access" }, ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_TTL, jwtid: randomUUID() });
 const issueSession = async (user, request, response, existingSessionId = null) => {
   const sessionId = existingSessionId || randomUUID();
   const tokenId = randomUUID();
-  const refreshToken = jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, sid: sessionId, type: "refresh" }, REFRESH_TOKEN_SECRET, { expiresIn: `${REFRESH_TOKEN_DAYS}d`, jwtid: tokenId });
+  const refreshToken = jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, workArea: normalizeWorkArea(user.workArea), sid: sessionId, type: "refresh" }, REFRESH_TOKEN_SECRET, { expiresIn: `${REFRESH_TOKEN_DAYS}d`, jwtid: tokenId });
   await database.saveRefreshToken({ tokenId, tokenHash: hashToken(refreshToken), userId: user.id, expiresAt: new Date(Date.now() + REFRESH_TOKEN_DAYS * 86400000).toISOString(), ipAddress: request.ip, userAgent: request.get("user-agent") });
   response.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions);
   request.sessionId = sessionId;
@@ -524,8 +600,10 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const state = await store.read();
   const companyScoped = companyScopedRoles.has(_request.user.role);
   const canManageSds = ["admin", "planner"].includes(_request.user.role);
-  const shipments = companyScoped ? state.shipments.filter((shipment) => Number(shipment.supplierId) === Number(_request.user.supplierId)) : state.shipments;
+  const shipments = state.shipments.filter((shipment) => canAccessShipment(_request.user, shipment));
   const shipmentNumbers = new Set(shipments.map((shipment) => shipment.shipmentNumber));
+  const visibleSupplierIds = new Set(shipments.map((shipment) => Number(shipment.supplierId)).filter(Number.isFinite));
+  const shipmentDates = [...new Set(shipments.map((shipment) => shipment.scheduledDate).filter(validDate))].sort();
   response.json({
     shipments: shipments.map((shipment) => {
       const linked = supplierHasAccount(state, shipment.supplierId);
@@ -533,7 +611,7 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
     }).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
     rdsRequests: [],
     materials: [],
-    suppliers: companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : state.suppliers,
+    suppliers: companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : ["planner", "warehouse"].includes(_request.user.role) && normalizeWorkArea(_request.user.workArea) ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers,
     users: _request.user.role === "admin" ? state.users.map(publicUser) : [],
     audit: ["admin", "planner"].includes(_request.user.role) ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : [],
     notifications: state.notifications.filter((notification) => Number(notification.userId) === Number(_request.user.id)).slice(0, 50).map((notification) => {
@@ -542,7 +620,7 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
       return publicNotification;
     }),
     importBatches: canManageSds ? state.importBatches : [],
-    settings: { ...state.settings, emailNotifications: publicEmailSettings(), dockCount: 2 },
+    settings: { ...state.settings, availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 2 },
   });
 }));
 
@@ -613,7 +691,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
       proposal.companyDecisionAt = null;
       proposal.companyDecisionBy = null;
       addAudit(state, request.user, "SUPPLIER_ALTERNATIVE_PROPOSED", `${proposal.supplier} proposed ${alternativeDate} at ${alternativeTime}: ${reason}`, proposal.shipmentNumber);
-      const companyUsers = state.users.filter((user) => ["planner", "production"].includes(user.role));
+      const companyUsers = state.users.filter((user) => ["admin", "planner"].includes(user.role) && canAccessShipment(user, proposal));
       companyUsers.forEach((user) => addNotification(state, user, { type: "WARNING", title: "Supplier proposed a schedule change", message: `${proposal.supplier} requested ${alternativeDate} at ${alternativeTime}. Reason: ${reason}`, shipment: proposal }));
       const recipients = companyUsers.filter((user) => user.emailVerifiedAt && user.email).map((user) => user.email);
       return { alternativeProposed: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, scheduledDate: proposal.scheduledDate, scheduledTime: proposal.scheduledTime, scheduledEndTime: proposal.scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, recipients };
@@ -684,8 +762,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
       addAudit(state, request.user, "SUPPLIER_BOOKING_CONFIRMED", `${delivery.deliveryCode} confirmed for ${delivery.truckPlate}`, delivery.shipmentNumber);
       deliveries.push({ id: delivery.id, shipmentNumber: delivery.shipmentNumber, deliveryCode: delivery.deliveryCode, truckPlate: delivery.truckPlate });
     });
-    const recipients = state.users.filter((user) => ["admin", "planner"].includes(user.role) && user.emailVerifiedAt && user.email).map((user) => user.email);
-    return { partial: false, deliveries, remainingMaterialCount: 0, bookingStatus: proposal.bookingStatus, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, recipients };
+    return { partial: false, deliveries, remainingMaterialCount: 0, bookingStatus: proposal.bookingStatus, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, recipients: [] };
   });
   if (!result) return response.status(404).json({ message: "SDS proposal not found" });
   if (result.forbidden) return response.status(403).json({ message: "This SDS proposal belongs to another supplier" });
@@ -693,8 +770,8 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   if (result.invalidAssignment) return response.status(400).json({ message: "Select unconfirmed material codes only; a material can belong to one truck" });
   if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
-  if ((result.alternativeProposed || !result.partial) && result.recipients) {
-    try { notification = await emailNotifications.sendSupplierDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.alternativeProposed ? "REJECTED" : "CONFIRMED", reason: result.reason, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime, scheduledEndTime: result.scheduledEndTime, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime, alternativeEndTime: result.alternativeEndTime }); }
+  if (result.alternativeProposed && result.recipients) {
+    try { notification = await emailNotifications.sendSupplierReschedule({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, reason: result.reason, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime, scheduledEndTime: result.scheduledEndTime, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime, alternativeEndTime: result.alternativeEndTime }); }
     catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Supplier decision notification failed: ${error.message}`); }
   }
   const { recipients: _recipients, ...publicResult } = result;
@@ -702,7 +779,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
   response.json({ ...publicResult, notification });
 }));
 
-app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner", "production"), asyncRoute(async (request, response) => {
+app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner"), asyncRoute(async (request, response) => {
   const decision = String(request.body?.decision || "").trim().toUpperCase();
   const reason = String(request.body?.reason || "").trim();
   if (!["APPROVE", "REJECT"].includes(decision)) return response.status(400).json({ message: "Approve or reject the supplier's proposed schedule" });
@@ -711,6 +788,7 @@ app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner",
   const result = await store.update((state) => {
     const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
     if (!shipment) return null;
+    if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
     if (shipment.bookingStatus !== "PENDING_COMPANY" || shipment.supplierResponse !== "ALTERNATIVE_PROPOSED") return { alreadyDecided: true };
     const decidedAt = new Date().toISOString();
     const supplierUsers = state.users.filter((user) => user.role === "supplier" && Number(user.supplierId) === Number(shipment.supplierId));
@@ -759,33 +837,13 @@ app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner",
       scheduledTime: decision === "APPROVE" ? shipment.scheduledTime : shipment.alternativeTime,
       decision: shipment.companyDecision,
       reason,
-      recipients: supplierUsers.filter((user) => user.emailVerifiedAt && user.email).map((user) => user.email),
     };
   });
 
   if (!result) return response.status(404).json({ message: "SDS proposal not found" });
+  if (result.forbidden) return response.status(403).json({ message: "This reschedule request belongs to another work area" });
   if (result.alreadyDecided) return response.status(409).json({ message: "This proposed schedule has already been reviewed" });
-  let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
-  if (result.recipients.length) {
-    try {
-      notification = await emailNotifications.sendCompanyScheduleDecision({
-        sender: emailSender,
-        recipients: result.recipients,
-        shipmentNumber: result.shipmentNumber,
-        supplier: result.supplier,
-        decision: result.decision,
-        reason: result.reason,
-        scheduledDate: result.scheduledDate,
-        scheduledTime: result.scheduledTime,
-      });
-    } catch (error) {
-      notification = { status: "FAILED", sent: 0, failed: result.recipients.length };
-      console.error(`[email] Company schedule decision notification failed: ${error.message}`);
-    }
-  }
-  const { recipients: _recipients, ...publicResult } = result;
-  void _recipients;
-  response.json({ ...publicResult, notification });
+  response.json({ ...result, notification: { status: "NOT_SENT", sent: 0, failed: 0 } });
 }));
 
 app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRoute(async (request, response) => {
@@ -885,6 +943,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     const targetStatus = stage === "GATE" ? (shipment.status === "RECEIVED" || shipment.status === "GATE_OUT" ? "GATE_OUT" : "GATE_IN") : configuration.status;
     const alreadyRecorded = shipment.status === targetStatus;
     if (!alreadyRecorded && !configuration.from.includes(shipment.status)) return { wrongStage: true, currentStatus: shipment.status };
+    if (!alreadyRecorded && targetStatus === "UNLOADING" && !assignAvailableDock(state, shipment)) return { noDock: true };
     shipment.status = targetStatus;
     const scannedAt = new Date().toISOString();
     shipment.lastProcessAt = scannedAt;
@@ -892,16 +951,35 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
     if (stage === "RECEIVED") shipment.receivedAt ||= scannedAt;
-    if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.completedAt ||= scannedAt; }
+    if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
     const stageLabel = stage === "GATE" ? (targetStatus === "GATE_OUT" ? "Gate out" : "Gate in") : configuration.label;
-    if (!alreadyRecorded) addAudit(state, request.user, `QR_${targetStatus}`, `${shipment.shipmentNumber} scanned at ${stageLabel}`, shipment.shipmentNumber);
-    return { shipment, alreadyRecorded, stageLabel };
+    if (!alreadyRecorded) {
+      shipment.scanHistory ||= [];
+      shipment.scanHistory.push({ stage: stageLabel, status: targetStatus, scannedAt, userId: Number(request.user.id), actor: request.user.name, role: request.user.role });
+      addAudit(state, request.user, `QR_${targetStatus}`, `${shipment.shipmentNumber} scanned at ${stageLabel}`, shipment.shipmentNumber);
+    }
+    const receivedRecipients = !alreadyRecorded && targetStatus === "RECEIVED"
+      ? state.users.filter((user) => user.role === "supplier" && Number(user.supplierId) === Number(shipment.supplierId) && user.emailVerifiedAt && user.email).map((user) => user.email)
+      : [];
+    return { shipment, alreadyRecorded, stageLabel, receivedRecipients };
   });
   if (!result) return response.status(404).json({ message: "Shipment not found in this QR code" });
   if (result.approvalRequired) return response.status(409).json({ message: "This booking must be approved before it can be scanned" });
   if (result.forbidden) return response.status(403).json({ message: "This supplier account cannot access that shipment" });
   if (result.wrongStage) return response.status(409).json({ message: `This delivery is currently ${String(result.currentStatus).replaceAll("_", " ").toLowerCase()}. Complete the earlier scan stage first.` });
-  response.json({ ...result, message: result.alreadyRecorded ? `${result.stageLabel} was already recorded for ${result.shipment.shipmentNumber}` : `${result.shipment.shipmentNumber} updated to ${result.stageLabel}` });
+  if (result.noDock) return response.status(409).json({ message: "Both receiving docks are occupied. Complete a Gate out scan before starting another unloading." });
+  let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
+  if (result.receivedRecipients?.length) {
+    try {
+      notification = await emailNotifications.sendItemsReceived({ sender: emailSender, recipients: result.receivedRecipients, shipmentNumber: result.shipment.shipmentNumber, deliveryCode: result.shipment.deliveryCode, supplier: result.shipment.supplier, truckPlate: result.shipment.truckPlate, receivedAt: result.shipment.receivedAt, materialCodes: result.shipment.items.map((item) => item.materialCode) });
+    } catch (error) {
+      notification = { status: "FAILED", sent: 0, failed: result.receivedRecipients.length };
+      console.error(`[email] Received-delivery notification failed: ${error.message}`);
+    }
+  }
+  const { receivedRecipients: _receivedRecipients, ...publicResult } = result;
+  void _receivedRecipients;
+  response.json({ ...publicResult, notification, message: result.alreadyRecorded ? `${result.stageLabel} was already recorded for ${result.shipment.shipmentNumber}` : `${result.shipment.shipmentNumber} updated to ${result.stageLabel}` });
 }));
 
 app.patch("/api/shipments/:id/status", auth, asyncRoute(async (request, response) => {
@@ -919,6 +997,7 @@ app.patch("/api/shipments/:id/status", auth, asyncRoute(async (request, response
       shipment.palletsScanned = shipment.palletIds.length;
       status = shipment.palletsTotal > 0 && shipment.palletsScanned >= shipment.palletsTotal ? "RECEIVED" : "UNLOADING";
     }
+    if (["UNLOADING", "RECEIVED"].includes(status) && !assignAvailableDock(state, shipment)) return { noDock: true };
     shipment.status = status;
     if (request.body.dock !== undefined) shipment.dock = request.body.dock || null;
     const changedAt = new Date().toISOString();
@@ -926,7 +1005,7 @@ app.patch("/api/shipments/:id/status", auth, asyncRoute(async (request, response
     if (status === "GATE_IN") { shipment.gateInAt ||= changedAt; shipment.arrivalTime ||= changedAt; }
     if (status === "UNLOADING") shipment.unloadingAt ||= changedAt;
     if (status === "RECEIVED") shipment.receivedAt ||= changedAt;
-    if (status === "GATE_OUT") { shipment.gateOutAt ||= changedAt; shipment.completedAt ||= changedAt; }
+    if (status === "GATE_OUT") { shipment.gateOutAt ||= changedAt; shipment.completedAt ||= changedAt; shipment.dock = null; }
     shipment.lastProcessAt = changedAt;
     if (status === "REJECTED") shipment.rejectionReason = String(request.body.rejectionReason || "Rejected during trial");
     addAudit(state, request.user, status, request.body.palletId ? `Pallet ${request.body.palletId} scanned` : `${shipment.shipmentNumber} moved to ${status.replaceAll("_", " ").toLowerCase()}`, shipment.shipmentNumber);
@@ -935,6 +1014,7 @@ app.patch("/api/shipments/:id/status", auth, asyncRoute(async (request, response
   if (!result) return response.status(404).json({ message: "Shipment not found" });
   if (result.forbidden) return response.status(403).json({ message: "This account cannot update that shipment" });
   if (result.approvalRequired) return response.status(409).json({ message: "This booking must be approved before operations can begin" });
+  if (result.noDock) return response.status(409).json({ message: "Both receiving docks are occupied. Complete a Gate out scan before starting another unloading." });
   response.json(result);
 }));
 
@@ -943,6 +1023,10 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   const state = await store.read();
   const fallbackDate = state.settings.availableDates[0] || localDate(1);
   const preview = await parseDeliveryWorkbook(request.file.buffer, request.file.originalname, { fallbackDate });
+  if (request.user.role === "planner" && normalizeWorkArea(request.user.workArea)) {
+    const outsideArea = [...new Set(preview.rows.map((row) => normalizeWorkArea(row.site)).filter((area) => area && area !== normalizeWorkArea(request.user.workArea)))];
+    if (outsideArea.length) return response.status(403).json({ message: `This Planner account can only import ${String(request.user.workArea).toLowerCase()} schedules` });
+  }
   const accountBySupplier = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplierHasAccount(state, supplier.id)]));
   const missingSupplierAccounts = [...new Set(preview.rows.filter((row) => !accountBySupplier.get(row.supplier.trim().toLowerCase())).map((row) => row.supplier))].sort();
   preview.rows = preview.rows.map((row) => ({ ...row, supplierAccountLinked: Boolean(accountBySupplier.get(row.supplier.trim().toLowerCase())) }));
@@ -1168,29 +1252,29 @@ app.post("/api/materials", auth, allow("admin"), asyncRoute(async (request, resp
 }));
 
 app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response) => {
-  const roles = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse"];
+  const roles = ["admin", "planner", "supplier", "security", "warehouse"];
   const email = String(request.body?.email || "").trim().toLowerCase();
   if (!String(request.body?.name || "").trim() || !String(request.body?.username || "").trim() || String(request.body?.password || "").length < 8 || !roles.includes(request.body?.role) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response.status(400).json({ message: "Name, username, email, valid role, and an 8-character password are required" });
+  const workArea = normalizeWorkArea(request.body?.workArea);
+  if (["planner", "warehouse"].includes(request.body?.role) && !WORK_AREAS.has(workArea)) return response.status(400).json({ message: "Planner and Warehouse accounts must be assigned to Dressings or Savoury" });
   const passwordHash = await bcrypt.hash(String(request.body.password), 10);
   const result = await store.update((state) => {
     if (state.users.some((user) => user.username.toLowerCase() === request.body.username.toLowerCase())) return { duplicate: true };
     let supplierId = null;
-    if (["supplier", "driver"].includes(request.body.role)) {
+    if (request.body.role === "supplier") {
       const existing = state.suppliers.find((supplier) => supplier.id === Number(request.body.supplierId));
-      if (request.body.role === "driver" && !existing) return { supplierRequired: true };
       const supplier = existing || ensureSupplier(state, request.body.supplierName || request.body.name);
-      if (request.body.role === "supplier" && state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplier.id))) return { supplierAlreadyLinked: true };
+      if (state.users.some((user) => user.role === "supplier" && Number(user.supplierId) === Number(supplier.id))) return { supplierAlreadyLinked: true };
       supplier.productPresets ||= [];
       supplierId = supplier.id;
     }
     const id = nextId(state.users);
-    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, emailVerifiedAt: null, emailVerificationHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0, passwordHash, role: request.body.role, supplierId });
-    addAudit(state, request.user, "ACCOUNT_CREATED", `${request.body.role === "supplier" ? "Supplier" : request.body.role} account @${String(request.body.username).trim().toLowerCase()} created`);
-    return { id, supplierId };
+    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, emailVerifiedAt: null, emailVerificationHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0, passwordHash, role: request.body.role, supplierId, workArea: ["planner", "warehouse"].includes(request.body.role) ? workArea : null });
+    addAudit(state, request.user, "ACCOUNT_CREATED", `${request.body.role === "supplier" ? "Supplier" : request.body.role} account @${String(request.body.username).trim().toLowerCase()} created${workArea ? ` for ${workArea.toLowerCase()}` : ""}`);
+    return { id, supplierId, workArea };
   });
   if (result.duplicate) return response.status(409).json({ message: "That username already exists" });
   if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active supplier account" });
-  if (result.supplierRequired) return response.status(400).json({ message: "Choose the supplier company this driver belongs to" });
   activeAccountRoles.set(Number(result.id), request.body.role);
   response.status(201).json(result);
 }));
@@ -1297,27 +1381,29 @@ app.delete("/api/users/:id", auth, allow("admin"), asyncRoute(async (request, re
 
 app.patch("/api/settings/site-address", auth, allow("admin"), asyncRoute(async (request, response) => {
   const address = String(request.body?.siteAddress || "").trim();
+  const mapReference = String(request.body?.mapReference || "").trim();
   if (address.length < 6) return response.status(400).json({ message: "Enter the complete receiving-site address" });
-  let coordinates;
-  try { coordinates = await geocodeAddress(address); }
-  catch (error) { return response.status(502).json({ message: `ETA address lookup failed: ${error.message}` }); }
+  let coordinates = null, lookupWarning = null;
+  try { coordinates = await geocodeAddress(address, mapReference); }
+  catch (error) { lookupWarning = `Address saved, but the ETA location could not be matched. ${error.message}`; }
   const result = await store.update((state) => {
     state.settings.siteAddress = address;
-    state.settings.siteCoordinates = { lat: coordinates.lat, lon: coordinates.lon };
+    state.settings.siteCoordinates = coordinates ? { lat: coordinates.lat, lon: coordinates.lon } : null;
     for (const supplier of state.suppliers) {
       supplier.routeDistanceKm = null;
       supplier.routeDurationMinutes = null;
       supplier.routeCalculatedAt = null;
       supplier.routeProvider = null;
     }
-    addAudit(state, request.user, "RECEIVING_ADDRESS_UPDATED", `Receiving-site address updated to ${coordinates.displayName}`);
-    return { ok: true, siteAddress: address, siteCoordinates: state.settings.siteCoordinates, matchedAddress: coordinates.displayName };
+    addAudit(state, request.user, "RECEIVING_ADDRESS_UPDATED", coordinates ? `Receiving-site address updated; ETA matched ${coordinates.displayName}` : "Receiving-site address updated; the ETA location still needs a Google Maps link");
+    return { ok: true, geocoded: Boolean(coordinates), siteAddress: address, siteCoordinates: state.settings.siteCoordinates, matchedAddress: coordinates?.displayName || null, lookupQuery: coordinates?.lookupQuery || null, warning: lookupWarning };
   });
   response.json(result);
 }));
 
 app.patch("/api/suppliers/:id/route", auth, allow("admin"), asyncRoute(async (request, response) => {
   const originAddress = String(request.body?.originAddress || "").trim();
+  const mapReference = String(request.body?.mapReference || "").trim();
   if (originAddress.length < 6) return response.status(400).json({ message: "Enter the supplier's complete dispatch address" });
   const state = await store.read();
   const supplier = state.suppliers.find((row) => Number(row.id) === Number(request.params.id));
@@ -1325,7 +1411,7 @@ app.patch("/api/suppliers/:id/route", auth, allow("admin"), asyncRoute(async (re
   if (!state.settings.siteAddress) return response.status(409).json({ message: "Save the receiving-site address first" });
   try {
     const [origin, destination] = await Promise.all([
-      geocodeAddress(originAddress),
+      geocodeAddress(originAddress, mapReference),
       validCoordinates(state.settings.siteCoordinates) ? Promise.resolve({ ...state.settings.siteCoordinates, displayName: state.settings.siteAddress }) : geocodeAddress(state.settings.siteAddress),
     ]);
     const route = await calculateRoute(origin, destination);
@@ -1407,7 +1493,7 @@ app.post("/api/shipment-items/:id/documents", auth, allow("admin", "supplier"), 
 app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production", "warehouse", "supplier", "driver"), asyncRoute(async (request, response) => {
   const state = await store.read();
   const requestedSupplierId = companyScopedRoles.has(request.user.role) ? Number(request.user.supplierId) : Number(request.query.supplierId || 0);
-  const shipments = state.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED" && (!requestedSupplierId || Number(shipment.supplierId) === requestedSupplierId));
+  const shipments = state.shipments.filter((shipment) => canAccessShipment(request.user, shipment) && shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED" && (!requestedSupplierId || Number(shipment.supplierId) === requestedSupplierId));
   const duration = (start, end) => start && end ? Math.max(0, Math.round((Date.parse(end) - Date.parse(start)) / 60000)) : null;
   const average = (values) => {
     const valid = values.filter((value) => Number.isFinite(value));
