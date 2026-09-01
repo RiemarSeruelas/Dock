@@ -10,9 +10,8 @@ On the first run, it creates one administrator using these private `.env` settin
 
 - `BOOTSTRAP_ADMIN_USERNAME`
 - `BOOTSTRAP_ADMIN_PASSWORD`
-- `BOOTSTRAP_ADMIN_EMAIL`
 
-After copying `.env.example` to `.env`, set those three values before starting DockFlow. Use the same username and password on the login screen. Create every other account from **Administration → Accounts**.
+After copying `.env.example` to `.env`, set those two values before starting DockFlow. Use the same username and password on the login screen. The dedicated sender mailbox comes from `SMTP_USER` and is kept internal. Create every other account from **Administration → Accounts**.
 
 ## Before importing an SDS
 
@@ -68,7 +67,9 @@ A delivery code is reserved for every truck. As soon as every material code has 
 
 ## Monitoring and history
 
-**Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan. It uses live road traffic when the protected traffic service is configured and clearly marks the traffic-free fallback otherwise.
+**Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan and disappears at Gate in. DockFlow combines the free OSRM road time with a Manila weekday/weekend and peak-hour estimate; it does not require a paid routing key.
+
+The notification bell is in the top navigation. Opening an alert marks it read, but an action-required count remains until the linked schedule confirmation or reschedule decision is actually completed.
 
 **History** is one total-record view for previous deliveries and rejected proposals. Company users only see their own company. Supplier and driver views keep the useful material, driver, and date filters without the supplier, outcome, or time controls.
 
@@ -119,21 +120,21 @@ Open `http://127.0.0.1:3000`.
 
 ## Test ETA
 
-ETA address lookup and routing require internet access unless the provider URLs point to services hosted on your own network. Live traffic additionally requires a server-configured Google Routes key; the key is never entered in the browser.
+ETA address lookup and routing require internet access unless the provider URLs point to services hosted on your own network. No paid Maps API key is required. The traffic adjustment is a time-of-day estimate rather than live congestion data.
 
 1. Sign in as Administrator and open **Administration → Accounts**.
-2. Save the receiving-site address.
+2. Open **Receiving site**, enter the current administrator password, then save the destination address.
 3. Select the route icon on a supplier account and save its dispatch address.
 4. Confirm a supplier delivery and scan **Trip**.
-5. Open Monitoring. The truck card should show distance, travel minutes, arrival time, and either **Traffic-aware ETA** or **traffic unavailable**.
+5. Open Monitoring. The truck card should show distance, travel minutes, arrival time, and **Estimated traffic ETA**.
 
 ## Test email notifications
 
 1. Open the private `.env` file and set `EMAIL_NOTIFICATIONS_ENABLED=true`.
 2. Set `SMTP_USER` to the dedicated administrator Gmail and `SMTP_APP_PASSWORD` to its Google App Password. Do not use the normal Gmail password.
 3. Restart DockFlow so the API loads the private sender credentials.
-4. Sign in as Administrator and open **Administration → Accounts**.
-5. Select each account, enter the owner’s real email, then send and enter its six-digit verification code.
+4. Planner and Supplier account owners set and verify their own recipient email. Supplier accounts see a persistent verification reminder until this is complete.
+5. Security and Warehouse accounts intentionally have no email field. The System Administrator sender uses `SMTP_USER` internally and does not require recipient verification.
 6. Import a new SDS. Each linked, verified supplier receives only its own proposed deliveries. New proposals show their schedule and material-code details; rescheduled proposals show **Before** and **After** details. File-level SDS summaries and other suppliers’ changes are not included.
 7. Propose an alternative from the supplier account. Verified Planner and Production emails receive the reason and proposed time.
 8. Approve or reject the alternative from the company Schedule page. The verified supplier receives the decision and reason by email, and all linked supplier users receive an in-app notification.

@@ -33,9 +33,8 @@ const TIME_ZONE = process.env.TZ || "Asia/Manila";
 const GEOCODING_API_URL = process.env.GEOCODING_API_URL || "https://nominatim.openstreetmap.org/search";
 const GEOCODING_FALLBACK_API_URL = process.env.GEOCODING_FALLBACK_API_URL || "https://photon.komoot.io/api/";
 const ROUTING_API_URL = process.env.ROUTING_API_URL || "https://router.project-osrm.org/route/v1/driving";
-const GOOGLE_ROUTES_API_URL = process.env.GOOGLE_ROUTES_API_URL || "https://routes.googleapis.com/directions/v2:computeRoutes";
-const GOOGLE_MAPS_API_KEY = String(process.env.GOOGLE_MAPS_API_KEY || "").trim();
-const TRAFFIC_ETA_ENABLED = String(process.env.TRAFFIC_ETA_ENABLED || "true").toLowerCase() === "true";
+const FREE_TRAFFIC_ESTIMATE_ENABLED = String(process.env.FREE_TRAFFIC_ESTIMATE_ENABLED || "true").toLowerCase() === "true";
+const TRAFFIC_ESTIMATE_BUFFER_MINUTES = Math.max(0, Number(process.env.TRAFFIC_ESTIMATE_BUFFER_MINUTES || 3));
 const ETA_USER_AGENT = process.env.ETA_USER_AGENT || "DockFlow/0.1 (configure ETA_USER_AGENT with an administrator contact)";
 const ETA_API_TIMEOUT_MS = Math.max(1000, Number(process.env.ETA_API_TIMEOUT_MS || 10000));
 const LOCATION_ENCRYPTION_SECRET = String(process.env.LOCATION_ENCRYPTION_KEY || "");
@@ -199,47 +198,23 @@ const geocodeAddress = async (address, coordinateReference = "") => {
   }
   throw new Error(`${[...new Set(failures)].join("; ")}. Paste a Google Maps link for a more exact location.`);
 };
-const routeDurationSeconds = (value) => {
-  const seconds = Number.parseFloat(String(value || "").replace(/s$/i, ""));
-  return Number.isFinite(seconds) ? seconds : null;
+const freeTrafficProfile = (departureTime = new Date().toISOString()) => {
+  if (!FREE_TRAFFIC_ESTIMATE_ENABLED) return { multiplier: 1, label: "Traffic estimate disabled" };
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(departureTime));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const minuteOfDay = Number(values.hour || 0) * 60 + Number(values.minute || 0);
+  const weekend = ["Sat", "Sun"].includes(values.weekday);
+  if (weekend) {
+    if (minuteOfDay >= 9 * 60 && minuteOfDay < 20 * 60) return { multiplier: 1.2, label: "Weekend daytime" };
+    return { multiplier: 1.05, label: "Weekend off-peak" };
+  }
+  if (minuteOfDay >= 6 * 60 && minuteOfDay < 9 * 60 + 30) return { multiplier: 1.65, label: "Weekday morning peak" };
+  if (minuteOfDay >= 16 * 60 && minuteOfDay < 20 * 60) return { multiplier: 1.75, label: "Weekday evening peak" };
+  if (minuteOfDay >= 9 * 60 + 30 && minuteOfDay < 16 * 60) return { multiplier: 1.25, label: "Weekday daytime" };
+  if (minuteOfDay >= 20 * 60 && minuteOfDay < 22 * 60) return { multiplier: 1.15, label: "Weekday evening" };
+  return { multiplier: 1.05, label: "Weekday off-peak" };
 };
-const calculateGoogleTrafficRoute = async (origin, destination, departureTime = new Date().toISOString()) => {
-  const response = await fetch(GOOGLE_ROUTES_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-      "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.staticDuration",
-    },
-    body: JSON.stringify({
-      origin: { location: { latLng: { latitude: Number(origin.lat), longitude: Number(origin.lon) } } },
-      destination: { location: { latLng: { latitude: Number(destination.lat), longitude: Number(destination.lon) } } },
-      travelMode: "DRIVE",
-      routingPreference: "TRAFFIC_AWARE",
-      departureTime,
-      computeAlternativeRoutes: false,
-      languageCode: "en-PH",
-      units: "METRIC",
-    }),
-    signal: AbortSignal.timeout(ETA_API_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`Traffic provider returned ${response.status}`);
-  const route = (await response.json())?.routes?.[0];
-  const trafficSeconds = routeDurationSeconds(route?.duration);
-  const staticSeconds = routeDurationSeconds(route?.staticDuration);
-  if (!Number.isFinite(Number(route?.distanceMeters)) || trafficSeconds === null) throw new Error("The traffic provider did not return a usable route");
-  const durationMinutes = Math.max(1, Math.ceil(trafficSeconds / 60));
-  const staticDurationMinutes = staticSeconds === null ? null : Math.max(1, Math.ceil(staticSeconds / 60));
-  return {
-    distanceKm: Math.round(Number(route.distanceMeters) / 100) / 10,
-    durationMinutes,
-    staticDurationMinutes,
-    trafficDelayMinutes: staticDurationMinutes === null ? null : Math.max(0, durationMinutes - staticDurationMinutes),
-    trafficAware: true,
-    provider: "Google Routes · live traffic",
-  };
-};
-const calculateOsrmRoute = async (origin, destination) => {
+const calculateOsrmRoute = async (origin, destination, departureTime = new Date().toISOString()) => {
   const base = ROUTING_API_URL.replace(/\/$/, "");
   const url = new URL(`${base}/${origin.lon},${origin.lat};${destination.lon},${destination.lat}`);
   url.searchParams.set("overview", "false");
@@ -249,15 +224,23 @@ const calculateOsrmRoute = async (origin, destination) => {
   const result = await response.json();
   const route = result?.routes?.[0];
   if (!route || !Number.isFinite(Number(route.distance)) || !Number.isFinite(Number(route.duration))) throw new Error("No drivable route was found between these addresses.");
-  const durationMinutes = Math.max(1, Math.ceil(Number(route.duration) / 60));
-  return { distanceKm: Math.round(Number(route.distance) / 100) / 10, durationMinutes, staticDurationMinutes: durationMinutes, trafficDelayMinutes: null, trafficAware: false, provider: "OpenStreetMap / OSRM · traffic unavailable" };
+  const staticDurationMinutes = Math.max(1, Math.ceil(Number(route.duration) / 60));
+  const profile = freeTrafficProfile(departureTime);
+  const durationMinutes = FREE_TRAFFIC_ESTIMATE_ENABLED
+    ? Math.max(staticDurationMinutes, Math.ceil(staticDurationMinutes * profile.multiplier + TRAFFIC_ESTIMATE_BUFFER_MINUTES))
+    : staticDurationMinutes;
+  return {
+    distanceKm: Math.round(Number(route.distance) / 100) / 10,
+    durationMinutes,
+    staticDurationMinutes,
+    trafficDelayMinutes: Math.max(0, durationMinutes - staticDurationMinutes),
+    trafficAware: false,
+    trafficModel: FREE_TRAFFIC_ESTIMATE_ENABLED ? "TIME_OF_DAY" : "NONE",
+    provider: FREE_TRAFFIC_ESTIMATE_ENABLED ? `OpenStreetMap / OSRM · ${profile.label} estimate` : "OpenStreetMap / OSRM · base route",
+  };
 };
 const calculateRoute = async (origin, destination, departureTime = new Date().toISOString()) => {
-  if (TRAFFIC_ETA_ENABLED && GOOGLE_MAPS_API_KEY) {
-    try { return await calculateGoogleTrafficRoute(origin, destination, departureTime); }
-    catch (error) { console.warn(`[eta] Traffic-aware route failed; using OSRM fallback: ${error.message}`); }
-  }
-  return calculateOsrmRoute(origin, destination);
+  return calculateOsrmRoute(origin, destination, departureTime);
 };
 const applyShipmentEta = (state, shipment, tripAt) => {
   const supplier = state.suppliers.find((row) => Number(row.id) === Number(shipment.supplierId));
@@ -266,8 +249,18 @@ const applyShipmentEta = (state, shipment, tripAt) => {
   shipment.estimatedTravelDistanceKm = Number(supplier?.routeDistanceKm || 0) || null;
   shipment.estimatedTrafficDelayMinutes = Number(supplier?.routeTrafficDelayMinutes || 0) || null;
   shipment.etaTrafficAware = Boolean(supplier?.routeTrafficAware);
+  shipment.etaTrafficModel = supplier?.routeTrafficModel || (supplier?.routeTrafficAware ? "LIVE" : "NONE");
   shipment.etaProvider = supplier?.routeProvider || null;
   shipment.estimatedArrivalAt = travelMinutes ? new Date(Date.parse(tripAt) + travelMinutes * 60000).toISOString() : null;
+};
+const clearShipmentEta = (shipment) => {
+  shipment.estimatedArrivalAt = null;
+  shipment.estimatedTravelMinutes = null;
+  shipment.estimatedTravelDistanceKm = null;
+  shipment.estimatedTrafficDelayMinutes = null;
+  shipment.etaTrafficAware = false;
+  shipment.etaTrafficModel = "NONE";
+  shipment.etaProvider = null;
 };
 const refreshShipmentEta = async (state, shipment, tripAt) => {
   const supplier = state.suppliers.find((row) => Number(row.id) === Number(shipment.supplierId));
@@ -279,6 +272,7 @@ const refreshShipmentEta = async (state, shipment, tripAt) => {
     supplier.routeStaticDurationMinutes = route.staticDurationMinutes;
     supplier.routeTrafficDelayMinutes = route.trafficDelayMinutes;
     supplier.routeTrafficAware = route.trafficAware;
+    supplier.routeTrafficModel = route.trafficModel || (route.trafficAware ? "LIVE" : "NONE");
     supplier.routeCalculatedAt = new Date().toISOString();
     supplier.routeProvider = route.provider;
   } catch (error) {
@@ -339,11 +333,21 @@ const addAudit = (state, actor, action, detail, shipmentNumber) => state.audit.u
   shipmentNumber: shipmentNumber || undefined,
   detail,
 });
-const addNotification = (state, user, { type = "INFO", title, message, shipment }) => {
+const addNotification = (state, user, { type = "INFO", title, message, shipment, requiresAction = false }) => {
   state.notifications ||= [];
-  state.notifications.unshift({ id: nextId(state.notifications), userId: user.id, type, title, message, shipmentId: shipment?.id || null, shipmentNumber: shipment?.shipmentNumber || null, createdAt: new Date().toISOString(), readAt: null });
+  state.notifications.unshift({ id: nextId(state.notifications), userId: user.id, type, title, message, shipmentId: shipment?.id || null, shipmentNumber: shipment?.shipmentNumber || null, createdAt: new Date().toISOString(), readAt: null, requiresAction: Boolean(requiresAction), resolvedAt: null });
 };
-const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: user.email || "", emailVerifiedAt: user.emailVerifiedAt || null, role: user.role, supplierId: user.supplierId ?? null, workArea: normalizeWorkArea(user.workArea) });
+const resolveShipmentNotifications = (state, shipment, userIds = null) => {
+  const allowed = userIds ? new Set(userIds.map(Number)) : null;
+  const resolvedAt = new Date().toISOString();
+  for (const notification of state.notifications || []) {
+    if (Number(notification.shipmentId) !== Number(shipment.id) || !notification.requiresAction || notification.resolvedAt) continue;
+    if (allowed && !allowed.has(Number(notification.userId))) continue;
+    notification.resolvedAt = resolvedAt;
+  }
+};
+const hiddenEmailRoles = new Set(["admin", "security", "warehouse"]);
+const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: hiddenEmailRoles.has(user.role) ? "" : user.email || "", emailVerifiedAt: hiddenEmailRoles.has(user.role) ? null : user.emailVerifiedAt || null, role: user.role, supplierId: user.supplierId ?? null, workArea: normalizeWorkArea(user.workArea) });
 const supplierForClient = (supplier, includeAddress = false) => {
   const output = { ...supplier };
   delete output.originCoordinates;
@@ -411,11 +415,11 @@ const makeItem = (id, data) => ({
 async function createInitialState() {
   const adminUsername = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim().toLowerCase();
   const adminPassword = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "admin123");
-  const adminEmail = String(process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@dockflow.local").trim().toLowerCase();
+  const adminEmail = String(process.env.SMTP_USER || "").trim().toLowerCase();
   return {
     version: 11,
     settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
-    users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, workArea: null, email: adminEmail, emailVerifiedAt: null }],
+    users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, workArea: null, email: adminEmail, emailVerifiedAt: adminEmail ? new Date().toISOString() : null }],
     suppliers: [],
     materials: [],
     shipments: [],
@@ -444,6 +448,20 @@ await store.update(async (state) => {
   state.importBatches = Array.isArray(state.importBatches) ? state.importBatches : [];
   state.users = Array.isArray(state.users) ? state.users : [];
   if (!state.users.length) state.users = (await createInitialState()).users;
+  const bootstrapAdminUsername = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim().toLowerCase();
+  const bootstrapAdminPassword = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "admin123");
+  const bootstrapAdminEmail = String(process.env.SMTP_USER || "").trim().toLowerCase();
+  const systemAdministrator = state.users.find((user) => Number(user.id) === 1 && user.role === "admin") || state.users.find((user) => user.role === "admin");
+  if (systemAdministrator) {
+    systemAdministrator.name = "System Administrator";
+    systemAdministrator.username = bootstrapAdminUsername;
+    systemAdministrator.passwordHash = await bcrypt.hash(bootstrapAdminPassword, 10);
+    systemAdministrator.email = bootstrapAdminEmail;
+    systemAdministrator.emailVerifiedAt = bootstrapAdminEmail ? new Date().toISOString() : null;
+    systemAdministrator.emailVerificationHash = null;
+    systemAdministrator.emailVerificationExpiresAt = null;
+    systemAdministrator.emailVerificationAttempts = 0;
+  }
   let nextUserId = nextId(state.users);
   for (const user of state.users) {
     user.id ||= nextUserId++;
@@ -455,7 +473,7 @@ await store.update(async (state) => {
     user.role = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse"].includes(user.role) ? user.role : "admin";
     if (user.role === "driver" && !user.supplierId) user.supplierId = state.suppliers[0]?.id || 1;
     user.workArea = ["planner", "warehouse"].includes(user.role) ? normalizeWorkArea(user.workArea) : null;
-    user.email = String(user.email || `${user.username}@dockflow.local`).trim().toLowerCase();
+    user.email = hiddenEmailRoles.has(user.role) ? (user.role === "admin" && user === systemAdministrator ? bootstrapAdminEmail : "") : String(user.email || "").trim().toLowerCase();
     user.emailVerifiedAt ||= null;
     user.emailVerificationHash ||= null;
     user.emailVerificationExpiresAt ||= null;
@@ -474,6 +492,11 @@ await store.update(async (state) => {
   // Gmail credentials belong only in the server environment. Remove any sender
   // secret left by an older trial build from JSON storage during startup.
   state.settings.emailNotifications = {};
+  for (const notification of state.notifications) {
+    notification.requiresAction = Boolean(notification.requiresAction);
+    notification.resolvedAt ||= null;
+    notification.readAt ||= null;
+  }
   if (!Array.isArray(state.settings.availableSlots)) state.settings.availableSlots = defaultAvailabilityForDates(state.settings.availableDates || []);
   state.settings.availableSlots = state.settings.availableSlots.filter((slot) => validDate(slot.date) && validTime(slot.startTime) && validTime(slot.endTime) && toMinutes(slot.endTime) > toMinutes(slot.startTime));
   let nextSlotId = nextId(state.settings.availableSlots);
@@ -496,6 +519,7 @@ await store.update(async (state) => {
     supplier.routeStaticDurationMinutes = Number(supplier.routeStaticDurationMinutes || 0) || null;
     supplier.routeTrafficDelayMinutes = Number(supplier.routeTrafficDelayMinutes || 0) || null;
     supplier.routeTrafficAware = Boolean(supplier.routeTrafficAware);
+    supplier.routeTrafficModel = ["LIVE", "TIME_OF_DAY", "NONE"].includes(supplier.routeTrafficModel) ? supplier.routeTrafficModel : supplier.routeTrafficAware ? "LIVE" : /estimate/i.test(String(supplier.routeProvider || "")) ? "TIME_OF_DAY" : "NONE";
     supplier.routeCalculatedAt = supplier.routeCalculatedAt || null;
     supplier.routeProvider = supplier.routeProvider || null;
     supplier.productPresets = Array.isArray(supplier.productPresets) ? supplier.productPresets.map((preset) => { const rawCode = String(preset.materialCode || preset.name || `CODE-${nextPresetId}`).trim().toUpperCase(); return { id: Number(preset.id) || nextPresetId++, materialCode: legacyPresetCodes.get(rawCode) || rawCode, uom: String(preset.uom || "KG"), defaultAmount: Number(preset.defaultAmount || 0) }; }) : [];
@@ -552,6 +576,7 @@ await store.update(async (state) => {
     shipment.estimatedTravelDistanceKm = Number(shipment.estimatedTravelDistanceKm || 0) || null;
     shipment.estimatedTrafficDelayMinutes = Number(shipment.estimatedTrafficDelayMinutes || 0) || null;
     shipment.etaTrafficAware = Boolean(shipment.etaTrafficAware);
+    shipment.etaTrafficModel = ["LIVE", "TIME_OF_DAY", "NONE"].includes(shipment.etaTrafficModel) ? shipment.etaTrafficModel : shipment.etaTrafficAware ? "LIVE" : /estimate/i.test(String(shipment.etaProvider || "")) ? "TIME_OF_DAY" : "NONE";
     shipment.etaProvider ||= null;
     shipment.estimatedArrivalAt ||= null;
     shipment.supplierResponse ||= shipment.bookingStatus === "PENDING_COMPANY" ? "ALTERNATIVE_PROPOSED" : shipment.bookingStatus === "APPROVED" ? "ACCEPTED" : null;
@@ -572,7 +597,8 @@ await store.update(async (state) => {
     shipment.sdsImportIdentity ||= null;
     shipment.sdsImportFingerprint ||= null;
     shipment.scanHistory = Array.isArray(shipment.scanHistory) ? shipment.scanHistory : [];
-    if (shipment.tripAt && !shipment.estimatedArrivalAt) applyShipmentEta(state, shipment, shipment.tripAt);
+    if (shipment.gateInAt) clearShipmentEta(shipment);
+    else if (shipment.tripAt && !shipment.estimatedArrivalAt) applyShipmentEta(state, shipment, shipment.tripAt);
     if (legacyStatus === "RECEIVED" && shipment.completedAt) shipment.status = "GATE_OUT";
     shipment.lastProcessAt ||= shipment.gateOutAt || shipment.receivedAt || shipment.unloadingAt || shipment.gateInAt || shipment.tripAt || null;
   }
@@ -725,9 +751,9 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const visibleSupplierIds = new Set(shipments.map((shipment) => Number(shipment.supplierId)).filter(Number.isFinite));
   const shipmentDates = [...new Set(shipments.map((shipment) => shipment.scheduledDate).filter(validDate))].sort();
   const scopedSuppliers = companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : ["planner", "warehouse"].includes(_request.user.role) && normalizeWorkArea(_request.user.workArea) ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers;
-  const publicSettings = { ...state.settings, availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 2 };
+  const publicSettings = { ...state.settings, siteAddressConfigured: Boolean(state.settings.siteAddress && validCoordinates(state.settings.siteCoordinates)), availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 2 };
   delete publicSettings.siteCoordinates;
-  if (_request.user.role !== "admin") delete publicSettings.siteAddress;
+  delete publicSettings.siteAddress;
   response.json({
     shipments: shipments.map((shipment) => {
       const linked = supplierHasAccount(state, shipment.supplierId);
@@ -800,6 +826,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
     if (!canAccessShipment(request.user, proposal)) return { forbidden: true };
     if (proposal.bookingStatus !== "PENDING_SUPPLIER") return { alreadyResponded: true };
     if (decision === "PROPOSE_ALTERNATIVE") {
+      resolveShipmentNotifications(state, proposal, [request.user.id]);
       const respondedAt = new Date().toISOString();
       proposal.supplierResponse = "ALTERNATIVE_PROPOSED";
       proposal.supplierResponseReason = reason;
@@ -816,7 +843,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
       proposal.companyDecisionBy = null;
       addAudit(state, request.user, "SUPPLIER_ALTERNATIVE_PROPOSED", `${proposal.supplier} proposed ${alternativeDate} at ${alternativeTime}: ${reason}`, proposal.shipmentNumber);
       const companyUsers = state.users.filter((user) => ["admin", "planner"].includes(user.role) && canAccessShipment(user, proposal));
-      companyUsers.forEach((user) => addNotification(state, user, { type: "WARNING", title: "Supplier proposed a schedule change", message: `${proposal.supplier} requested ${alternativeDate} at ${alternativeTime}. Reason: ${reason}`, shipment: proposal }));
+      companyUsers.forEach((user) => addNotification(state, user, { type: "WARNING", title: "Reschedule decision required", message: `${proposal.supplier} requested ${alternativeDate} at ${alternativeTime}. Reason: ${reason}`, shipment: proposal, requiresAction: true }));
       const recipients = companyUsers.filter((user) => user.emailVerifiedAt && user.email).map((user) => user.email);
       return { alternativeProposed: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, scheduledDate: proposal.scheduledDate, scheduledTime: proposal.scheduledTime, scheduledEndTime: proposal.scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, recipients };
     }
@@ -847,6 +874,8 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier"), async
     const remainingItemIds = proposal.items.map((item) => Number(item.id)).filter((id) => !allLoads.some((load) => load.itemIds.includes(id)));
     for (const load of newLoads) addAudit(state, request.user, "SDS_TRUCK_CONFIRMED", `${load.deliveryCode} reserved for ${load.truckPlate} with ${load.itemIds.length} material code(s)`, proposal.shipmentNumber);
     if (remainingItemIds.length) return { partial: true, confirmedLoads: allLoads, remainingMaterialCount: remainingItemIds.length, bookingStatus: proposal.bookingStatus };
+
+    resolveShipmentNotifications(state, proposal, [request.user.id]);
 
     const baseItems = proposal.items.map((item) => ({ ...item }));
     const deliveries = [];
@@ -916,6 +945,8 @@ app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner")
     if (shipment.bookingStatus !== "PENDING_COMPANY" || shipment.supplierResponse !== "ALTERNATIVE_PROPOSED") return { alreadyDecided: true };
     const decidedAt = new Date().toISOString();
     const supplierUsers = state.users.filter((user) => user.role === "supplier" && Number(user.supplierId) === Number(shipment.supplierId));
+    const companyUsers = state.users.filter((user) => ["admin", "planner"].includes(user.role) && canAccessShipment(user, shipment));
+    resolveShipmentNotifications(state, shipment, companyUsers.map((user) => user.id));
 
     shipment.companyDecision = decision === "APPROVE" ? "APPROVED" : "REJECTED";
     shipment.companyDecisionReason = reason || null;
@@ -939,6 +970,7 @@ app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner")
         title: "Proposed schedule approved",
         message: `${shipment.scheduledDate} at ${shipment.scheduledTime} was approved. Confirm the delivery and add the truck and driver details.`,
         shipment,
+        requiresAction: true,
       }));
     } else {
       shipment.bookingStatus = "REJECTED";
@@ -1072,7 +1104,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     const scannedAt = new Date().toISOString();
     shipment.lastProcessAt = scannedAt;
     if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; await refreshShipmentEta(state, shipment, shipment.tripAt); }
-    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; }
+    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; clearShipmentEta(shipment); }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
     if (stage === "RECEIVED") shipment.receivedAt ||= scannedAt;
     if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
@@ -1126,7 +1158,7 @@ app.patch("/api/shipments/:id/status", auth, asyncRoute(async (request, response
     if (request.body.dock !== undefined) shipment.dock = request.body.dock || null;
     const changedAt = new Date().toISOString();
     if (status === "IN_TRANSIT") { shipment.tripAt ||= changedAt; shipment.startedAt ||= changedAt; await refreshShipmentEta(state, shipment, shipment.tripAt); }
-    if (status === "GATE_IN") { shipment.gateInAt ||= changedAt; shipment.arrivalTime ||= changedAt; }
+    if (status === "GATE_IN") { shipment.gateInAt ||= changedAt; shipment.arrivalTime ||= changedAt; clearShipmentEta(shipment); }
     if (status === "UNLOADING") shipment.unloadingAt ||= changedAt;
     if (status === "RECEIVED") shipment.receivedAt ||= changedAt;
     if (status === "GATE_OUT") { shipment.gateOutAt ||= changedAt; shipment.completedAt ||= changedAt; shipment.dock = null; }
@@ -1342,6 +1374,23 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       ...entry,
       recipients: state.users.filter((user) => user.role === "supplier" && user.emailVerifiedAt && Number(user.supplierId) === Number(entry.supplierId)).map((user) => user.email).filter(Boolean),
     }));
+    for (const entry of supplierChanges.values()) {
+      const supplierUsers = state.users.filter((user) => user.role === "supplier" && Number(user.supplierId) === Number(entry.supplierId));
+      for (const change of entry.changes) {
+        const shipment = state.shipments.find((row) => row.shipmentNumber === change.shipmentNumber);
+        if (!shipment) continue;
+        resolveShipmentNotifications(state, shipment, supplierUsers.map((user) => user.id));
+        supplierUsers.forEach((user) => addNotification(state, user, {
+          type: change.kind === "RESCHEDULE" ? "WARNING" : "INFO",
+          title: change.kind === "RESCHEDULE" ? "Delivery schedule changed" : "New delivery schedule",
+          message: change.kind === "RESCHEDULE"
+            ? `${change.before?.date || "Previous date"} ${change.before?.time || ""} → ${change.after?.date || shipment.scheduledDate} ${change.after?.time || shipment.scheduledTime}. Review and reconfirm this delivery.`
+            : `${change.after?.date || shipment.scheduledDate} at ${change.after?.time || shipment.scheduledTime}. Review the material codes and confirm the truck details.`,
+          shipment,
+          requiresAction: true,
+        }));
+      }
+    }
     return { batchId, importedRows, unchangedRows, skippedRows: 0, deliveryCount, createdProposals, updatedProposals, unchangedProposals, notifications };
   });
   if (result.missingAccounts) return response.status(409).json({ message: `Create and link a supplier account before importing: ${result.missingAccounts.join(", ")}` });
@@ -1377,8 +1426,10 @@ app.post("/api/materials", auth, allow("admin"), asyncRoute(async (request, resp
 
 app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response) => {
   const roles = ["admin", "planner", "supplier", "security", "warehouse"];
-  const email = String(request.body?.email || "").trim().toLowerCase();
-  if (!String(request.body?.name || "").trim() || !String(request.body?.username || "").trim() || String(request.body?.password || "").length < 8 || !roles.includes(request.body?.role) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response.status(400).json({ message: "Name, username, email, valid role, and an 8-character password are required" });
+  const role = String(request.body?.role || "");
+  const emailRequired = ["planner", "supplier"].includes(role);
+  const email = emailRequired ? String(request.body?.email || "").trim().toLowerCase() : "";
+  if (!String(request.body?.name || "").trim() || !String(request.body?.username || "").trim() || String(request.body?.password || "").length < 8 || !roles.includes(role) || (emailRequired && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return response.status(400).json({ message: `Name, username, valid role, and an 8-character password are required${emailRequired ? "; Planner and Supplier accounts also require a valid email" : ""}` });
   const workArea = normalizeWorkArea(request.body?.workArea);
   if (["planner", "warehouse"].includes(request.body?.role) && !WORK_AREAS.has(workArea)) return response.status(400).json({ message: "Planner and Warehouse accounts must be assigned to Dressings or Savoury" });
   const passwordHash = await bcrypt.hash(String(request.body.password), 10);
@@ -1408,7 +1459,7 @@ app.patch("/api/admin/email-sender", auth, allow("admin"), (_request, response) 
 });
 
 const mayManageUserEmail = (request, target) => request.user.role === "admin" || Number(request.user.id) === Number(target.id);
-const emailAccountRoles = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse"];
+const emailAccountRoles = ["planner", "production", "supplier", "driver"];
 
 app.patch("/api/users/:id/email", auth, allow(...emailAccountRoles), asyncRoute(async (request, response) => {
   const email = String(request.body?.email || "").trim().toLowerCase();
@@ -1503,7 +1554,21 @@ app.delete("/api/users/:id", auth, allow("admin"), asyncRoute(async (request, re
   response.json(result);
 }));
 
+app.post("/api/settings/site-address/access", auth, allow("admin"), asyncRoute(async (request, response) => {
+  const password = String(request.body?.adminPassword || "");
+  if (!password) return response.status(400).json({ message: "Enter your administrator password" });
+  const state = await store.read();
+  const administrator = state.users.find((user) => Number(user.id) === Number(request.user.id));
+  if (!administrator || !await bcrypt.compare(password, administrator.passwordHash)) return response.status(401).json({ message: "Administrator password is incorrect" });
+  response.json({ siteAddress: state.settings.siteAddress || "", configured: Boolean(state.settings.siteAddress && validCoordinates(state.settings.siteCoordinates)) });
+}));
+
 app.patch("/api/settings/site-address", auth, allow("admin"), etaLimiter, asyncRoute(async (request, response) => {
+  const password = String(request.body?.adminPassword || "");
+  if (!password) return response.status(400).json({ message: "Enter your administrator password" });
+  const accessState = await store.read();
+  const administrator = accessState.users.find((user) => Number(user.id) === Number(request.user.id));
+  if (!administrator || !await bcrypt.compare(password, administrator.passwordHash)) return response.status(401).json({ message: "Administrator password is incorrect" });
   const address = String(request.body?.siteAddress || "").trim();
   const mapReference = String(request.body?.mapReference || "").trim();
   if (address.length < 6) return response.status(400).json({ message: "Enter the complete receiving-site address" });
@@ -1519,6 +1584,7 @@ app.patch("/api/settings/site-address", auth, allow("admin"), etaLimiter, asyncR
       supplier.routeStaticDurationMinutes = null;
       supplier.routeTrafficDelayMinutes = null;
       supplier.routeTrafficAware = false;
+      supplier.routeTrafficModel = "NONE";
       supplier.routeCalculatedAt = null;
       supplier.routeProvider = null;
     }
@@ -1552,13 +1618,14 @@ app.patch("/api/suppliers/:id/route", auth, allow("admin"), etaLimiter, asyncRou
       currentSupplier.routeStaticDurationMinutes = route.staticDurationMinutes;
       currentSupplier.routeTrafficDelayMinutes = route.trafficDelayMinutes;
       currentSupplier.routeTrafficAware = route.trafficAware;
+      currentSupplier.routeTrafficModel = route.trafficModel || "NONE";
       currentSupplier.routeCalculatedAt = new Date().toISOString();
       currentSupplier.routeProvider = route.provider;
       if (!validCoordinates(draft.settings.siteCoordinates)) draft.settings.siteCoordinates = { lat: destination.lat, lon: destination.lon };
-      addAudit(draft, request.user, "SUPPLIER_ETA_UPDATED", `${currentSupplier.name} route estimated at ${route.distanceKm} km / ${route.durationMinutes} minutes${route.trafficAware ? ` with live traffic${route.trafficDelayMinutes ? ` (+${route.trafficDelayMinutes} min)` : ""}` : " without traffic"}`);
+      addAudit(draft, request.user, "SUPPLIER_ETA_UPDATED", `${currentSupplier.name} route estimated at ${route.distanceKm} km / ${route.durationMinutes} minutes${route.trafficModel === "TIME_OF_DAY" ? ` with free time-of-day traffic adjustment${route.trafficDelayMinutes ? ` (+${route.trafficDelayMinutes} min)` : ""}` : " using the base route"}`);
       const publicSupplier = { ...currentSupplier };
       delete publicSupplier.originCoordinates;
-      return { ok: true, supplier: publicSupplier, matchedOrigin: origin.displayName, matchedDestination: destination.displayName, trafficAware: route.trafficAware };
+      return { ok: true, supplier: publicSupplier, matchedOrigin: origin.displayName, matchedDestination: destination.displayName, trafficAware: route.trafficAware, trafficModel: route.trafficModel || "NONE" };
     });
     response.json(result);
   } catch (error) {
@@ -1649,20 +1716,25 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   workbook.creator = "DockFlow";
   workbook.created = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
-  const navy = "0B1E38", blue = "246BFD", paleBlue = "EDF4FF", paleTeal = "EAF8F5", line = "D8E1ED", ink = "17263D", muted = "607089";
+  const navy = "0B1E38", blue = "246BFD", teal = "10A99A", paleBlue = "EDF4FF", paleTeal = "EAF8F5", line = "D8E1ED", ink = "17263D", muted = "607089";
   const thinBorder = { top: { style: "thin", color: { argb: line } }, left: { style: "thin", color: { argb: line } }, bottom: { style: "thin", color: { argb: line } }, right: { style: "thin", color: { argb: line } } };
-  const titleSheet = (sheet, title, subtitle, lastColumn) => {
-    sheet.views = [{ state: "frozen", ySplit: 7, showGridLines: false }];
+  const titleSheet = (sheet, title, subtitle, lastColumn, freezeRow = 7) => {
+    sheet.views = [{ state: "frozen", ySplit: freezeRow, showGridLines: false }];
     sheet.mergeCells(`A1:${lastColumn}1`);
     sheet.getCell("A1").value = title;
     sheet.getCell("A1").font = { name: "Aptos Display", size: 20, bold: true, color: { argb: "FFFFFF" } };
     sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } };
     sheet.getCell("A1").alignment = { vertical: "middle" };
-    sheet.getRow(1).height = 34;
+    sheet.getRow(1).height = 38;
     sheet.mergeCells(`A2:${lastColumn}2`);
     sheet.getCell("A2").value = subtitle;
     sheet.getCell("A2").font = { name: "Aptos", size: 10, color: { argb: muted } };
-    sheet.getRow(2).height = 22;
+    sheet.getCell("A2").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } };
+    sheet.getCell("A2").alignment = { vertical: "middle" };
+    sheet.getRow(2).height = 24;
+    sheet.properties.defaultRowHeight = 20;
+    sheet.headerFooter.oddFooter = "&LDockFlow • Internal operations&CPage &P of &N&RGenerated report";
+    sheet.pageSetup.horizontalCentered = true;
   };
 
   const summary = workbook.addWorksheet("Delivery Report", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
@@ -1675,32 +1747,39 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   kpis.forEach(([label, value], index) => {
     const start = index * 2 + 1;
     summary.mergeCells(4, start, 4, start + 1);
-    const cell = summary.getCell(4, start);
-    cell.value = `${label}\n${value}`;
-    cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: index === 1 ? "08766B" : blue } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: index === 1 ? paleTeal : paleBlue } };
-    cell.alignment = { vertical: "middle", wrapText: true };
-    cell.border = thinBorder;
+    summary.mergeCells(5, start, 5, start + 1);
+    const labelCell = summary.getCell(4, start), valueCell = summary.getCell(5, start);
+    labelCell.value = label;
+    valueCell.value = value;
+    labelCell.font = { name: "Aptos", size: 9, bold: true, color: { argb: muted } };
+    valueCell.font = { name: "Aptos Display", size: 18, bold: true, color: { argb: index === 1 ? "08766B" : navy } };
+    for (const cell of [labelCell, valueCell]) {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: index === 1 ? paleTeal : paleBlue } };
+      cell.alignment = { vertical: "middle", horizontal: "left" };
+      cell.border = thinBorder;
+    }
   });
-  summary.getRow(4).height = 42;
+  summary.getRow(4).height = 24;
+  summary.getRow(5).height = 31;
   const summaryHeader = summary.getRow(7);
   ["Supplier", "Confirmed deliveries", "Gate-out complete", "Trip to gate (min)", "Unload (min)", "Site turnaround (min)"].forEach((value, index) => { summaryHeader.getCell(index + 1).value = value; });
-  summaryHeader.eachCell((cell) => { cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: blue } }; cell.alignment = { vertical: "middle" }; cell.border = thinBorder; });
-  summaryHeader.height = 25;
+  summaryHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.alignment = { vertical: "middle", wrapText: true }; cell.border = thinBorder; });
+  summaryHeader.height = 29;
   summaryRows.forEach((row, index) => {
     const output = summary.addRow([row.supplier, row.approved, row.complete, row.trip, row.unload, row.turnaround]);
-    output.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; if (index % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
+    output.eachCell((cell, column) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", horizontal: column === 1 ? "left" : "center" }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: index % 2 ? "F7F9FC" : "FFFFFF" } }; });
     output.getCell(6).font = { name: "Aptos", size: 10, bold: true, color: { argb: row.turnaround && row.turnaround <= 180 ? "08766B" : "A25A28" } };
+    output.height = 25;
   });
   summary.autoFilter = { from: "A7", to: `F${Math.max(7, summary.rowCount)}` };
 
   const details = workbook.addWorksheet("Deliveries", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
   details.columns = [18, 18, 26, 14, 12, 16, 20, 18, 18, 17, 16].map((width) => ({ width }));
-  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "K");
+  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "K", 4);
   const detailHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)"];
-  const detailHeader = details.getRow(7);
+  const detailHeader = details.getRow(4);
   detailHeaders.forEach((value, index) => { detailHeader.getCell(index + 1).value = value; });
-  detailHeader.eachCell((cell) => { cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
+  detailHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
   detailHeader.height = 28;
   shipments.sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)).forEach((shipment, index) => {
     const output = details.addRow([
@@ -1708,28 +1787,31 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
       shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—",
     ]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 9, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "top", wrapText: true }; if (index % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
+    output.getCell(10).font = { name: "Aptos", size: 9, bold: true, color: { argb: ["GATE_OUT", "RECEIVED"].includes(shipment.status) ? "08766B" : blue } };
     output.height = 28;
   });
   details.getColumn(8).numFmt = "@";
-  details.autoFilter = { from: "A7", to: `K${Math.max(7, details.rowCount)}` };
+  details.autoFilter = { from: "A4", to: `K${Math.max(4, details.rowCount)}` };
 
   const materials = workbook.addWorksheet("Material Codes", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
   materials.columns = [18, 18, 25, 14, 12, 18, 22, 14, 12, 14].map((width) => ({ width }));
-  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "J");
+  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "J", 4);
   const materialHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Material code", "Quantity", "UOM", "Site"];
-  const materialHeader = materials.getRow(7);
+  const materialHeader = materials.getRow(4);
   materialHeaders.forEach((value, index) => { materialHeader.getCell(index + 1).value = value; });
-  materialHeader.eachCell((cell) => { cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
+  materialHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
   materialHeader.height = 28;
   let materialIndex = 0;
   shipments.forEach((shipment) => shipment.items.forEach((item) => {
     const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime, shipment.truckPlate, item.materialCode, Number(item.quantity || 0), item.uom || "—", item.deliverySite || "—"]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; if (materialIndex % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
+    output.getCell(7).font = { name: "Aptos", size: 10, bold: true, color: { argb: blue } };
+    output.height = 25;
     materialIndex += 1;
   }));
   materials.getColumn(7).numFmt = "@";
   materials.getColumn(8).numFmt = "#,##0.00";
-  materials.autoFilter = { from: "A7", to: `J${Math.max(7, materials.rowCount)}` };
+  materials.autoFilter = { from: "A4", to: `J${Math.max(4, materials.rowCount)}` };
 
   const safeName = selectedSupplier.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "all-suppliers";
   response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

@@ -14,7 +14,7 @@ The current package is deliberately configured as a **single-instance trial**:
 - Business data is stored in `data/trial-data.json`.
 - PostgreSQL is disabled by Docker Compose (`DB_ENABLED=false`).
 - Email uses a private SMTP account configured only in `.env`.
-- ETA uses Google Routes traffic data when a protected server key is configured, with OSRM as an explicitly labeled traffic-free fallback.
+- ETA uses free OSRM road routing plus a clearly labeled Manila time-of-day congestion estimate. No paid routing key is required.
 - The browser talks to the Next.js server, which proxies `/api/*` to the Express API. The API container is not published directly by Docker Compose.
 
 The most important scheduling rule is now:
@@ -56,7 +56,7 @@ flowchart TB
 
 | Role | Main screens | Data scope | Write actions |
 |---|---|---|---|
-| Administrator | Overview, Monitoring, Schedule, Scan, History, Reports, Administration | All suppliers | Import SDS, review alternatives, manage accounts/catalogs/routes, all scan stations |
+| Administrator | Overview, Monitoring, Schedule, Scan, History, Reports, Administration | All suppliers | Import SDS, review alternatives, manage accounts/locations/routes, all scan stations |
 | Planner | Overview, Monitoring, Schedule, History, Reports | All suppliers | Import SDS, resolve import conflicts, review supplier alternatives |
 | Production | Overview, Monitoring, Schedule, History, Reports | All suppliers | Review supplier alternative schedules; cannot upload schedules or edit availability |
 | Supplier | Schedule, My entries, Scan, History, Reports | Its linked supplier only | Accept schedule, propose alternative, confirm truck loads, scan Trip, verify own email |
@@ -73,20 +73,22 @@ Authorization is enforced twice:
 
 ### 4.1 Accounts and supplier ownership
 
-- Administrator creates accounts with name, username, email, role, and an eight-character minimum password.
+- Administrator creates accounts with name, username, role, and an eight-character minimum password. Email is required only for Planner and Supplier accounts.
 - A supplier account creates or links its own supplier company; the form does not ask for a redundant supplier-company selection.
 - A driver must be linked to an existing supplier company.
 - One active supplier account is allowed per supplier company.
 - Deleting an account requires the current administrator’s password.
 - Account deletion revokes refresh tokens and keeps supplier/delivery/history records.
 - Suppliers and drivers receive only their own supplier’s shipments in `/api/bootstrap`.
+- The System Administrator username and password are reapplied from `BOOTSTRAP_ADMIN_USERNAME` and `BOOTSTRAP_ADMIN_PASSWORD` whenever the API starts.
 
 ### 4.2 Email verification
 
-- The sender mailbox and Google App Password are server-side `.env` values.
+- The sender mailbox and Google App Password are server-side `.env` values. The primary System Administrator uses this sender internally and does not require recipient verification.
 - An administrator or the account owner can set the recipient email.
 - A six-digit verification code is hashed before storage, expires after ten minutes, and permits five incorrect attempts.
 - Only verified recipients are used for operational emails.
+- Security and Warehouse accounts do not store or expose email addresses.
 - SMTP credentials are never returned by the API, saved to JSON, or displayed in the browser.
 
 ### 4.3 SDS import and comparison
@@ -125,6 +127,7 @@ Supplier response behavior:
 - Approval replaces the schedule with the alternative and returns the proposal to the supplier for truck/driver confirmation.
 - Rejection marks the proposal rejected and preserves the reason in History.
 - The supplier receives an in-app notification immediately in the JSON state and sees it on the next data poll (maximum normal delay: about 30 seconds).
+- Notifications live in the top navigation. Informational unread alerts clear when read; action-required badges remain active until the linked supplier/company workflow is resolved.
 - The system also attempts an email to every verified supplier account linked to that company.
 
 ### 4.5 Truck and material confirmation
@@ -153,7 +156,7 @@ Supplier response behavior:
 |---|---|---|---|
 | Booking | `BOOKED` | Supplier confirmation | QR becomes available |
 | Trip | `IN_TRANSIT` | Supplier or Administrator | Records Trip timestamp and calculates ETA |
-| Gate in | `GATE_IN` | Security or Administrator | Records site arrival |
+| Gate in | `GATE_IN` | Security or Administrator | Records site arrival and clears the travel ETA |
 | Unloading | `UNLOADING` | Warehouse or Administrator | Starts unloading duration |
 | Received | `RECEIVED` | Warehouse or Administrator | Records receiving completion |
 | Gate out | `GATE_OUT` | Security or Administrator | Records exit and total site time |
@@ -164,9 +167,10 @@ The API rejects skipped stages, wrong-role scans, another supplier’s shipment,
 
 - Administrator saves the receiving-site address and each supplier’s dispatch address.
 - Nominatim/Photon converts addresses to coordinates, or an administrator can provide an exact Maps coordinate link.
-- Google Routes calculates traffic-aware driving duration when its server-only key is configured. If that provider is unavailable, OSRM supplies a traffic-free fallback and the UI labels it accordingly.
+- OSRM calculates base road distance and duration. DockFlow applies a configurable Manila weekday/weekend and peak-hour multiplier plus a small buffer. This models likely congestion but is not live traffic.
 - The route is saved per supplier.
-- Trip scan refreshes the route, adds its duration to the scan timestamp, and displays arrival, distance, provider state, and any traffic delay in Monitoring.
+- Trip scan refreshes the route for the actual scan time, adds the adjusted duration to the timestamp, and displays arrival, distance, and estimated congestion delay in Monitoring.
+- The ETA is shown only while the truck is in transit and is removed at Gate in without shifting the rest of the monitoring-card layout.
 - Exact coordinates are removed from API bootstrap responses. Non-administrators do not receive supplier/site addresses.
 - With `LOCATION_ENCRYPTION_KEY` configured, addresses and coordinates are AES-256-GCM encrypted in the JSON file.
 - All displayed operational timestamps use Asia/Manila.
@@ -187,7 +191,7 @@ The API rejects skipped stages, wrong-role scans, another supplier’s shipment,
 | Area | Current implementation | What it means |
 |---|---|---|
 | Security | JWT access tokens, rotating refresh tokens, hashed passwords, role checks, supplier scoping, Helmet, CORS, rate limits | Common unauthenticated and cross-role access attempts are rejected server-side |
-| Privacy | Supplier-safe response mapping; server-only SMTP/Maps secrets; encrypted stored locations; refresh tokens stored as SHA-256 hashes | Supplier users do not receive descriptions/internal import metadata, exact coordinates, or reusable secrets |
+| Privacy | Supplier-safe response mapping; server-only SMTP secrets; encrypted stored locations; refresh tokens stored as SHA-256 hashes | Supplier users do not receive descriptions/internal import metadata, exact coordinates, or reusable secrets |
 | Reliability | Queued JSON writes and atomic rename; idempotent import comparison; duplicate material/truck checks | Concurrent updates in one API process do not overwrite one another; repeated imports do not spam records |
 | Performance | Static Next.js production build; compact bootstrap; 30-second notification polling; session-level DB log summaries | Appropriate for a small single-instance trial, not yet a high-volume platform |
 | Usability | Responsive desktop/mobile CSS, full-page modals, role-specific navigation, light/dark modes | Core tasks work on desktop and mobile-sized screens |
@@ -246,7 +250,7 @@ Rate limiting is an in-process memory control. Multiple API replicas would each 
 | `users` | Login identity, bcrypt hash, role, supplier link, verified email state |
 | `suppliers` | Supplier company, vendor code, allowed material codes, ETA route |
 | `shipments` | Proposal/booking, schedule, truck/driver, statuses, scan timestamps, items |
-| `notifications` | Per-user in-app alerts with read timestamp and shipment link |
+| `notifications` | Per-user topbar alerts with read state, action-required state, resolution timestamp, and shipment link |
 | `importBatches` | Import totals and email-delivery summary |
 | `audit` | Business actions such as import, response, decision, confirmation, scan |
 | `settings` | Site information, two-dock setting, schedule windows, delivery-code sequence |
@@ -293,9 +297,10 @@ PostgreSQL is **not** the business-data store in this build. Deliveries, users, 
 | `PATCH /api/shipments/:id/status` | Restricted roles | Compatibility/manual status update |
 | `GET /api/shipments/:id/qr.svg` | Authorized shipment viewer | Protected QR image |
 | `GET /api/shipments/:id/booking.pdf` | Authorized shipment viewer | Protected booking receipt |
-| `PATCH /api/settings/site-address` | Administrator | Geocode receiving address |
+| `POST /api/settings/site-address/access` | Administrator + password | Unlock protected receiving-site details |
+| `PATCH /api/settings/site-address` | Administrator + password | Geocode and update the receiving address |
 | `PATCH /api/suppliers/:id/route` | Administrator | Geocode supplier and calculate route |
-| `PATCH /api/suppliers/:id/presets` | Administrator | Save allowed material-code catalog |
+| `PATCH /api/suppliers/:id/presets` | Administrator | Legacy material-code catalog API; current UI is SDS-driven |
 | `POST /api/users` | Administrator | Create account |
 | `DELETE /api/users/:id` | Administrator + password | Delete account, retain records |
 | `PATCH /api/users/:id/email` | Admin or same account | Set unverified email |
@@ -343,16 +348,15 @@ MAIL_FROM=
 GEOCODING_API_URL=https://nominatim.openstreetmap.org/search
 GEOCODING_FALLBACK_API_URL=https://photon.komoot.io/api/
 ROUTING_API_URL=https://router.project-osrm.org/route/v1/driving
-TRAFFIC_ETA_ENABLED=true
-GOOGLE_ROUTES_API_URL=https://routes.googleapis.com/directions/v2:computeRoutes
-GOOGLE_MAPS_API_KEY=<server-only Google Routes key>
+FREE_TRAFFIC_ESTIMATE_ENABLED=true
+TRAFFIC_ESTIMATE_BUFFER_MINUTES=3
 ETA_USER_AGENT=DockFlow/0.1 (operations-contact@example.com)
 ETA_API_TIMEOUT_MS=10000
 ETA_RATE_LIMIT_WINDOW_MS=900000
 ETA_RATE_LIMIT_MAX=30
 ```
 
-Enable the Google Routes API for the key, restrict it to that API, and restrict server use to the DigitalOcean egress IP where possible. Do not expose the key through a `NEXT_PUBLIC_` variable. Public ETA and Gmail require outbound internet. For an offline site, point these variables to internal providers or accept that those two functions are unavailable.
+No paid Maps key is required. Public geocoding/routing and Gmail still require outbound internet. For production volume, self-host OSRM and a geocoder or use providers whose service terms match the expected traffic. The time-of-day multiplier is an operational estimate and should be tuned with actual DockFlow trip history.
 
 ## 10. Deployment
 
@@ -422,7 +426,7 @@ It currently verifies:
 
 Manual acceptance demo:
 
-1. Sign in as Administrator and confirm the supplier account email is verified.
+1. Sign in as Administrator using the environment-controlled account and confirm the supplier account email is verified.
 2. Import a small SDS with one known supplier and one material code.
 3. Sign in as that Supplier and propose a different time with a reason.
 4. Sign in as Production or Planner. Open Schedule → Alternative schedules to review.
@@ -442,13 +446,13 @@ Security smoke tests should verify HTTP 401 without a bearer token, HTTP 403 for
 3. **Notifications use polling.** The UI refreshes state every 30 seconds. Use WebSocket or Server-Sent Events if sub-second push is required.
 4. **Rate limits are per API process.** Use a shared Redis-backed limiter behind multiple replicas.
 5. **Email delivery is best effort.** Business state is committed even if SMTP fails. A durable job/outbox queue with retry and admin delivery status is recommended.
-6. **Traffic ETA depends on Google Routes.** Without a valid key or network access, the app intentionally falls back to OSRM and labels the result traffic unavailable. Provider estimates are operational guidance, not a guaranteed arrival SLA.
+6. **Traffic is estimated, not live.** OSRM returns the fastest-route duration, and DockFlow applies Manila time-of-day multipliers. Calibrate those multipliers from real Trip-to-Gate history before treating the ETA as an operational SLA.
 7. **No MFA or password reset.** Add MFA, password rotation/reset, account lockout policy, and privileged-action reauthentication for production.
 8. **No formal malware scanning.** Uploaded DN/COA files are allowlisted by MIME and size but should be scanned and stored in private object storage.
 9. **No formal accessibility or penetration audit.** Automated tests prove expected application behavior, not the absence of every vulnerability.
 10. **Availability/manual schedule endpoints are legacy.** Remove them after confirming no external consumer depends on them.
-11. **Trial credentials are seeded.** Change or remove every default account before exposure outside a controlled environment.
-12. **Use HTTPS.** Set secure cookies and terminate TLS at a trusted reverse proxy before an internet deployment such as DigitalOcean. Store the Maps key and location-encryption key as deployment secrets, never in the image or repository.
+11. **The trial store starts clean.** Configure a strong System Administrator username/password in the environment before first startup; no supplier or delivery trial records are seeded.
+12. **Use HTTPS.** Set secure cookies and terminate TLS at a trusted reverse proxy before an internet deployment such as DigitalOcean. Store the location-encryption key as a deployment secret, never in the image or repository.
 
 ## 13. Short explanation for a senior review
 

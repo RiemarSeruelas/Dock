@@ -120,6 +120,7 @@ export interface Shipment {
   estimatedTravelDistanceKm?: number | null;
   estimatedTrafficDelayMinutes?: number | null;
   etaTrafficAware?: boolean;
+  etaTrafficModel?: "LIVE" | "TIME_OF_DAY" | "NONE";
   etaProvider?: string | null;
   rejectionReason?: string | null;
   supplierResponse?: "ACCEPTED" | "ALTERNATIVE_PROPOSED" | null;
@@ -180,6 +181,7 @@ export interface SupplierAccount {
   routeStaticDurationMinutes?: number | null;
   routeTrafficDelayMinutes?: number | null;
   routeTrafficAware?: boolean;
+  routeTrafficModel?: "LIVE" | "TIME_OF_DAY" | "NONE";
   routeCalculatedAt?: string | null;
   routeProvider?: string | null;
 }
@@ -213,6 +215,8 @@ export interface AppNotification {
   shipmentNumber?: string | null;
   createdAt: string;
   readAt?: string | null;
+  requiresAction?: boolean;
+  resolvedAt?: string | null;
 }
 
 export interface AppData {
@@ -244,6 +248,7 @@ export interface AppData {
     graceMinutes: number;
     siteName: string;
     siteAddress?: string;
+    siteAddressConfigured?: boolean;
     siteCoordinates?: { lat: number; lon: number } | null;
     emailNotifications?: { senderEmail: string; configured: boolean; configuredAt?: string | null };
     availableDates: string[];

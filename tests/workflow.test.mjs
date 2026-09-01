@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { spawn } from "node:child_process";
@@ -94,16 +94,16 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const warehouse = await login("warehouse", "warehouse123");
 
   assert.equal((await call("/api/admin/email-sender", { token: admin.token, method: "PATCH", body: { email: "attacker@example.com", appPassword: "do-not-store-this" } })).response.status, 410);
-  const placeholderRecipient = await call(`/api/users/${admin.user.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
-  assert.equal(placeholderRecipient.response.status, 409);
-  assert.match(placeholderRecipient.result.message, /trial placeholder/i);
-  for (const account of [supplier.user, planner.user, admin.user, security.user, warehouse.user]) {
+  assert.equal(admin.user.email, "");
+  assert.equal(security.user.email, "");
+  assert.equal(warehouse.user.email, "");
+  for (const [account, accountToken] of [[supplier.user, supplier.token], [planner.user, planner.token]]) {
     const accountEmail = `${account.username}.dockflow.test@gmail.com`;
-    assert.equal((await call(`/api/users/${account.id}/email`, { token: admin.token, method: "PATCH", body: { email: accountEmail } })).response.status, 200);
-    const sent = await call(`/api/users/${account.id}/email/send-code`, { token: admin.token, method: "POST", body: {} });
+    assert.equal((await call(`/api/users/${account.id}/email`, { token: accountToken, method: "PATCH", body: { email: accountEmail } })).response.status, 200);
+    const sent = await call(`/api/users/${account.id}/email/send-code`, { token: accountToken, method: "POST", body: {} });
     assert.equal(sent.response.status, 200);
     assert.match(sent.result.testCode, /^\d{6}$/);
-    assert.equal((await call(`/api/users/${account.id}/email/verify`, { token: admin.token, method: "POST", body: { code: sent.result.testCode } })).response.status, 200);
+    assert.equal((await call(`/api/users/${account.id}/email/verify`, { token: accountToken, method: "POST", body: { code: sent.result.testCode } })).response.status, 200);
   }
 
   assert.equal((await call("/api/rds", { token: supplier.token, method: "POST", body: {} })).response.status, 410);
@@ -182,6 +182,14 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(proposal.items.find((item) => item.materialCode === "SDS-1001").quantity, 550);
   assert.equal((await call(`/api/shipments/${proposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
 
+  const pendingScheduleNotification = supplierAfterImport.result.notifications.find((notification) => notification.shipmentId === proposal.id && notification.requiresAction && !notification.resolvedAt);
+  assert.ok(pendingScheduleNotification, "The supplier must keep an active notification until the imported schedule is resolved");
+  assert.equal((await call(`/api/notifications/${pendingScheduleNotification.id}/read`, { token: supplier.token, method: "PATCH" })).response.status, 200);
+  const readButUnresolved = await call("/api/bootstrap", { token: supplier.token });
+  const readNotification = readButUnresolved.result.notifications.find((notification) => notification.id === pendingScheduleNotification.id);
+  assert.ok(readNotification.readAt);
+  assert.equal(readNotification.resolvedAt, null, "Opening an actionable notification must not clear its badge");
+
   const incompleteAlternative = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", itemIds: proposal.items.map((item) => item.id) }] } });
   assert.equal(incompleteAlternative.response.status, 400);
 
@@ -203,6 +211,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(partialProposal.bookingStatus, "PENDING_SUPPLIER");
   assert.equal(partialProposal.status, "PROPOSED");
   assert.equal(partialProposal.items.filter((item) => item.supplierApprovedAt).length, 1);
+  assert.equal(partialBootstrap.result.notifications.find((notification) => notification.id === pendingScheduleNotification.id).resolvedAt, null);
 
   const secondTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
     decision: "ACCEPT",
@@ -213,6 +222,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(secondTruckResponse.result.partial, false);
   assert.equal(secondTruckResponse.result.deliveries.length, 2);
   assert.ok(secondTruckResponse.result.deliveries.every((delivery) => /^DLV-/.test(delivery.deliveryCode)));
+  const supplierAfterConfirmation = await call("/api/bootstrap", { token: supplier.token });
+  assert.ok(supplierAfterConfirmation.result.notifications.find((notification) => notification.id === pendingScheduleNotification.id).resolvedAt);
 
   const plannerQueue = await call("/api/bootstrap", { token: planner.token });
   assert.ok(plannerQueue.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item))));
@@ -236,19 +247,25 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(pdf.result.subarray(0, 4).toString(), "%PDF");
   assert.equal((pdf.result.toString("latin1").match(/\/Type\s*\/Page\b/g) || []).length, 1);
 
-  const siteRoute = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Mock receiving site, Cavite" } });
+  const siteAccess = await call("/api/settings/site-address/access", { token: admin.token, method: "POST", body: { adminPassword: "admin123" } });
+  assert.equal(siteAccess.response.status, 200);
+  assert.equal((await call("/api/settings/site-address/access", { token: admin.token, method: "POST", body: { adminPassword: "wrong-password" } })).response.status, 401);
+  const siteRoute = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Mock receiving site, Cavite", adminPassword: "admin123" } });
   assert.equal(siteRoute.response.status, 200);
-  const unresolvedSite = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Unfindable private receiving building" } });
+  const unresolvedSite = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Unfindable private receiving building", adminPassword: "admin123" } });
   assert.equal(unresolvedSite.response.status, 200);
   assert.equal(unresolvedSite.result.geocoded, false);
   assert.equal(unresolvedSite.result.siteAddress, "Unfindable private receiving building");
-  const coordinateSite = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Exact private Google Maps place", mapReference: "14.3000, 120.9000" } });
+  const coordinateSite = await call("/api/settings/site-address", { token: admin.token, method: "PATCH", body: { siteAddress: "Exact private Google Maps place", mapReference: "14.3000, 120.9000", adminPassword: "admin123" } });
   assert.equal(coordinateSite.response.status, 200);
   assert.equal(coordinateSite.result.geocoded, true);
   const supplierRoute = await call(`/api/suppliers/${supplier.user.supplierId}/route`, { token: admin.token, method: "PATCH", body: { originAddress: "Mock supplier origin, Manila" } });
   assert.equal(supplierRoute.response.status, 200);
   assert.equal(supplierRoute.result.supplier.routeDistanceKm, 12.3);
-  assert.equal(supplierRoute.result.supplier.routeDurationMinutes, 42);
+  assert.equal(supplierRoute.result.supplier.routeStaticDurationMinutes, 42);
+  assert.ok(supplierRoute.result.supplier.routeDurationMinutes > 42);
+  assert.equal(supplierRoute.result.supplier.routeTrafficDelayMinutes, supplierRoute.result.supplier.routeDurationMinutes - 42);
+  assert.equal(supplierRoute.result.trafficModel, "TIME_OF_DAY");
 
   const rejectionWorkbook = new ExcelJS.Workbook();
   const rejectionSheet = rejectionWorkbook.addWorksheet("SDS Schedule");
@@ -266,13 +283,17 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(rejectedResponse.result.notification.status, "SENT");
   const companyReview = await call("/api/bootstrap", { token: planner.token });
   assert.equal(companyReview.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "PENDING_COMPANY");
-  assert.ok(companyReview.result.notifications.some((notification) => notification.shipmentId === rejectionProposal.id && notification.type === "WARNING"));
+  const plannerDecisionNotification = companyReview.result.notifications.find((notification) => notification.shipmentId === rejectionProposal.id && notification.type === "WARNING" && notification.requiresAction);
+  assert.ok(plannerDecisionNotification);
+  assert.equal(plannerDecisionNotification.resolvedAt, null);
   const companyReject = await call(`/api/shipments/${rejectionProposal.id}/company-decision`, { token: planner.token, method: "PATCH", body: { decision: "REJECT", reason: "Receiving capacity is full" } });
   assert.equal(companyReject.response.status, 200);
   assert.equal(companyReject.result.notification.status, "NOT_SENT");
   const afterReject = await call("/api/bootstrap", { token: admin.token });
   assert.equal(afterReject.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "REJECTED");
   assert.equal(afterReject.result.audit.find((entry) => entry.shipmentNumber === rejectionProposal.shipmentNumber).action, "COMPANY_ALTERNATIVE_REJECTED");
+  const plannerAfterReject = await call("/api/bootstrap", { token: planner.token });
+  assert.ok(plannerAfterReject.result.notifications.find((notification) => notification.id === plannerDecisionNotification.id).resolvedAt);
   const supplierAfterCompanyReject = await call("/api/bootstrap", { token: supplier.token });
   assert.ok(supplierAfterCompanyReject.result.notifications.some((notification) => notification.shipmentId === rejectionProposal.id && notification.type === "ERROR"));
   assert.equal((await call(`/api/shipments/${rejectionProposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
@@ -293,9 +314,14 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage } });
   const tripScan = await scan(supplier.token, "TRIP");
   assert.equal(tripScan.result.shipment.status, "IN_TRANSIT");
-  assert.equal(tripScan.result.shipment.estimatedTravelMinutes, 42);
+  assert.equal(tripScan.result.shipment.estimatedTravelMinutes, supplierRoute.result.supplier.routeDurationMinutes);
+  assert.ok(tripScan.result.shipment.estimatedTravelMinutes > 42);
+  assert.equal(tripScan.result.shipment.etaTrafficModel, "TIME_OF_DAY");
   assert.ok(tripScan.result.shipment.estimatedArrivalAt);
-  assert.equal((await scan(security.token, "GATE")).result.shipment.status, "GATE_IN");
+  const gateInScan = await scan(security.token, "GATE");
+  assert.equal(gateInScan.result.shipment.status, "GATE_IN");
+  assert.equal(gateInScan.result.shipment.estimatedArrivalAt, null);
+  assert.equal(gateInScan.result.shipment.estimatedTravelMinutes, null);
   const unloadingScan = await scan(warehouse.token, "UNLOADING");
   assert.equal(unloadingScan.result.shipment.status, "UNLOADING");
   assert.match(unloadingScan.result.shipment.dock, /^Dock [12]$/);
@@ -311,10 +337,11 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   const report = await call("/api/reports/export.xlsx?supplierId=1", { token: admin.token });
   assert.equal(report.response.status, 200);
+  if (process.env.DOCKFLOW_REPORT_ARTIFACT) await writeFile(process.env.DOCKFLOW_REPORT_ARTIFACT, report.result);
   const reportWorkbook = new ExcelJS.Workbook();
   await reportWorkbook.xlsx.load(report.result);
-  assert.equal(reportWorkbook.getWorksheet("Deliveries").getCell("I7").value, "Delivery code");
-  assert.equal(reportWorkbook.getWorksheet("Material Codes").getCell("G7").value, "Material code");
+  assert.equal(reportWorkbook.getWorksheet("Deliveries").getCell("I4").value, "Delivery code");
+  assert.equal(reportWorkbook.getWorksheet("Material Codes").getCell("G4").value, "Material code");
   assert.ok(reportWorkbook.getWorksheet("Material Codes").getColumn("G").values.some((value) => /SDS-/.test(String(value || ""))));
 
   const missingEmail = await call("/api/users", { token: admin.token, method: "POST", body: { name: "No Email", username: "noemail", password: "password123", role: "supplier", supplierName: "No Email Supplier" } });
