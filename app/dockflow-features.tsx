@@ -302,6 +302,13 @@ export function MonitoringPage({ data, theme, onOpenShipment }: { data: AppData;
   const fullscreenRef = useRef<HTMLDivElement>(null);
   useEffect(() => { const changed = () => { if (!document.fullscreenElement) setFullscreen(false); }; document.addEventListener("fullscreenchange", changed); return () => document.removeEventListener("fullscreenchange", changed); }, []);
   const enterFullscreen = async () => { setFullscreen(true); await fullscreenRef.current?.requestFullscreen?.().catch(() => undefined); }, exitFullscreen = async () => { if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined); setFullscreen(false); };
+  const openMonitoringEntry = async (shipment: Shipment) => {
+    // A modal mounted outside the browser's fullscreen element cannot be shown.
+    // Leave fullscreen first, then open the delivery details normally.
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
+    setFullscreen(false);
+    onOpenShipment(shipment);
+  };
   const active = useMemo(() => data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && !["GATE_OUT", "REJECTED"].includes(shipment.status)), [data.shipments]);
   const rows = useMemo(() => active.filter((shipment) => !dateFilter || (shipment.scheduledDate >= rangeStart && shipment.scheduledDate <= rangeEnd)).filter((shipment) => status === "ALL" || shipment.status === status).filter((shipment) => `${shipment.shipmentNumber} ${shipment.bookingReceipt} ${shipment.supplier} ${shipment.truckPlate} ${shipment.driverName} ${shipment.driverPhone} ${shipment.items.map((item) => item.materialCode).join(" ")}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => { if (!dateFilter) { const group = (value: string) => value === localDate() ? 0 : value > localDate() ? 1 : 2; const difference = group(a.scheduledDate) - group(b.scheduledDate); if (difference) return difference; } const dateDifference = a.scheduledDate.localeCompare(b.scheduledDate); if (dateDifference) return dateDifference; const rankDifference = processRank[b.status] - processRank[a.status]; return rankDifference || a.scheduledTime.localeCompare(b.scheduledTime); }), [active, dateFilter, rangeStart, rangeEnd, status, query]);
   return <div ref={fullscreenRef} className={`page-stack monitoring-page tv-${theme} ${fullscreen ? "tv-mode" : ""}`}>
@@ -326,7 +333,7 @@ export function MonitoringPage({ data, theme, onOpenShipment }: { data: AppData;
             : " · estimated traffic"
           : " · base road time";
         const showEta = shipment.status === "IN_TRANSIT" && Boolean(shipment.tripAt && shipment.estimatedTravelMinutes);
-        return <button className={`monitor-delivery-card monitor-tone-${STATUS_META[shipment.status].color}`} key={shipment.id} onClick={() => !fullscreen && onOpenShipment(shipment)}>
+        return <button className={`monitor-delivery-card monitor-tone-${STATUS_META[shipment.status].color}`} key={shipment.id} onClick={() => void openMonitoringEntry(shipment)}>
           <span className="monitor-card-head">
             <span><small>{formatDate(shipment.scheduledDate)}</small><b>{shipment.scheduledTime}</b></span>
             <span className="monitor-card-meta">

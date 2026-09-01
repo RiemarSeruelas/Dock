@@ -519,9 +519,9 @@ dt { color: var(--muted); font-size: 8px; } dd { margin: 4px 0 0; font-size: 10p
 .monitor-tv-clock.live-clock > svg { grid-row: 1 / span 2; width: 28px; height: 28px; margin-top: 11px; color: #55d7c4; }
 .monitor-tv-clock.live-clock b { color:var(--tv-ink); font-size: clamp(54px,5.5vw,88px); font-weight: 780; font-variant-numeric: tabular-nums; line-height: .88; letter-spacing: -.045em; text-shadow:0 5px 24px rgba(25,48,76,.12); }
 .monitor-tv-clock.live-clock small { margin-top: 12px; color: var(--tv-muted); font-size: 11px; font-weight: 800; letter-spacing: .17em; text-align: center; }
-.monitoring-page.tv-mode .monitoring-panel { min-height: calc(100vh - 140px); overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.monitoring-page.tv-mode .monitor-grid { min-height:calc(100vh - 140px); grid-template-columns:repeat(auto-fill,minmax(320px,350px)); grid-auto-rows:420px; justify-content:start; align-content:start; align-items:start; gap:12px; padding:0; border:0; background:transparent; box-shadow:none; }
-.monitoring-page.tv-mode .monitor-delivery-card { position:relative; width:100%; height:420px; min-height:0; overflow:hidden; align-content:start; gap:9px; padding:14px 15px 13px; border:0; border-radius:15px; color:var(--tv-ink); background:var(--tv-card); box-shadow:var(--tv-shadow); cursor:default; }
+.monitoring-page.tv-mode .monitoring-panel { min-height:0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.monitoring-page.tv-mode .monitor-grid { min-height:0; grid-template-columns:repeat(auto-fill,minmax(320px,350px)); grid-auto-rows:max-content; justify-content:start; align-content:start; align-items:start; gap:12px; padding:0; border:0; background:transparent; box-shadow:none; }
+.monitoring-page.tv-mode .monitor-delivery-card { position:relative; width:100%; height:auto; min-height:0; overflow:hidden; align-content:start; align-self:start; gap:9px; padding:14px 15px 13px; border:0; border-radius:15px; color:var(--tv-ink); background:var(--tv-card); box-shadow:var(--tv-shadow); cursor:pointer; }
 .monitoring-page.tv-mode .monitor-delivery-card::before { content: ""; position: absolute; top: 0; right: 0; left: 0; height: 5px; background: var(--monitor-accent); }
 .monitoring-page.tv-mode .monitor-card-head small,.monitoring-page.tv-mode .monitor-card-shipment small,.monitoring-page.tv-mode .monitor-card-facts small,.monitoring-page.tv-mode .monitor-card-material small { color: var(--tv-muted); }
 .monitoring-page.tv-mode .monitor-card-head > span:first-child b { color:var(--tv-ink); font-size:25px; line-height:1; }
@@ -554,7 +554,7 @@ dt { color: var(--muted); font-size: 8px; } dd { margin: 4px 0 0; font-size: 10p
 @media (max-width: 1000px) {
   .monitor-tv-header { grid-template-columns: minmax(180px,1fr) auto auto; gap: 16px; }
   .monitoring-page.tv-mode .monitor-grid { grid-template-columns:repeat(auto-fill,minmax(300px,350px)); grid-auto-rows:auto; }
-  .monitoring-page.tv-mode .monitor-delivery-card { height:auto; min-height:420px; }
+  .monitoring-page.tv-mode .monitor-delivery-card { height:auto; min-height:0; }
 }
 
 .excel-modal { width: min(100%, 1080px); }
@@ -1092,7 +1092,7 @@ td small { font-size: 11px; }
 .monitor-eta-top > span { min-width:0; display:flex; flex-direction:column; gap:1px; }.monitor-eta-top small { color:inherit; font-size:6px; font-weight:850; text-transform:uppercase; }.monitor-eta-top b { overflow:hidden; max-width:205px; font-size:7px; text-overflow:ellipsis; white-space:nowrap; }
 .monitor-card-shipment { padding:8px; }.monitor-card-facts > span { padding:7px 8px; }.monitor-card-material { min-height:31px; justify-content:center; }.monitor-progress { margin-top:0; }
 .monitoring-page.tv-mode .monitor-grid { grid-template-columns:repeat(auto-fill,minmax(300px,330px)); grid-auto-rows:auto; gap:10px; }
-.monitoring-page.tv-mode .monitor-delivery-card { width:100%; height:390px; gap:8px; padding:12px; }
+.monitoring-page.tv-mode .monitor-delivery-card { width:100%; height:auto; min-height:0; align-self:start; gap:8px; padding:12px; }
 .monitoring-page.tv-mode .monitor-eta-top { min-width:132px; }.monitoring-page.tv-mode .monitor-card-head { min-height:39px; }
 
 /* Dock identity stays readable instead of running three fields together. */
