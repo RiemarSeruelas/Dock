@@ -47,8 +47,8 @@
         "label": "Imported delivery window"
       }
     ],
-    "siteAddress": "enc:v1:rLU_GsB09mLn1dhd:7wMtk59tgLYw3Ewj9QTI5Q:nTiE3OkZeSjWbaEp-vXQWfqeEWx4tuAgE9jsFYpNephSTBJpaYu2Z1fBHnhzyXcAKwJbItIyztW73LoQ-yM9QhPZ9nrjdA_dVeJO",
-    "siteCoordinates": "enc:v1:Or5Oi3nvJmL4IKRo:gVI_luTjqo3ryTnKqJO3zg:0RTfP_-TmJd21G192eRFBplxRCld7qLtnlptnQ8QkzoinKQ",
+    "siteAddress": "enc:v1:ArR-LpCEX6Bn_2Or:5jJ3QBFnwzP7HNvZzwDvTQ:3DNkPOtsMQcFuYUZmo6l2wmuIZu_SRTLurHmMbNpqWsRElpf9u6RS_7mcBbgdQai3AZmbYiHEsK7mMQSYRL9JI-aOHyrM7bOUrUz",
+    "siteCoordinates": "enc:v1:Y3HhALC5TwVUaP68:jqEtQTPYhuFhpsK0Cbxn_A:WvU71rCRacDL5H4DWFOLrvQYYJdewHGxhfmu9OzciYeMy20",
     "emailNotifications": {}
   },
   "users": [
@@ -56,12 +56,12 @@
       "id": 1,
       "name": "System Administrator",
       "username": "admin",
-      "passwordHash": "$2b$10$sOyMJjqmZjgWER4VA0baFe1EtJFyOdKBH48elvkwPdrSTKFTn1.M2",
+      "passwordHash": "$2b$10$fsxKoL1fil8RF5OY6/dm0uoqTBJfTrcMWO1Ked3DQf92iji93zu4u",
       "role": "admin",
       "supplierId": null,
       "workArea": null,
       "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": "2026-09-02T00:19:57.316Z",
+      "emailVerifiedAt": "2026-09-02T02:18:27.131Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0
@@ -142,8 +142,8 @@
           "defaultAmount": 60
         }
       ],
-      "originAddress": "enc:v1:fKTgu6IcPNe971BU:pfAd2jWrydHYATvmUaF3pg:8DvLme7Yr0BiAG9Q1nNNnJnvP-vvQzg81k1kx_p5PTcfqXc",
-      "originCoordinates": "enc:v1:MxJAZ5tEYUvPdJhy:NB7evkSSqGy-VIaJR3M-Ww:zVzFLO51SHItkj1zSRDlT6UA4VvlDKMAATFjPiTvybeZAfBX",
+      "originAddress": "enc:v1:TV-CKyWRAzhU65k_:IDcbMbLpSbTwQN22qJqmbA:HdqtsUSjDr6gkTkO9IA8SZPJKBvLMYouRNY6nbXoI3O_lrE",
+      "originCoordinates": "enc:v1:CwEBCcB0IX6G4XHs:f4-uL29IxcZ7e1pjeVaEXA:nKa8cme_tDtMO2QymFKP75V8tdKzzXzVCfZqmaRxxWyjwWYX",
       "routeDistanceKm": 20.2,
       "routeDurationMinutes": 24,
       "routeCalculatedAt": "2026-09-01T05:26:47.033Z",

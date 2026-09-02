@@ -62,10 +62,15 @@ services:
       - ./data:/app/data
       - dockflow_uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
-      interval: 10s
-      timeout: 4s
-      retries: 10
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/health').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+      start_period: 15s
+      interval: 5s
+      timeout: 5s
+      retries: 12
     restart: unless-stopped
 
 volumes:

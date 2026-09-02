@@ -1,148 +1,545 @@
-# DockFlow User Guide
+# DockFlow Delivery Scheduling System
 
-DockFlow manages SDS delivery schedules, supplier truck confirmations, QR scanning, monitoring, history, and reports in Manila time (GMT+8).
+DockFlow helps authorized company personnel and suppliers manage proposed delivery schedules, truck confirmations, QR-based receiving, live monitoring, delivery history, and supplier performance in one application.
 
-## First administrator
+The system follows every confirmed truck from booking through Gate out and records all operational timestamps in **Asia/Manila time (GMT+8)**.
 
-DockFlow now starts clean: no sample suppliers, staff accounts, schedules, or delivery records are preloaded.
+## Who Should Use DockFlow
 
-On the first run, it creates one administrator using these private `.env` settings:
+- Administrators responsible for accounts, receiving-site settings, schedules, and system supervision
+- Dressings and Savoury Planners responsible for SDS uploads and schedule decisions
+- Supplier account owners responsible for confirming trucks and proposed delivery times
+- Security personnel responsible for Gate in and Gate out scans
+- Dressings and Savoury Warehouse personnel responsible for Unloading and Received scans
+- Authorized personnel reviewing delivery history and supplier performance
 
-- `BOOTSTRAP_ADMIN_USERNAME`
-- `BOOTSTRAP_ADMIN_PASSWORD`
+## Main Functions
 
-After copying `.env.example` to `.env`, set those two values before starting DockFlow. Use the same username and password on the login screen. The dedicated sender mailbox comes from `SMTP_USER` and is kept internal. Create every other account from **Administration → Accounts**.
+- Role-based user accounts and page access
+- SDS workbook import and proposal comparison
+- Supplier-account validation before a delivery can proceed
+- Material-code-based delivery planning
+- One-truck-at-a-time supplier confirmation
+- Supplier acceptance or reschedule requests
+- Planner or Administrator reschedule decisions
+- Delivery-code and QR-code generation after confirmation
+- QR scanning for each delivery stage
+- Scan timestamps and scanner-account audit records
+- Live truck monitoring and automatic process prioritization
+- Automatic dock occupancy during onsite delivery stages
+- Trip ETA and estimated arrival time
+- In-app notifications with unresolved-action counters
+- Optional email verification and delivery notifications
+- Delivery history with search and filters
+- Supplier performance reports and styled Excel export
+- Downloadable booking receipt in PDF format
+- Responsive desktop, television, tablet, and mobile layouts
+- Light and dark themes, including Fullscreen Monitoring
+- JSON trial storage for operation without PostgreSQL
+- Authentication, authorization, rate limiting, CORS protection, security headers, and request tracking
 
-## Before importing an SDS
+## Account Roles and Access
 
-Each supplier in the spreadsheet must have a directly linked supplier account.
+| Account | Main Access and Responsibility |
+| --- | --- |
+| **Administrator** | Full access to Overview, Monitoring, Schedule, Scan, History, Reports, Accounts, receiving-site settings, and supplier route settings. |
+| **Planner – Dressings** | Reviews Dressings activity, imports SDS schedules, monitors deliveries, and decides supplier reschedule requests. |
+| **Planner – Savoury** | Reviews Savoury activity, imports SDS schedules, monitors deliveries, and decides supplier reschedule requests. |
+| **Supplier Account** | Sees only its company schedules and records, confirms trucks and material codes, requests rescheduling, performs the Trip scan, and views its own history and reports. |
+| **Security** | Sees Monitoring, Schedule, and Scan; records Gate in and Gate out. |
+| **Warehouse – Dressings** | Sees Dressings Monitoring, Schedule, and Scan; records Unloading and Received. |
+| **Warehouse – Savoury** | Sees Savoury Monitoring, Schedule, and Scan; records Unloading and Received. |
 
-1. Open **Administration → Accounts**.
-2. Select **Add account**.
-3. Choose **Supplier account** as the role.
-4. Use the supplier company name as the account display name.
-5. Add the supplier email, username, and initial password. Supplier accounts do not need a separate company selector.
+Access is enforced by the API. Hiding a page in the sidebar is not the only protection; unauthorized API requests are also rejected.
 
-One supplier company can have one active supplier account. Deleting its account keeps its delivery records, but new spreadsheet deliveries for that supplier are blocked until an account is linked again.
+## Dashboard Pages
 
-## Importing an SDS
+| Page | Purpose |
+| --- | --- |
+| **Overview** | Shows today’s arrivals, trucks in transit, onsite activity, received deliveries, dock status, latest handoffs, and schedule responses. |
+| **Monitoring** | Shows one card per confirmed truck, sorted by the latest delivery stage. Includes date-range filtering and a television-friendly fullscreen mode. |
+| **Schedule** | Shows proposed and confirmed schedules on a day or week calendar. Authorized company users can import an SDS and review reschedule requests. |
+| **My Entries** | Lets a supplier review its own proposals, confirm truck information and material codes, open approved QR codes, and view delivery details. |
+| **Scan** | Records Trip, Gate in/out, Unloading, and Received according to the signed-in account’s role. |
+| **History** | Stores previous deliveries and rejected proposals in one searchable record view. |
+| **Reports** | Shows supplier delivery performance and allows a styled Excel report export. |
+| **Administration** | Lets the Administrator create or delete accounts, check email-verification status, configure supplier dispatch addresses, and protect the receiving-site address. |
 
-Open **Schedule → Import SDS** and choose an Excel, OpenDocument, CSV, or TSV file.
+## Delivery Workflow
 
-The main spreadsheet details are:
+The normal process is:
 
-- Week
-- Site, such as Dressings or Savory
-- Supplier
-- Material code
-- UOM
-- Quantity for delivery
-- Date
-- Time
+`SDS import → Supplier review → Booked → Trip → Gate in → Unloading → Received → Gate out`
 
-The preview shows whether every supplier account is linked. A missing account is displayed in red and prevents the import.
+### 1. Create the Required Accounts
 
-DockFlow compares each import with existing records:
+Before importing an SDS, create a Supplier Account whose company name matches the supplier in the workbook.
 
-- An identical proposal remains unchanged.
-- A changed proposal that is still waiting for the supplier is shown as a conflict. Choose **Keep existing** or **Update from upload** before importing.
-- A confirmed or completed delivery is preserved as a record.
-- A genuinely new proposal is created.
+1. Sign in as Administrator.
+2. Open **Administration → Accounts**.
+3. Select **Add account**.
+4. Choose **Supplier Account**.
+5. Enter the supplier company name, username, initial password, and recipient email.
+6. Give the login details to the authorized supplier representative through a secure channel.
 
-An imported row is only a proposed schedule. It is not a booking, does not appear in Monitoring or reports, and has no QR code until the supplier completes the truck confirmation.
+If no active Supplier Account matches an imported supplier, DockFlow warns the uploader and blocks that supplier’s proposal from proceeding.
 
-## Supplier truck confirmation
+Deleting a Supplier Account requires the current Administrator password. Historical delivery records remain available after the account is deleted.
 
-The supplier opens **Schedule** or **My entries** and selects **Review & confirm delivery** on a proposal.
+### 2. Import an SDS Workbook
 
-1. Accept the proposed time, or propose an alternative with a reason and one alternative date and time.
-2. Enter one truck plate and driver name, choose the phone country code, then enter the numeric local phone number.
-3. Select all material codes carried by that truck.
-4. Select **Confirm Delivery**.
-5. If material codes remain, open the proposal again and confirm the next truck.
+Authorized Administrators and Planners open **Schedule → Import SDS**, then select the schedule file.
 
-If an alternative is proposed, Planner, Production, or Administrator reviews the original time, proposed time, and supplier reason. Company approval applies the new time and asks the supplier to return and confirm the truck details. Company rejection closes the proposal and sends the company reason to the supplier. Both outcomes appear as an in-app notification and are emailed to verified supplier accounts.
+DockFlow accepts:
 
-A delivery code is reserved for every truck. As soon as every material code has been assigned and the supplier confirms the final truck, the proposal changes to **Booked** and its QR code, Monitoring card, and report entry become available.
+- `.xlsx`
+- `.xlsm`
+- `.xls`
+- `.xlsb`
+- `.xltx`
+- `.xltm`
+- `.ods`
+- `.csv`
+- `.tsv`
 
-## Monitoring and history
+The main operational fields are:
 
-**Monitoring** displays active trucks in process order. Select **See all** for every active delivery, or open the calendar and select a start date followed by an end date to filter a range. ETA appears after the supplier records the Trip scan and disappears at Gate in. DockFlow combines the free OSRM road time with a Manila weekday/weekend and peak-hour estimate; it does not require a paid routing key.
+| Field | Use |
+| --- | --- |
+| **Week** | Delivery week number |
+| **Site** | Dressings or Savoury work area |
+| **Supplier** | Supplier company linked to a Supplier Account |
+| **Material code** | Protected item identifier shown instead of a material description |
+| **UOM** | Unit of measure |
+| **Quantity** | Planned amount or weight |
+| **Date** | Proposed entrance date |
+| **Time** | Proposed entrance time |
 
-The notification bell is in the top navigation. Opening an alert marks it read, but an action-required count remains until the linked schedule confirmation or reschedule decision is actually completed.
+An import creates a **proposal**, not an approved booking. It does not yet create a QR code or report entry.
 
-**History** is one total-record view for previous deliveries and rejected proposals. Company users only see their own company. Supplier and driver views keep the useful material, driver, and date filters without the supplier, outcome, or time controls.
+DockFlow compares uploaded rows with existing proposals:
 
-## Scan flow
+- Identical information remains unchanged.
+- A new proposal is added.
+- A conflicting pending schedule opens a comparison showing the existing and uploaded values.
+- The uploader chooses **Keep existing** or **Use uploaded schedule** for each conflict.
+- Confirmed and completed records are preserved.
 
-The confirmed delivery follows this order:
+### 3. Supplier Reviews the Proposal
 
-`Booking → Trip → Gate in → Unloading → Received → Gate out`
+The linked supplier sees the proposal at the top of **Schedule** and in **My Entries**.
 
-- Supplier scans **Trip**.
-- Security scans **Gate in**, then **Gate out**.
-- Warehouse scans **Unloading** and **Received**.
-- Driver accounts can inspect their company’s approved QR entries but cannot change schedules or other delivery data.
+The supplier can:
 
-For the temporary HTTP trial, use **Take QR photo** to open the phone camera and scan the saved photo, or use a USB scanner/manual delivery-code entry. Browsers block a continuous live-camera stream on normal HTTP pages. The **Live camera** option appears automatically when DockFlow is later served through HTTPS.
+- Accept the proposed date and time; or
+- Reject the proposed time, provide a reason, and propose one alternative date and time.
 
-## Trial storage
+If the supplier proposes an alternative, the Administrator or correct Planner receives an action-required notification and reviews the original schedule, proposed schedule, and supplier reason.
 
-This trial runs without PostgreSQL. Business data is stored in `data/trial-data.json`. Stop the API or Docker containers before manually editing the file, and back it up before replacing the project.
+The company can approve or reject the alternative. The decision is returned to the supplier through the application and, when configured, by email.
 
-## Run with Docker
+### 4. Supplier Confirms the Truck Load
 
-From the project folder:
+For an accepted schedule, the supplier confirms one truck at a time:
+
+1. Enter the truck plate number.
+2. Enter the driver name.
+3. Choose the phone country code.
+4. Enter the numeric local phone number.
+5. Select every material code carried by that truck.
+6. Select **Confirm Delivery**.
+
+If material codes remain, the supplier repeats the confirmation for the next truck. All material codes for the proposal must be assigned.
+
+After the final truck is confirmed:
+
+- The delivery becomes **Booked**.
+- A delivery code is generated for each truck.
+- The QR code becomes available.
+- The truck appears in Monitoring.
+- The delivery becomes eligible for Reports.
+
+Repeated clicks do not intentionally create duplicate truck confirmations; the server validates the workflow state before saving.
+
+### 5. Scan the Delivery Stages
+
+| Stage | Responsible Account | Result |
+| --- | --- | --- |
+| **Trip** | Supplier | Marks the truck in transit and starts ETA calculation. |
+| **Gate in** | Security | Marks the truck onsite, removes ETA, and occupies an available dock automatically. |
+| **Unloading** | Warehouse | Marks unloading in progress and keeps the dock occupied. |
+| **Received** | Warehouse | Marks the goods received and records the receiving timestamp. |
+| **Gate out** | Security | Completes the onsite journey and releases the occupied dock. |
+
+Every scan records the delivery stage, Manila timestamp, signed-in scanner account, scanner role, delivery, and truck identifiers. The scan flow cannot skip the required order.
+
+## Using the Scanner During the HTTP Trial
+
+For a temporary local-network HTTP deployment:
+
+- Use **Take QR photo** to open the phone camera and process the captured image.
+- Use a USB or Bluetooth QR scanner that types into the scan field.
+- Enter the delivery code manually when necessary.
+
+A continuous live-camera stream normally requires HTTPS because mobile browsers treat camera access as a secure feature. The **Live camera** option becomes available when DockFlow is deployed through HTTPS.
+
+## Monitoring and Dock Control
+
+Monitoring shows one compact card per confirmed truck. Cards are ordered by progress, so a truck at Unloading appears above a truck still at Trip.
+
+The process priority is:
+
+`Gate out → Received → Unloading → Gate in → Trip → Booked`
+
+Use the calendar to select a start date and an end date. Select **See all** to remove the date range.
+
+Fullscreen Monitoring:
+
+- Uses the currently selected light or dark theme.
+- Shows a large live Manila clock.
+- Fits multiple compact delivery cards on a television display.
+- Keeps delivery details inside fullscreen when a card is opened.
+- Can be closed with the fullscreen button or the `Esc` key.
+
+Dock Control has two receiving docks. Dock assignment is automatic for the trial: an onsite truck occupies an available dock from Gate in until Gate out.
+
+## ETA and Location Handling
+
+The Administrator configures the receiving-site destination under **Administration → Receiving site** and a supplier dispatch address from that supplier’s Account card. The receiving-site address requires the current Administrator password before it can be viewed or changed.
+
+DockFlow uses free address and routing services to calculate road distance and base travel time. It then applies a configurable Manila weekday, weekend, and peak-hour estimate. This is an estimate, not live traffic.
+
+ETA behavior:
+
+- Starts after the supplier records Trip.
+- Shows distance, travel minutes, and estimated arrival time.
+- Disappears after Gate in because the truck has reached the site.
+- Requires internet access unless the address and routing services are hosted on the local network.
+
+Stored addresses and coordinates are encrypted with `LOCATION_ENCRYPTION_KEY`. Routing requests are made by the server so provider details and location data are not exposed as browser API keys.
+
+## Notifications
+
+The notification bell is beside the light/dark toggle in the top navigation.
+
+Notifications cover:
+
+- A new proposed schedule for the signed-in supplier
+- A changed or rescheduled supplier proposal
+- A supplier’s alternative-time request for the company
+- Company approval or rejection of a proposed alternative
+- A delivery marked Received
+
+Opening an informational notification marks it read. An action-required number remains until the related supplier confirmation or company decision is completed.
+
+## Email Verification and Email Notifications
+
+Planner and Supplier accounts can verify their own recipient email using a six-digit code. Unverified accounts remain visible to the Administrator as pending. Security and Warehouse accounts do not require an email address.
+
+The application sender is the private Administrator mailbox configured in `.env`. For Gmail, use a **Google App Password**, not the normal Gmail password.
+
+When email notifications are enabled:
+
+- Suppliers receive only changes belonging to their own company.
+- New schedule messages include that supplier’s proposed details.
+- Reschedule messages show the relevant Before and After details.
+- Supplier alternative requests show the reason, scheduled time, and proposed time to the company.
+- A Received message confirms the delivery and its material codes.
+
+Email credentials are never returned by the API or displayed in the browser.
+
+## History and Reports
+
+History keeps previous delivery and rejection records. Authorized users can search and filter by the fields available to their role. Supplier users only see their own company.
+
+Reports include confirmed deliveries, Gate-out completions, average Trip-to-Gate time, average Unloading time, average site turnaround time, and supplier-specific delivery details.
+
+Company users can view all suppliers or select one supplier. The active filter is also used for the styled Excel export.
+
+## Important Operating Rules
+
+- DockFlow uses Asia/Manila time for schedules, notifications, scans, PDFs, and reports.
+- An SDS upload creates proposals; it does not automatically book trucks.
+- A supplier must have an active linked Supplier Account.
+- Suppliers see material codes, not material descriptions.
+- All material codes must be assigned to confirmed trucks.
+- A QR code is created only after the supplier finishes confirmation.
+- Pending proposals do not appear in Monitoring or Reports.
+- ETA is available only between Trip and Gate in.
+- A delivery remains active until Gate out.
+- Gate in and Gate out use the same Security station.
+- Unloading and Received are separate Warehouse stages.
+- Scan order and role permissions are enforced by the API.
+- Historical records remain when an account is deleted.
+- Browser password-saving prompts are controlled by the browser and device policy; DockFlow avoids intentionally storing passwords in application data.
+
+## Security and Privacy
+
+DockFlow includes password hashing with bcrypt, short-lived access tokens, rotating refresh sessions, HTTP-only refresh cookies, role-based API authorization, separate rate limits, configured CORS origins, private-network origin support, security headers, request IDs, server-side validation, protected uploads, encrypted stored locations, server-only email/routing configuration, and scanner-account audit information.
+
+Rate limiting temporarily rejects excess requests with HTTP `429`. It does not permanently ban an IP address. Login, token refresh, ETA lookup, and general API traffic have separate limits.
+
+Keep `.env`, passwords, App Passwords, token secrets, and the location-encryption key private. Use HTTPS, restricted firewall rules, managed secrets, backups, and a protected database before a production internet deployment.
+
+## Trial Storage and Offline Behavior
+
+The current trial runs with PostgreSQL disabled. Business data is stored in:
+
+```text
+data/trial-data.json
+```
+
+Docker mounts this file from the project folder, so normal container recreation keeps the trial records.
+
+Before manually editing or replacing the JSON file:
+
+1. Stop DockFlow.
+2. Create a backup copy.
+3. Keep the existing JSON structure and valid data types.
+4. Restart DockFlow and verify the accounts and schedules.
+
+The core scheduling, confirmation, scanning, monitoring, history, and reports work on the local network. Public ETA lookup and Gmail delivery require internet access unless replacement services are hosted locally.
+
+## Running DockFlow with npm
+
+This option is useful for local development and testing.
+
+### Requirements
+
+- Windows PowerShell or Command Prompt
+- Node.js **22.13.0 or newer**
+- npm
+- The complete DockFlow project folder
+
+### 1. Open the Project Folder
+
+```powershell
+cd "C:\path\to\DockFlow"
+```
+
+### 2. Create the Private Environment File
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up --build -d
+```
+
+Open `.env` and replace all placeholder secrets. At minimum, configure:
+
+```env
+APP_ORIGIN=http://localhost:3000
+CORS_ORIGINS=http://localhost:3000
+BOOTSTRAP_ADMIN_USERNAME=your_admin_username
+BOOTSTRAP_ADMIN_PASSWORD=your_private_admin_password
+ACCESS_TOKEN_SECRET=use_a_long_random_secret
+REFRESH_TOKEN_SECRET=use_a_different_long_random_secret
+LOCATION_ENCRYPTION_KEY=use_a_stable_random_value_of_at_least_32_characters
+DB_ENABLED=false
+TZ=Asia/Manila
+```
+
+For optional Gmail notifications, also configure:
+
+```env
+EMAIL_NOTIFICATIONS_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your_sender@gmail.com
+SMTP_APP_PASSWORD=your_google_app_password
+MAIL_FROM=
+```
+
+Do not commit or share `.env`.
+
+### 3. Install Packages
+
+```powershell
+npm.cmd install
+```
+
+### 4. Start the API and Website
+
+```powershell
+npm.cmd run dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:3000
+```
+
+The terminal should show both the API and WEB processes. Keep the terminal open while using DockFlow.
+
+### 5. Check the Project
+
+```powershell
+npm.cmd run lint
+npm.cmd test
+```
+
+### 6. Stop npm Development Mode
+
+Press `Ctrl+C`, then confirm termination if PowerShell asks.
+
+## Running DockFlow with Docker
+
+This is the preferred option for a repeatable local trial or deployment computer.
+
+### Requirements
+
+- Docker Desktop
+- The complete project folder, including `Dockerfile` and `docker-compose.yml`
+- A configured `.env` file
+- Internet access for the first image build
+
+### 1. Open the Project Folder
+
+```powershell
+cd "C:\path\to\DockFlow"
+```
+
+### 2. Create and Configure `.env`
+
+```powershell
+Copy-Item .env.example .env
+```
+
+For the default Docker address, keep:
+
+```env
+APP_PORT=5059
+APP_ORIGIN=http://localhost:5059
+CORS_ORIGINS=http://localhost:5059
+ALLOW_PRIVATE_NETWORK_ORIGINS=true
+DB_ENABLED=false
+TZ=Asia/Manila
+```
+
+Also replace all Administrator, token, encryption, and optional email placeholders with private values.
+
+When opening DockFlow from another phone or computer on the same network, `ALLOW_PRIVATE_NETWORK_ORIGINS=true` allows normal private-network origins. Keep the host firewall limited to trusted networks.
+
+### 3. Build and Start DockFlow
+
+```powershell
+docker compose up -d --build
+```
+
+The API health check must pass before Docker starts the web container.
+
+### 4. Check the Containers
+
+```powershell
 docker compose ps
 ```
 
-Open `http://localhost:5059`.
+Both `api` and `web` should show as running. The API should show as healthy.
 
-To stop DockFlow:
+If a service is not running:
+
+```powershell
+docker compose logs api --tail 100
+docker compose logs web --tail 100
+```
+
+### 5. Open DockFlow
+
+On the Docker computer:
+
+```text
+http://localhost:5059
+```
+
+From another trusted device on the same network:
+
+```text
+http://SERVER_IP:5059
+```
+
+Replace `SERVER_IP` with the IPv4 address of the Docker computer.
+
+### 6. Normal Start Without Rebuilding
+
+```powershell
+docker compose up -d --no-build --pull never
+```
+
+### 7. Rebuild After a Code Update
+
+```powershell
+docker compose down
+docker compose up -d --build --force-recreate
+```
+
+### 8. Apply `.env` Changes Without Rebuilding
+
+```powershell
+docker compose up -d --force-recreate --no-build
+```
+
+### 9. View Recent Logs
+
+```powershell
+docker compose logs --tail 100
+```
+
+To follow the logs live:
+
+```powershell
+docker compose logs -f
+```
+
+### 10. Stop DockFlow
 
 ```powershell
 docker compose down
 ```
 
-## Run with npm
+Do not use `docker compose down -v` unless you intentionally want to remove Docker-managed volume data.
+
+### Docker Troubleshooting
+
+#### Docker Cannot Download an Image
+
+The first build requires access to Docker Hub. If the message contains `context deadline exceeded`, check internet access, VPN or proxy settings, firewall rules, DNS, and Docker Desktop connectivity, then retry.
+
+#### The API Is Unhealthy
+
+Run:
 
 ```powershell
-Copy-Item .env.example .env
-npm.cmd install
-npm.cmd run dev
+docker compose logs api --tail 100
 ```
 
-Open `http://127.0.0.1:3000`.
+Confirm that `.env` contains valid secrets and that `data/trial-data.json` is valid JSON and writable.
 
-## Test ETA
+#### The Website Container Does Not Start
 
-ETA address lookup and routing require internet access unless the provider URLs point to services hosted on your own network. No paid Maps API key is required. The traffic adjustment is a time-of-day estimate rather than live congestion data.
+The website waits for the API health check. Fix the API error first, then run:
 
-1. Sign in as Administrator and open **Administration → Accounts**.
-2. Open **Receiving site**, enter the current administrator password, then save the destination address.
-3. Select the route icon on a supplier account and save its dispatch address.
-4. Confirm a supplier delivery and scan **Trip**.
-5. Open Monitoring. The truck card should show distance, travel minutes, arrival time, and **Estimated traffic ETA**.
+```powershell
+docker compose up -d
+```
 
-## Test email notifications
+#### Another Device Shows a CORS Error
 
-1. Open the private `.env` file and set `EMAIL_NOTIFICATIONS_ENABLED=true`.
-2. Set `SMTP_USER` to the dedicated administrator Gmail and `SMTP_APP_PASSWORD` to its Google App Password. Do not use the normal Gmail password.
-3. Restart DockFlow so the API loads the private sender credentials.
-4. Planner and Supplier account owners set and verify their own recipient email. Supplier accounts see a persistent verification reminder until this is complete.
-5. Security and Warehouse accounts intentionally have no email field. The System Administrator sender uses `SMTP_USER` internally and does not require recipient verification.
-6. Import a new SDS. Each linked, verified supplier receives only its own proposed deliveries. New proposals show their schedule and material-code details; rescheduled proposals show **Before** and **After** details. File-level SDS summaries and other suppliers’ changes are not included.
-7. Propose an alternative from the supplier account. Verified Planner and Production emails receive the reason and proposed time.
-8. Approve or reject the alternative from the company Schedule page. The verified supplier receives the decision and reason by email, and all linked supplier users receive an in-app notification.
+Confirm:
 
-The sender address and App Password stay in `.env`; they are not saved in trial JSON, returned by the API, or shown in the browser. In an offline trial, the rest of DockFlow still works, but Gmail delivery and public ETA lookup cannot be tested.
+```env
+ALLOW_PRIVATE_NETWORK_ORIGINS=true
+```
 
-If sending fails, DockFlow now identifies the safe cause: a trial placeholder recipient, rejected Gmail credentials, or an SMTP network/firewall problem. Leave `MAIL_FROM=` blank unless you are supplying a complete valid sender address.
+Then recreate the containers:
 
-## Replacing the truck image
+```powershell
+docker compose up -d --force-recreate --no-build
+```
 
-The shared top-view truck image is `public/uploads/truck.png`. Replace that file with another PNG using the same filename to update the dock, schedule, entry, and monitoring truck visuals.
+#### QR Live Camera Is Unavailable
+
+Use **Take QR photo**, a hardware QR scanner, or manual delivery-code entry during HTTP testing. Deploy behind HTTPS for continuous browser camera access.
+
+#### ETA or Email Does Not Work
+
+Both features require outbound internet access in the default configuration. Check the API logs, address details, SMTP configuration, Google App Password, provider availability, and firewall rules.
