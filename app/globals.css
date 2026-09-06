@@ -1225,3 +1225,31 @@ td small { font-size: 11px; }
   .conflict-schedule-compare { grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr); gap:4px; }.conflict-schedule-compare section { padding:6px; }.conflict-schedule-compare section b,.conflict-schedule-compare section strong { font-size:8px; }.conflict-schedule-compare section > span { font-size:6px; }
   .conflict-review-modal .conflict-choice { gap:5px; }.conflict-review-modal .conflict-choice button { padding:6px; }.conflict-review-actions { padding:8px; }
 }
+
+/* Receiving, quantity splits and the SAP register share the existing theme. */
+.receiving-dialog { width:min(1080px,96vw); max-height:90vh; overflow:auto; }
+.receiving-form { display:grid; gap:16px; padding:20px; }
+.receiving-form label { display:grid; gap:6px; font-size:13px; }
+.receiving-form input,.receiving-form select,.receiving-form textarea { min-width:0; padding:9px; border:1px solid var(--line,#d3dce8); border-radius:7px; color:inherit; background:var(--surface,#fff); }
+.allocation-section { display:grid; gap:12px; padding:15px; border:1px solid var(--line,#d3dce8); border-radius:10px; }
+.allocation-row { display:flex; align-items:end; flex-wrap:wrap; gap:12px; padding:8px 0; }
+.allocation-row > * { flex:1; min-width:100px; }
+.truck-confirm-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:15px; }
+.receiving-form .material-check { display:flex; align-items:center; gap:8px; }
+.kpi-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(115px,1fr)); gap:12px; }
+.kpi-strip > div { display:grid; gap:8px; padding:15px; border:1px solid var(--line,#d3dce8); border-radius:9px; }
+.kpi-strip strong { font-size:25px; }
+.sap-scroll { overflow:auto; max-height:65vh; border:1px solid #b9c9da; border-radius:9px; }
+.sap-table { border-collapse:separate; border-spacing:0; min-width:2200px; width:100%; background:#fff; color:#17314d; }
+.sap-table th { background:#08285f; color:white; font-size:12px; padding:12px 8px; border-right:1px solid #456088; position:sticky; top:0; z-index:1; }
+.sap-table thead tr:nth-child(2) th { background:#164e63; font-size:10px; font-weight:400; position:static; }
+.sap-table td { border-right:1px solid #c4d1dd; border-bottom:1px solid #c4d1dd; padding:0; }
+.sap-table tr:nth-child(even) td { background:#f0f5fa; }
+.sap-table td.sap-batch { background:#ccf2db; }
+.sap-table td.sap-matdoc { color:#bc2929; }
+.sap-table input { border:0; border-radius:0; background:transparent; color:inherit; padding:9px; width:100%; min-width:115px; font-size:12px; }
+.sap-table input:focus { outline:2px solid #40a978; outline-offset:-2px; }
+.sap-table input[type=checkbox] { min-width:20px; }
+.worksheet-options { display:flex; flex-wrap:wrap; gap:14px; padding-top:14px; }
+.worksheet-options label { display:flex; align-items:center; }
+@media(max-width:650px) { .receiving-form { padding:12px; } .allocation-row { display:grid; grid-template-columns:1fr 1fr; } .receiving-dialog { max-height:94vh; } }

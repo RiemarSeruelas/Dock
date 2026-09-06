@@ -2,7 +2,13 @@
 
 DockFlow helps authorized company personnel and suppliers manage proposed delivery schedules, truck confirmations, QR-based receiving, live monitoring, delivery history, and supplier performance in one application.
 
+<<<<<<< HEAD
 The system follows every confirmed truck from booking through Gate out and records all operational timestamps in **Asia/Manila time (GMT+8)**.
+=======
+See [DOCKFLOW-UPDATE.md](DOCKFLOW-UPDATE.md) for the receiving, OTIF, Ecosystem, SAP and monthly KPI features, update steps, and verification notes.
+
+## First administrator
+>>>>>>> 17d9196 (a)
 
 ## Who Should Use DockFlow
 
@@ -86,6 +92,7 @@ If no active Supplier Account matches an imported supplier, DockFlow warns the u
 
 Deleting a Supplier Account requires the current Administrator password. Historical delivery records remain available after the account is deleted.
 
+<<<<<<< HEAD
 ### 2. Import an SDS Workbook
 
 Authorized Administrators and Planners open **Schedule → Import SDS**, then select the schedule file.
@@ -101,9 +108,15 @@ DockFlow accepts:
 - `.ods`
 - `.csv`
 - `.tsv`
+=======
+Accept the proposed time or propose an alternative date, time or quantity split. Date/time/reason are optional. Split quantities must total the original amount for each material. Administrator or Planner approval is required for alternatives; rejecting one requires a reason.
+
+Choose one or two trucks and assign every remaining material code once. Provide each truck's plate, driver, international phone number, PO and DR numbers; helper names are optional. Each fully confirmed truck receives a unique delivery code, QR, monitoring card and report entry.
+>>>>>>> 17d9196 (a)
 
 The main operational fields are:
 
+<<<<<<< HEAD
 | Field | Use |
 | --- | --- |
 | **Week** | Delivery week number |
@@ -114,6 +127,9 @@ The main operational fields are:
 | **Quantity** | Planned amount or weight |
 | **Date** | Proposed entrance date |
 | **Time** | Proposed entrance time |
+=======
+**Monitoring** displays confirmed trucks in process order. Use **See all** or the two-click date range. Gate-in and Gate-out timestamps measure factory time. Partial receipt outcomes remain visible, and linked replacement proposals track outstanding quantities.
+>>>>>>> 17d9196 (a)
 
 An import creates a **proposal**, not an approved booking. It does not yet create a QR code or report entry.
 
@@ -125,6 +141,7 @@ DockFlow compares uploaded rows with existing proposals:
 - The uploader chooses **Keep existing** or **Use uploaded schedule** for each conflict.
 - Confirmed and completed records are preserved.
 
+<<<<<<< HEAD
 ### 3. Supplier Reviews the Proposal
 
 The linked supplier sees the proposal at the top of **Schedule** and in **My Entries**.
@@ -133,6 +150,16 @@ The supplier can:
 
 - Accept the proposed date and time; or
 - Reject the proposed time, provide a reason, and propose one alternative date and time.
+=======
+`Booking → Gate in → Unloading → Received → Gate out`
+
+- Supplier scans view QR data only.
+- Security records Gate in and Gate out.
+- Authorized Warehouse, Quality inspection, Ecosystem or Administrator users record Unloading and inspect Received.
+- Received can be full or **Received – Not in Full**, with outstanding quantities, reason and replacement schedule.
+- Gate out finishes site time and releases the dock.
+- Over HTTP, use QR photos, hardware scanners or manual codes. Live camera scanning requires HTTPS.
+>>>>>>> 17d9196 (a)
 
 If the supplier proposes an alternative, the Administrator or correct Planner receives an action-required notification and reviews the original schedule, proposed schedule, and supplier reason.
 
@@ -514,6 +541,7 @@ docker compose logs api --tail 100
 
 Confirm that `.env` contains valid secrets and that `data/trial-data.json` is valid JSON and writable.
 
+<<<<<<< HEAD
 #### The Website Container Does Not Start
 
 The website waits for the API health check. Fix the API error first, then run:
@@ -523,6 +551,9 @@ docker compose up -d
 ```
 
 #### Another Device Shows a CORS Error
+=======
+## Test email notifications
+>>>>>>> 17d9196 (a)
 
 Confirm:
 
