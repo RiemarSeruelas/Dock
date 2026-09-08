@@ -44,6 +44,16 @@ export const buildSdsChangeEmail = ({ supplier, changes }) => {
 };
 
 export const emailNotifications = {
+  async sendEcosystemRequest({ sender, recipients, shipment }) {
+    return send({ sender, recipients, subject: `ULI delivery request – ${shipment.shipmentNumber}`, text: `ULI has requested delivery to ${shipment.items[0]?.deliverySite || 'site'} on ${shipment.scheduledDate} at ${shipment.scheduledTime} Manila.\n${shipment.items.map(item => `${item.materialCode}: ${item.quantity} ${item.uom}`).join('\n')}\nPlease sign in to confirm the truck and delivery details.` });
+  },
+  async sendDecision({ sender, recipients, shipmentNumber, decision, reason }) {
+    return send({ sender, recipients, subject: `DockFlow schedule ${decision.toLowerCase()} – ${shipmentNumber}`, text: `Delivery: ${shipmentNumber}\nDecision: ${decision}\nReason: ${reason || 'Not provided'}\nSign in to review all approved split schedules and download the booked delivery QR.` });
+  },
+  async sendKpi({ sender, recipient, report, name }) {
+    const value = n => n === null ? 'Not evaluated' : `${n}%`;
+    return send({ sender, recipients: [recipient], subject: `DockFlow monthly KPI – ${name} – ${report.month}`, text: `Monthly performance: ${name}\nMonth: ${report.month}\nConfirmed: ${report.confirmed}\nInspected: ${report.evaluated}\nAwaiting inspection: ${report.awaitingInspection}\nOn time: ${value(report.onTimePercent)}\nIn full: ${value(report.inFullPercent)}\nOTIF: ${value(report.otifPercent)}\nGate out completed: ${report.completed}\nAverage site minutes: ${report.averageSiteMinutes ?? 'Not available'}\n\nOn time uses Gate in and the configured grace period. OTIF uses inspected original deliveries scheduled in this month; replacements are excluded.` });
+  },
   async verifySender(sender) {
     if (testMode) return true;
     await transporterFor(sender).verify();
@@ -55,12 +65,14 @@ export const emailNotifications = {
   async sendSdsChanges({ sender, recipients, supplier, changes }) {
     return send({ sender, recipients, ...buildSdsChangeEmail({ supplier, changes }) });
   },
-  async sendSupplierReschedule({ sender, recipients, shipmentNumber, supplier, reason, scheduledDate, scheduledTime, scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime }) {
+  async sendSupplierReschedule({ sender, recipients, shipmentNumber, supplier, reason, scheduledDate, scheduledTime, scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, quantityAllocations }) {
     const scheduled = `${scheduledDate || "—"} at ${scheduledTime || "—"}${scheduledEndTime ? `–${scheduledEndTime}` : ""}`;
+    const splitText = (quantityAllocations || []).map(row => `${row.materialCode}: ${row.quantity} ${row.uom} on ${row.date} at ${row.time}`).join("; ");
     const proposed = `${alternativeDate || "—"} at ${alternativeTime || "—"}${alternativeEndTime ? `–${alternativeEndTime}` : ""}`;
-    return send({ sender, recipients, subject: `${supplier} requested a schedule change – ${shipmentNumber}`, text: `Dear Admin & Planner team,\n\nSupplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule.\n\nSupplier: ${supplier}\nDelivery: ${shipmentNumber}\nReason: ${reason}\nScheduled time: ${scheduled}\nProposed time: ${proposed}`, html: `<p>Dear Admin &amp; Planner team,</p><p>Supplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule.</p><div style="margin-top:16px;padding:14px;border:1px solid #f0c7a7;border-radius:10px"><p><b>Supplier:</b> ${escapeHtml(supplier)}<br><b>Delivery:</b> ${escapeHtml(shipmentNumber)}<br><b>Reason:</b> ${escapeHtml(reason)}<br><b>Scheduled time:</b> ${escapeHtml(scheduled)}<br><b>Proposed time:</b> ${escapeHtml(proposed)}</p></div>` });
+    return send({ sender, recipients, subject: `${supplier} requested a schedule change – ${shipmentNumber}`, text: `Dear Admin & Planner team,\n\nSupplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule.\n\nSupplier: ${supplier}\nDelivery: ${shipmentNumber}\nReason: ${reason}\nScheduled time: ${scheduled}\nProposed time: ${proposed}\nQuantity allocations: ${splitText}`, html: `<p>Dear Admin &amp; Planner team,</p><p>Supplier has requested a change to the delivery schedule due to unavailability at the planned time. Please sign in and review the proposed delivery schedule.</p><div style="margin-top:16px;padding:14px;border:1px solid #f0c7a7;border-radius:10px"><p><b>Supplier:</b> ${escapeHtml(supplier)}<br><b>Delivery:</b> ${escapeHtml(shipmentNumber)}<br><b>Reason:</b> ${escapeHtml(reason)}<br><b>Scheduled time:</b> ${escapeHtml(scheduled)}<br><b>Proposed time:</b> ${escapeHtml(proposed)}<br><b>Quantity allocations:</b> ${escapeHtml(splitText)}</p></div>` });
   },
-  async sendItemsReceived({ sender, recipients, shipmentNumber, deliveryCode, supplier, truckPlate, receivedAt, materialCodes }) {
+  async sendItemsReceived({ sender, recipients, shipmentNumber, deliveryCode, supplier, truckPlate, receivedAt, materialCodes, receipt }) {
+    if (receipt && (!receipt.inFull || receipt.outcome === 'NOT_OTIF')) return send({ sender, recipients, subject: `Received – Not in Full – ${shipmentNumber}`, text: `Dear Supplier,\n\nDelivery ${shipmentNumber} has completed receiving with an issue.\nReason: ${receipt.reason || "Partial delivery"}.\n${receipt.items.filter(row => row.remainingQuantity > 0).map(row => `${row.materialCode}: ${row.remainingQuantity} ${row.uom} outstanding. Replacement: ${row.date && row.time ? `${row.date} ${row.time} Manila` : "Schedule to be agreed"}. Reason: ${row.reason}`).join('\n')}\n\nSign in to review the receiving result. Replacement proposals are created when a date and time are provided.` });
     const codes = (materialCodes || []).join(", ") || "Not listed";
     const when = receivedAt ? new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }).format(new Date(receivedAt)) : "Recorded now";
     return send({

@@ -742,10 +742,10 @@ td small { font-size: 11px; }
 @keyframes story-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-10px); } }
 
 .truck-tile,.dock-vehicle-visual { position:relative; overflow:hidden; }
-.truck-tile::before,.dock-vehicle-visual::before { content:""; position:absolute; inset:8%; z-index:1; background:url('/uploads/truck.png') center/contain no-repeat; mix-blend-mode:multiply; }
+.truck-tile::before { content:""; position:absolute; inset:8%; z-index:1; background:url('/uploads/truck.png') center/contain no-repeat; mix-blend-mode:multiply; }
 .truck-tile svg,.dock-vehicle-visual > svg { visibility:hidden; }
-[data-theme="dark"] .truck-tile::before,[data-theme="dark"] .dock-vehicle-visual::before { filter:invert(1); mix-blend-mode:screen; }
-.dock-vehicle-visual::before { inset:8% 20%; }
+[data-theme="dark"] .truck-tile::before { filter:invert(1); mix-blend-mode:screen; }
+
 
 .history-panel td { font-size:14px; }
 
@@ -1224,4 +1224,129 @@ td small { font-size: 11px; }
   .conflict-review-body { gap:7px; padding:8px; }.conflict-review-modal .import-conflict-card { grid-template-columns:1fr; gap:8px; padding:9px; }.conflict-review-modal .import-conflict-card > header { grid-template-columns:26px minmax(0,1fr); gap:6px; }.conflict-review-modal .import-conflict-card header em { grid-column:1 / -1; }.conflict-number { width:25px; height:25px; }
   .conflict-schedule-compare { grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr); gap:4px; }.conflict-schedule-compare section { padding:6px; }.conflict-schedule-compare section b,.conflict-schedule-compare section strong { font-size:8px; }.conflict-schedule-compare section > span { font-size:6px; }
   .conflict-review-modal .conflict-choice { gap:5px; }.conflict-review-modal .conflict-choice button { padding:6px; }.conflict-review-actions { padding:8px; }
+}
+
+/* Receiving and SAP workspace */
+input[type=checkbox],input[type=radio] { width:16px; height:16px; min-height:16px; min-width:16px; flex:0 0 16px; padding:0; margin:0; accent-color:var(--blue-600); box-shadow:none; }
+.receiving-dialog { width:min(1000px,96vw); max-height:92dvh; overflow:auto; border-radius:18px; }
+.receiving-dialog .modal-head { position:sticky; top:0; z-index:3; background:var(--surface); padding:16px 22px; }
+.receiving-form { display:grid; gap:18px; padding:20px 22px; }
+.receiving-form label,.activation-card label,.request-details label,.catalog-add label,.email-schedule-controls label { display:grid; gap:5px; font-size:12px; font-weight:650; }
+.receiving-form input:not([type=checkbox]),.receiving-form select,.activation-card input,.request-details input,.request-details select,.catalog-add input,.email-schedule-controls input,.email-schedule-controls select { height:40px; min-height:40px; min-width:0; width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; color:var(--ink); background:var(--surface); font-size:13px; }
+.receiving-form .form-grid { gap:12px; }
+.confirmation-context { display:flex; align-items:center; flex-wrap:wrap; gap:9px; padding:12px 14px; border-radius:10px; background:var(--surface-2); font-size:13px; }.confirmation-context small { margin-left:auto; color:var(--muted); }
+.supplier-dot,.supplier-legend i { width:9px; height:9px; flex:0 0 9px; border-radius:50%; }
+.response-choice { width:max-content; max-width:100%; }.response-choice button { padding:10px 16px; font-size:12px; }
+.alternative-fields { padding:16px; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); }
+.confirmation-truck-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; }.confirmation-truck-heading h3 { font-size:15px; }.confirmation-truck-heading label { display:flex; align-items:center; gap:10px; }.confirmation-truck-heading select { width:100px; }
+.truck-confirm-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr)); gap:16px; }
+.truck-confirm-card { min-width:0; border:1px solid var(--line); border-radius:12px; padding:16px; }.truck-confirm-card > header { display:flex; align-items:center; gap:9px; margin-bottom:16px; }.truck-confirm-card > header small { margin-left:auto; color:var(--muted); font-size:11px; }.truck-number { display:grid; place-items:center; width:28px; height:28px; border-radius:8px; background:rgba(36,107,253,.09); color:var(--blue-600); }
+.material-checklist { margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }.material-checklist header { display:flex; justify-content:space-between; gap:10px; margin-bottom:8px; font-size:12px; }.material-checklist header small { color:var(--muted); }.receiving-form .material-check { display:flex; align-items:center; gap:9px; padding:8px 0; }.material-check span { margin-left:auto; color:var(--muted); font-weight:400; }
+.split-material { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }.split-material header { display:flex; justify-content:space-between; font-size:12px; }.split-row { display:grid; grid-template-columns:1fr 1.25fr 1fr 32px; align-items:end; gap:8px; padding-top:9px; }
+.confirmation-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; padding-top:16px; border-top:1px solid var(--line); }.confirmation-footer small { flex:1; min-width:200px; color:var(--muted); }.confirmation-footer .form-error { flex:1; }
+.allocation-section { display:grid; gap:12px; padding:15px; border:1px solid var(--line); border-radius:10px; }.allocation-row { display:flex; flex-wrap:wrap; gap:12px; padding:8px 0; }.allocation-row > * { flex:1; min-width:100px; }
+.sap-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }.connection-chip { font-size:11px; color:var(--muted); }.connection-chip.connected { color:#16836b; }.sap-column-config { position:relative; }.worksheet-options { display:flex; flex-wrap:wrap; gap:12px 20px; }.worksheet-options label { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:600; }.sap-message { padding:12px 15px; background:var(--surface); border:1px solid var(--line); border-radius:9px; font-size:13px; }
+.sap-scroll { overflow:auto; max-height:68vh; border:1px solid #cfd8e3; border-radius:12px; background:var(--surface); box-shadow:0 8px 24px rgba(15,39,71,.07); }.sap-table { border-collapse:separate; border-spacing:0; table-layout:fixed; min-width:2300px; width:100%; background:var(--surface); color:var(--ink); }.sap-table th { background:#153d73; color:white; font-size:11px; padding:11px 8px; height:52px; border-right:1px solid rgba(255,255,255,.14); border-bottom:1px solid rgba(12,38,71,.3); position:sticky; top:0; z-index:1; text-align:center; white-space:normal; }.sap-table td { border-right:1px solid #d9e0e8; border-bottom:1px solid #d9e0e8; padding:0; background:var(--surface); }.sap-table td.sap-batch { background:#e9f7ef; color:#176443; font-weight:650; }.sap-table td.sap-matdoc { color:#b42318; font-weight:700; }.sap-table td.sap-actual { background:#edf7fb; }.sap-table input { display:block; border:0; border-radius:0; background:transparent; color:inherit; padding:7px 9px; height:34px; min-height:34px; width:100%; min-width:0; font-size:11px; }.sap-table input:focus { outline:2px solid #16836b; outline-offset:-2px; background:rgba(22,131,107,.035); }.sap-load-more { position:sticky; left:0; padding:12px; font-size:12px; text-align:center; background:var(--surface); color:var(--muted); }
+.report-month-filter { display:flex; align-items:center; gap:12px; margin-left:auto; font-size:12px; font-weight:650; }.report-month-filter input { min-height:38px; height:38px; width:190px; }
+.sds-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }.review-count { display:grid; place-items:center; min-width:22px; height:22px; padding:0 6px; border-radius:12px; background:var(--surface-2); }.review-count.pending { background:#e65c44; color:white; }.unlinked-accounts { font-size:12px; }.unlinked-accounts button { display:block; padding:7px; }.reschedule-popup { padding:20px; }.reschedule-list { max-height:60dvh; overflow:auto; margin-top:15px; }.reschedule-list > button { width:100%; display:grid; grid-template-columns:9px 1fr 1fr 20px; align-items:center; gap:14px; background:var(--surface); color:var(--ink); border:0; border-bottom:1px solid var(--line); text-align:left; padding:15px 5px; cursor:pointer; }.reschedule-list span { display:grid; gap:4px; font-size:13px; }.reschedule-list small { color:var(--muted); font-size:11px; }
+.supplier-legend { display:flex; flex-wrap:wrap; gap:12px; padding:10px 18px; border-bottom:1px solid var(--line); }.supplier-legend span { display:flex; align-items:center; gap:6px; font-size:11px; }.schedule-day-details { display:grid; gap:7px; padding:12px 18px; max-height:280px; overflow:auto; }.schedule-day-details button { display:grid; grid-template-columns:70px 1fr minmax(100px,.5fr); gap:10px; align-items:center; text-align:left; border:1px solid var(--line); border-left:4px solid; border-radius:8px; padding:12px; color:var(--ink); background:var(--surface); }.schedule-day-details small { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
+.compact-verification { padding:11px 15px; }.compact-verification summary { display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; }.unverified-list { display:flex; flex-wrap:wrap; gap:8px; max-height:150px; overflow:auto; padding-top:10px; }.unverified-list span { display:grid; gap:3px; padding:7px 10px; border-radius:8px; background:var(--surface-2); font-size:11px; }.unverified-list small { color:var(--muted); }
+.admin-panel .user-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); gap:12px; padding:16px; }.admin-panel .user-card { display:grid; grid-template-columns:40px minmax(0,1fr) auto; gap:10px; padding:16px; border:1px solid var(--line); border-top:3px solid hsl(var(--company-hue) 60% 48%); border-radius:12px; }.user-card .user-avatar { background:hsl(var(--company-hue) 60% 48%); color:white; }.user-card > div { min-width:0; }.user-card > div strong { font-size:13px; }.user-card > div small { overflow-wrap:anywhere; white-space:normal; font-size:10px; }.user-card .role-chip { grid-column:1/3; justify-self:start; font-size:10px; }.user-card .account-actions { grid-column:3; grid-row:1/3; flex-direction:column; }
+.receiving-site-panel .modal-form { padding:16px 20px; }.receiving-site-panel .panel-head p { margin-top:5px; font-size:12px; color:var(--muted); }.receiving-site-panel input { min-height:40px; height:40px; }.email-schedule { padding:16px 20px; }.email-schedule summary { display:flex; justify-content:space-between; gap:10px; cursor:pointer; font-size:13px; }.email-schedule summary span,.email-schedule p { color:var(--muted); font-size:12px; }.email-schedule-controls { display:flex; align-items:end; gap:12px; padding:16px 0; }.email-account-status { margin-top:12px; max-height:260px; overflow:auto; }.email-account-status > div { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; border-top:1px solid var(--line); padding:10px 0; font-size:11px; }.email-account-status small { color:var(--muted); }
+.activation-screen { min-height:100dvh; display:grid; place-items:center; background:var(--surface-2); padding:20px; }.activation-card { width:min(460px,100%); background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:30px; box-shadow:0 16px 50px #15385412; }.activation-card h1 { font-size:26px; margin-top:8px; }.activation-card p { margin:14px 0; color:var(--muted); font-size:13px; }.activation-card form { display:grid; gap:14px; }.activation-steps { display:flex; gap:28px; padding:16px 20px; font-size:12px; }.activation-steps .done { color:#16836b; }.text-button { border:0; background:none; color:var(--blue-600); cursor:pointer; padding:8px; }
+.ecosystem-selector { display:flex; align-items:end; flex-wrap:wrap; gap:18px; }.ecosystem-selector label { display:grid; gap:6px; font-size:12px; }.ecosystem-selector small { color:var(--muted); }.ecosystem-request-layout { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:18px; align-items:start; }.request-details { display:grid; gap:14px; padding:20px; }.catalog-add { display:flex; align-items:end; flex-wrap:wrap; gap:12px; }.catalog-list { overflow:hidden; }.catalog-row { display:flex; align-items:center; gap:12px; padding:12px 18px; border-top:1px solid var(--line); }.catalog-row label { display:flex; align-items:center; gap:12px; flex:1; font-size:13px; }.catalog-row small { color:var(--muted); }.catalog-row > input { width:120px; min-height:38px; height:38px; }.empty-inline { padding:20px; color:var(--muted); }
+.clearance-copy-note { display:grid; gap:4px; padding:13px; background:var(--surface-2); border-radius:10px; font-size:13px; }.clearance-copy-note span { color:var(--muted); }.clearance-material { border:1px solid var(--line); border-radius:12px; padding:18px; }.clearance-material h3 { font-size:15px; }.clearance-autofill { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px 0; }.clearance-autofill dt { font-size:10px; color:var(--muted); }.clearance-autofill dd { margin:4px 0 0; font-size:12px; }
+.dock-vehicle-visual { min-height:255px; margin-bottom:14px; background:linear-gradient(180deg,#eaf0f6,#dfe8f0); }.dock-vehicle-visual .parked-truck { width:205px; height:240px; object-fit:cover; object-position:center; mix-blend-mode:multiply; }.empty-lane { display:grid; justify-items:center; gap:12px; color:#63817c; font-size:12px; }.dock-vehicle-visual .empty-lane svg { visibility:visible; animation:none; }.dock-vehicle-visual i { font-size:10px; padding:5px 8px; }.dock-lane { padding:15px; }.dock-lane-line::before,.dock-lane-line::after { border-color:#e8bd5b; }
+[data-theme=dark] .dock-vehicle-visual { background:linear-gradient(180deg,#20364c,#172a3c); }[data-theme=dark] .dock-vehicle-visual .parked-truck { mix-blend-mode:normal; border-radius:8px; }
+@media(max-width:720px) { .receiving-dialog { width:96vw; max-height:94dvh; }.receiving-form { padding:14px; }.receiving-dialog .modal-head { padding:12px 14px; }.confirmation-context small { margin-left:0; }.truck-confirm-card { padding:12px; }.confirmation-truck-heading { flex-wrap:wrap; }.ecosystem-request-layout { grid-template-columns:1fr; }.email-schedule summary { display:grid; }.email-schedule-controls { flex-wrap:wrap; }.email-account-status > div { grid-template-columns:1fr 1fr; }.email-account-status small { grid-column:1/-1; }.reschedule-list > button { grid-template-columns:9px 1fr 20px; }.reschedule-list > button > span:nth-child(3) { grid-column:2; }.reschedule-list > button > svg { grid-column:3; grid-row:1/3; }.dock-vehicle-visual { min-height:195px; }.dock-vehicle-visual .parked-truck { width:150px; height:185px; }.schedule-day-details button { grid-template-columns:50px 1fr; }.schedule-day-details button > span:last-child { grid-column:2; }.clearance-autofill { grid-template-columns:1fr; } }
+@media(prefers-reduced-motion:reduce) { .dock-vehicle-visual * { animation:none!important; } }
+
+/* PostgreSQL-backed SAP workbook */
+.sap-page { gap:12px; }
+.sap-search-row { display:flex; align-items:end; gap:18px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:0 4px 16px rgba(15,39,71,.04); }
+.sap-search-row .sap-search-field { display:grid; flex:1 1 520px; gap:5px; width:min(560px,100%); max-width:620px; color:var(--muted); font-size:10px; font-weight:750; text-transform:uppercase; letter-spacing:.04em; }
+.sap-search-row input { min-height:36px; height:36px; width:100%; padding:7px 10px; border:1px solid var(--line); border-radius:7px; color:var(--ink); background:var(--surface); font-size:12px; text-transform:none; letter-spacing:normal; }
+.sap-search-row input:focus { border-color:#5a86bd; outline:3px solid rgba(36,107,253,.08); }
+.sap-search-meta { display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-left:auto; }
+.sap-search-meta small { color:var(--muted); font-size:10px; white-space:nowrap; }
+.sap-column-filter { flex:0 0 auto; }
+.sap-column-filter summary { display:flex; align-items:center; gap:8px; min-height:36px; padding:7px 11px; border:1px solid var(--line); border-radius:8px; color:var(--ink); background:var(--surface-2); cursor:pointer; list-style:none; font-size:11px; font-weight:700; user-select:none; }
+.sap-column-filter summary::-webkit-details-marker { display:none; }
+.sap-column-filter summary::before { content:"▦"; color:var(--blue-600); font-size:15px; line-height:1; }
+.sap-column-filter summary span { display:grid; place-items:center; min-width:28px; height:20px; padding:0 5px; border-radius:999px; color:var(--muted); background:var(--surface); font-size:9px; }
+.sap-column-filter[open] summary { border-color:#8aa9cc; box-shadow:0 0 0 3px rgba(36,107,253,.08); }
+.sap-column-filter .worksheet-options { position:absolute; top:calc(100% + 8px); right:0; z-index:30; display:grid; grid-template-columns:repeat(3,minmax(150px,1fr)); gap:9px 16px; width:min(680px,82vw); max-height:340px; overflow:auto; padding:15px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:0 18px 46px rgba(15,39,71,.2); }
+.sap-column-filter .worksheet-options label { min-width:0; padding:4px 2px; }
+.sap-column-filter .worksheet-options input { width:14px; height:14px; min-height:14px; padding:0; }
+.sap-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:0; padding:7px 10px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:0 4px 16px rgba(15,39,71,.04); }
+.sap-tool-group { display:flex; align-items:center; gap:4px; min-height:38px; padding:3px 10px; border-right:1px solid var(--line); }
+.sap-tool-group:last-child { border-right:0; }
+.sap-tool-group button,.sap-tool-group select,.sap-tool-group > input,.sap-tool-group > label { min-height:31px; height:31px; min-width:31px; padding:5px 8px; border:1px solid transparent; border-radius:7px; color:var(--ink); background:transparent; font-size:10px; cursor:pointer; }
+.sap-tool-group button:hover,.sap-tool-group button.active { border-color:var(--line-strong); background:var(--surface-2); }
+.sap-tool-group button:disabled,.sap-tool-group select:disabled,.sap-tool-group input:disabled { opacity:.4; cursor:not-allowed; }
+.sap-tool-group select { max-width:126px; border-color:var(--line); background:var(--surface); }
+.sap-tool-group > input[type=number] { width:50px; border-color:var(--line); background:var(--surface); }
+.sap-tool-group > label { display:flex; align-items:center; gap:5px; white-space:nowrap; cursor:default; }
+.sap-color-tool { padding:4px 6px!important; border-color:var(--line)!important; background:var(--surface-2)!important; }
+.sap-color-tool > span { min-width:20px; text-align:center; font-weight:750; }
+.sap-color-tool input[type=color],.sap-border-color input[type=color] { appearance:none; width:23px; height:23px; min-width:23px; min-height:23px; overflow:hidden; padding:2px; border:1px solid var(--line-strong); border-radius:6px; background:var(--surface); cursor:pointer; }
+.sap-color-tool input[type=color]::-webkit-color-swatch-wrapper,.sap-border-color input[type=color]::-webkit-color-swatch-wrapper { padding:0; }
+.sap-color-tool input[type=color]::-webkit-color-swatch,.sap-border-color input[type=color]::-webkit-color-swatch { border:0; border-radius:3px; }
+.sap-color-tool input[type=color]::-moz-color-swatch,.sap-border-color input[type=color]::-moz-color-swatch { border:0; border-radius:3px; }
+.sap-border-controls { display:flex; align-items:center; height:31px; overflow:hidden; border:1px solid var(--line); border-radius:7px; background:var(--surface-2); }
+.sap-border-controls .sap-border-icon { display:grid; place-items:center; width:30px; height:100%; color:var(--muted); font-size:15px; }
+.sap-border-controls select { height:29px; min-height:29px; max-width:78px; padding:3px 20px 3px 6px; border:0; border-left:1px solid var(--line); border-radius:0; background:transparent; font-size:10px; }
+.sap-border-controls select:last-child { max-width:82px; }
+.sap-border-color { display:grid; place-items:center; width:31px; height:29px; border-left:1px solid var(--line); cursor:pointer; }
+.sap-border-color input[type=color] { width:20px; height:20px; min-width:20px; min-height:20px; }
+.sap-size-tool input[type=number] { appearance:textfield; width:36px; height:24px; min-height:24px; padding:2px 3px; border:1px solid var(--line); border-radius:5px; color:var(--ink); background:var(--surface); text-align:center; font-size:10px; font-weight:650; }
+.sap-size-tool input[type=number]::-webkit-inner-spin-button,.sap-size-tool input[type=number]::-webkit-outer-spin-button { appearance:none; margin:0; }
+.sap-size-tool > span { color:var(--muted); font-size:9px; }
+.sap-tool-group label input[type=range] { width:76px; min-height:18px; height:18px; }
+.worksheet-options button { padding:2px; border:0; color:var(--ink); background:none; font:inherit; cursor:pointer; }
+.worksheet-options button:hover { color:var(--blue-600); text-decoration:underline; }
+.sap-scroll { max-height:69vh; }
+.sap-table.sap-workbook { min-width:5600px; }
+.sap-workbook th { user-select:none; cursor:pointer; }
+.sap-workbook thead th { height:54px; padding:10px 8px; font-size:10px; font-weight:750; letter-spacing:.015em; }
+.sap-workbook thead th small { display:block; margin-top:4px; color:rgba(231,241,255,.82); font-size:7px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.sap-workbook thead .sap-section-scheduling { background:#1f4b7f; }
+.sap-workbook thead .sap-section-system { background:#3d4b5e; }
+.sap-workbook thead .sap-section-shared { background:#6b4695; }
+.sap-workbook thead .sap-section-sap { background:#173e72; }
+.sap-workbook thead .sap-section-warehouse { background:#176c63; }
+.sap-workbook .sap-row-number { position:sticky; left:0; z-index:2; width:44px; min-width:44px; padding:0; border-right:1px solid #cad4df; border-bottom:1px solid #d9e0e8; color:#657386; background:#f6f8fb; text-align:center; vertical-align:middle; font-size:9px; font-variant-numeric:tabular-nums; }
+.sap-workbook thead .sap-row-number { top:0; z-index:4; height:54px; color:#dce7f5; background:#1d2939; }
+.sap-workbook tbody .sap-row-number { height:100%; min-height:34px; font-weight:650; }
+.sap-workbook td { position:relative; height:inherit; }
+.sap-workbook tbody tr:nth-child(even) td { background:#fbfcfd; }
+.sap-workbook td.readonly { background:#f3f6f9; color:#5d6979; }
+.sap-workbook tbody tr:nth-child(even) td.readonly { background:#eef2f6; }
+.sap-workbook td.sap-batch { background:#e9f7ef!important; color:#176443; }
+.sap-workbook td.sap-actual { background:#edf7fb!important; }
+.sap-workbook td.readonly input { cursor:default; }
+.sap-workbook td.selected::after { content:""; position:absolute; inset:-1px; z-index:2; border:2px solid #16836b; box-shadow:inset 0 0 0 1px rgba(255,255,255,.7); pointer-events:none; }
+.sap-workbook td input { height:100%; min-height:34px; overflow:hidden; text-overflow:ellipsis; line-height:1.25; }
+.sap-workbook td input:focus { position:relative; z-index:3; }
+.sap-workbook tr.edited .sap-row-number { color:#116149; background:#e8f5ef; }
+.sap-workbook tr.edited .sap-row-number::after { content:""; position:absolute; right:4px; top:6px; width:5px; height:5px; border-radius:50%; background:#16836b; }
+.sap-workbook tr.hidden-record { opacity:.48; }
+.sap-load-more { display:flex; align-items:center; justify-content:center; gap:16px; }
+.sap-load-more label { display:flex; align-items:center; gap:6px; }
+[data-theme=dark] .sap-search-row,[data-theme=dark] .sap-toolbar,[data-theme=dark] .sap-column-filter .worksheet-options { background:var(--surface); }
+[data-theme=dark] .sap-scroll { border-color:var(--line); }
+[data-theme=dark] .sap-table td { border-color:#344258; }
+[data-theme=dark] .sap-workbook td.readonly,[data-theme=dark] .sap-workbook tbody tr:nth-child(even) td.readonly { background:#1b2636; color:#b7c3d3; }
+[data-theme=dark] .sap-workbook tbody tr:nth-child(even) td { background:#182333; }
+[data-theme=dark] .sap-workbook td.sap-batch { background:#153b31!important; color:#a6e8ce; }
+[data-theme=dark] .sap-workbook td.sap-actual { background:#173444!important; }
+@media(max-width:900px) {
+  .sap-search-row { align-items:stretch; flex-wrap:wrap; gap:9px; }
+  .sap-search-row .sap-search-field { flex-basis:100%; max-width:none; }
+  .sap-search-meta { width:100%; }
+  .sap-search-meta small { margin-right:auto; white-space:normal; }
+  .sap-column-filter .worksheet-options { grid-template-columns:repeat(2,minmax(130px,1fr)); width:min(580px,calc(100vw - 48px)); }
+  .sap-toolbar { flex-wrap:nowrap; overflow-x:auto; align-items:stretch; }
+  .sap-tool-group { flex:0 0 auto; }
+  .sap-scroll { max-height:62vh; }
 }

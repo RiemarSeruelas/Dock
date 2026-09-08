@@ -1,5 +1,5 @@
-export type Role = "admin" | "planner" | "production" | "supplier" | "driver" | "security" | "warehouse";
-export type WorkArea = "DRESSINGS" | "SAVOURY";
+export type Role = "admin" | "planner" | "production" | "supplier" | "driver" | "security" | "warehouse" | "qa" | "ecosystem" | "sap";
+export type WorkArea = "DRESSINGS" | "SAVOURY" | "ECOSYSTEM";
 
 export type ShipmentStatus =
   | "PROPOSED"
@@ -12,7 +12,7 @@ export type ShipmentStatus =
   | "REJECTED";
 
 export type BookingStatus = "PENDING_SUPPLIER" | "PENDING_COMPANY" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
-export type ScanStage = "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
+export type ScanStage = "LOOKUP" | "GATE" | "UNLOADING" | "RECEIVED";
 
 export interface AvailabilitySlot {
   id: number;
@@ -33,6 +33,8 @@ export interface SessionUser {
   workArea?: WorkArea | null;
   email?: string;
   emailVerifiedAt?: string | null;
+  mustChangePassword?: boolean;
+  onboardingRequired?: boolean;
 }
 
 export interface ShipmentItem {
@@ -82,7 +84,20 @@ export interface ShipmentScanRecord {
   role: Role;
 }
 
+export interface QuantityAllocation { itemId: number; materialCode?: string; uom?: string; quantity: number; date: string; time: string }
+export interface ReceiptInput { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; items: { itemId: number; acceptedQuantity: number; reason?: string; date?: string; time?: string }[] }
 export interface Shipment {
+  helper1Name?: string;
+  helper2Name?: string;
+  poNumber?: string;
+  drNumber?: string;
+  destinationEcosystemId?: number | null;
+  replacementForId?: number;
+  replacementIds?: number[];
+  quantityAllocations?: QuantityAllocation[];
+  proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[]}[];
+  changeReason?: string;
+  receipt?: { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; inFull: boolean; onTime: boolean | null; otif: boolean | null; items: { itemId: number; materialCode: string; uom: string; acceptedQuantity: number; remainingQuantity: number; date?: string; time?: string; reason?: string }[] };
   id: number;
   shipmentNumber: string;
   bookingReceipt: string;
@@ -220,6 +235,7 @@ export interface AppNotification {
 }
 
 export interface AppData {
+  currentUser?: SessionUser;
   shipments: Shipment[];
   rdsRequests: RdsRequest[];
   materials: Material[];

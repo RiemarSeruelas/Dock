@@ -6,11 +6,11 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "concurrently -k -n API,WEB -c magenta,cyan \"node --env-file-if-exists=.env --watch server/index.js\" \"next dev -H 127.0.0.1\"",
-    "dev:web": "next dev -H 127.0.0.1",
+    "dev": "concurrently -k -n API,WEB -c magenta,cyan \"node --env-file-if-exists=.env --watch server/index.js\" \"node --env-file-if-exists=.env server/web.js --dev\"",
+    "dev:web": "node --env-file-if-exists=.env server/web.js --dev",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 3000",
-    "test": "node --test tests/excel-import.test.mjs tests/workflow.test.mjs && npm run build",
+    "start": "node --env-file-if-exists=.env server/web.js",
+    "test": "node --test tests/excel-import.test.mjs tests/workflow.test.mjs tests/receiving.test.mjs tests/september-update.test.mjs && npm run build",
     "lint": "eslint . --ignore-pattern .next",
     "api": "node --env-file-if-exists=.env server/index.js"
   },

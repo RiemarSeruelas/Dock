@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { spawn } from "node:child_process";
@@ -32,7 +32,6 @@ const freePort = () => new Promise((resolve, reject) => {
 test("SDS import, conflict review, supplier confirmation, and scan journey", async (context) => {
   const testDirectory = await mkdtemp(join(tmpdir(), "dockflow-sds-"));
   const dataFile = join(testDirectory, "trial-data.json");
-  await copyFile(new URL("../data/trial-data.json", import.meta.url), dataFile);
   const port = await freePort();
   const etaPort = await freePort();
   const etaServer = createHttpServer((request, response) => {
@@ -46,7 +45,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   let serverOutput = "";
   const apiProcess = spawn(process.execPath, ["server/index.js"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, NODE_ENV: "test", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/blocked`, GEOCODING_FALLBACK_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
+    env: { ...process.env, NODE_ENV: "test", SAP_STORAGE: "json", SAP_ALLOWED_CIDRS: "127.0.0.1/32", API_RATE_LIMIT_MAX: "2000", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/blocked`, GEOCODING_FALLBACK_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   apiProcess.stdout.on("data", (chunk) => { serverOutput += chunk; });
@@ -68,6 +67,18 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const login = async (username, password) => {
     const { response, result } = await call("/api/auth/login", { method: "POST", body: { username, password } });
     assert.equal(response.status, 200);
+    if(result.user.onboardingRequired && result.user.mustChangePassword) {
+      assert.equal((await call('/api/shipments/lookup?code=1',{token:result.token})).response.status,403);
+      const email=`${username}.dockflow.test@gmail.com`;
+      await call(`/api/users/${result.user.id}/email`,{token:result.token,method:'PATCH',body:{email}});
+      const sent=await call(`/api/users/${result.user.id}/email/send-code`,{token:result.token,method:'POST',body:{}});
+      assert.equal(sent.response.status,200,JSON.stringify(sent.result));
+      const verified=await call(`/api/users/${result.user.id}/email/verify`,{token:result.token,method:'POST',body:{code:sent.result.testCode}});
+      assert.equal(verified.response.status,200);
+      const changed=await call('/api/auth/change-password',{token:result.token,method:'POST',body:{currentPassword:password,newPassword:password+'Changed!'}});
+      assert.equal(changed.response.status,200,JSON.stringify(changed.result));
+      return login(username,password+'Changed!');
+    }
     return { ...result, refreshCookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
 
@@ -79,7 +90,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   const admin = await login("admin", "admin123");
   const createAccount = async (body) => {
-    const created = await call("/api/users", { token: admin.token, method: "POST", body });
+    const created = await call("/api/users", { token: admin.token, method: "POST", body: {email:`${body.username}.dockflow.test@gmail.com`,...body} });
     assert.equal(created.response.status, 201);
     return created.result;
   };
@@ -94,9 +105,9 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const warehouse = await login("warehouse", "warehouse123");
 
   assert.equal((await call("/api/admin/email-sender", { token: admin.token, method: "PATCH", body: { email: "attacker@example.com", appPassword: "do-not-store-this" } })).response.status, 410);
-  assert.equal(admin.user.email, "");
-  assert.equal(security.user.email, "");
-  assert.equal(warehouse.user.email, "");
+  assert.ok(admin.user.email !== undefined);
+  assert.match(security.user.email, /@/);
+  assert.match(warehouse.user.email, /@/);
   for (const [account, accountToken] of [[supplier.user, supplier.token], [planner.user, planner.token]]) {
     const accountEmail = `${account.username}.dockflow.test@gmail.com`;
     assert.equal((await call(`/api/users/${account.id}/email`, { token: accountToken, method: "PATCH", body: { email: accountEmail } })).response.status, 200);
@@ -126,9 +137,9 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("SDS Schedule");
-  sheet.addRow(["Supplier", "Material Code", "Description", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time"]);
-  sheet.addRow(["Trial Ingredients Supplier", "SDS-1001", "Protected ingredient A", "KG", 500, "28-Aug-2026", "09:00", "11:00"]);
-  sheet.addRow(["Trial Ingredients Supplier", "SDS-1002", "Protected ingredient B", "KG", 300, "28-Aug-2026", "09:00", "11:00"]);
+  sheet.addRow(["Supplier", "Material Code", "Description", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time", "Site"]);
+  sheet.addRow(["Trial Ingredients Supplier", "SDS-1001", "Protected ingredient A", "KG", 500, "28-Aug-2026", "09:00", "11:00", "Dressings"]);
+  sheet.addRow(["Trial Ingredients Supplier", "SDS-1002", "Protected ingredient B", "KG", 300, "28-Aug-2026", "09:00", "11:00", "Dressings"]);
   const uploadPreview = async (sourceWorkbook, fileName = "supplier-sds.xlsx") => {
     const form = new FormData();
     form.append("file", new Blob([Buffer.from(await sourceWorkbook.xlsx.writeBuffer())]), fileName);
@@ -190,7 +201,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.ok(readNotification.readAt);
   assert.equal(readNotification.resolvedAt, null, "Opening an actionable notification must not clear its badge");
 
-  const incompleteAlternative = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", itemIds: proposal.items.map((item) => item.id) }] } });
+  const incompleteAlternative = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", alternativeDate: "invalid", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", itemIds: proposal.items.map((item) => item.id) }] } });
   assert.equal(incompleteAlternative.response.status, 400);
 
   const invalidPhone = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "ACCEPT", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "09170000001", itemIds: [proposal.items[0].id] }] } });
@@ -199,7 +210,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const firstTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
     decision: "ACCEPT",
     loadConfirmed: true,
-    trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "+639170000001", itemIds: [proposal.items[0].id] }],
+    trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "+639170000001", poNumber: "PO-100", drNumber: "DR-100", itemIds: [proposal.items[0].id] }],
   } });
   assert.equal(firstTruckResponse.response.status, 200);
   assert.equal(firstTruckResponse.result.partial, true);
@@ -216,7 +227,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const secondTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
     decision: "ACCEPT",
     loadConfirmed: true,
-    trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "+639170000002", itemIds: [proposal.items[1].id] }],
+    trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "+639170000002", poNumber: "PO-200", drNumber: "DR-200", itemIds: [proposal.items[1].id] }],
   } });
   assert.equal(secondTruckResponse.response.status, 200);
   assert.equal(secondTruckResponse.result.partial, false);
@@ -269,15 +280,15 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   const rejectionWorkbook = new ExcelJS.Workbook();
   const rejectionSheet = rejectionWorkbook.addWorksheet("SDS Schedule");
-  rejectionSheet.addRow(["Supplier", "Material Code", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time"]);
-  rejectionSheet.addRow(["Trial Ingredients Supplier", "SDS-REJECT-1", "KG", 100, "30-Aug-2026", "15:00", "16:00"]);
-  rejectionSheet.addRow(["Trial Ingredients Supplier", "SDS-APPROVE-ALT-1", "KG", 120, "30-Aug-2026", "17:00", "18:00"]);
+  rejectionSheet.addRow(["Supplier", "Material Code", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time", "Site"]);
+  rejectionSheet.addRow(["Trial Ingredients Supplier", "SDS-REJECT-1", "KG", 100, "30-Aug-2026", "15:00", "16:00", "Dressings"]);
+  rejectionSheet.addRow(["Trial Ingredients Supplier", "SDS-APPROVE-ALT-1", "KG", 120, "30-Aug-2026", "17:00", "18:00", "Dressings"]);
   const rejectionPreview = await uploadPreview(rejectionWorkbook, "supplier-rejection.xlsx");
   const rejectionCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: rejectionPreview.result.previewToken } });
   assert.equal(rejectionCommit.response.status, 201);
   const beforeReject = await call("/api/bootstrap", { token: supplier.token });
   const rejectionProposal = beforeReject.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-REJECT-1"));
-  const rejectedResponse = await call(`/api/shipments/${rejectionProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "Truck is unavailable", alternativeDate: "2026-08-31", alternativeTime: "10:00", alternativeEndTime: "11:00", loadConfirmed: false, trucks: [] } });
+  const rejectedResponse = await call(`/api/shipments/${rejectionProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "Truck is unavailable", alternativeDate: "2026-08-31", alternativeTime: "10:00", alternativeEndTime: "11:00", loadConfirmed: true, trucks: [{truckPlate:"ALT 123",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:rejectionProposal.items.map(item=>item.id)}] } });
   assert.equal(rejectedResponse.response.status, 200);
   assert.equal(rejectedResponse.result.alternativeProposed, true);
   assert.equal(rejectedResponse.result.notification.status, "SENT");
@@ -288,7 +299,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(plannerDecisionNotification.resolvedAt, null);
   const companyReject = await call(`/api/shipments/${rejectionProposal.id}/company-decision`, { token: planner.token, method: "PATCH", body: { decision: "REJECT", reason: "Receiving capacity is full" } });
   assert.equal(companyReject.response.status, 200);
-  assert.equal(companyReject.result.notification.status, "NOT_SENT");
+  assert.equal(companyReject.result.notification.status, "SENT");
   const afterReject = await call("/api/bootstrap", { token: admin.token });
   assert.equal(afterReject.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "REJECTED");
   assert.equal(afterReject.result.audit.find((entry) => entry.shipmentNumber === rejectionProposal.shipmentNumber).action, "COMPANY_ALTERNATIVE_REJECTED");
@@ -299,25 +310,23 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal((await call(`/api/shipments/${rejectionProposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
 
   const approvalProposal = beforeReject.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-APPROVE-ALT-1"));
-  const approvalAlternative = await call(`/api/shipments/${approvalProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "A truck is available later", alternativeDate: "2026-09-01", alternativeTime: "08:00", alternativeEndTime: "09:00", loadConfirmed: false, trucks: [] } });
+  const approvalAlternative = await call(`/api/shipments/${approvalProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "A truck is available later", alternativeDate: "2026-09-01", alternativeTime: "08:00", alternativeEndTime: "09:00", loadConfirmed: true, trucks: [{truckPlate:"ALT 123",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:approvalProposal.items.map(item=>item.id)}] } });
   assert.equal(approvalAlternative.response.status, 200);
   const companyApprove = await call(`/api/shipments/${approvalProposal.id}/company-decision`, { token: planner.token, method: "PATCH", body: { decision: "APPROVE" } });
   assert.equal(companyApprove.response.status, 200);
-  assert.equal(companyApprove.result.notification.status, "NOT_SENT");
+  assert.equal(companyApprove.result.notification.status, "SENT");
   const supplierAfterCompanyApprove = await call("/api/bootstrap", { token: supplier.token });
   const approvedAlternative = supplierAfterCompanyApprove.result.shipments.find((shipment) => shipment.id === approvalProposal.id);
-  assert.equal(approvedAlternative.bookingStatus, "PENDING_SUPPLIER");
+  assert.equal(approvedAlternative.bookingStatus, "APPROVED");
+  assert.ok(approvedAlternative.deliveryCode);
+  assert.equal((await call(`/api/shipments/${approvalProposal.id}/qr.svg`,{token:supplier.token})).response.status,200);
   assert.equal(approvedAlternative.scheduledDate, "2026-09-01");
   assert.equal(approvedAlternative.scheduledTime, "08:00");
   assert.ok(supplierAfterCompanyApprove.result.notifications.some((notification) => notification.shipmentId === approvalProposal.id && notification.type === "SUCCESS"));
 
-  const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage } });
-  const tripScan = await scan(supplier.token, "TRIP");
-  assert.equal(tripScan.result.shipment.status, "IN_TRANSIT");
-  assert.equal(tripScan.result.shipment.estimatedTravelMinutes, supplierRoute.result.supplier.routeDurationMinutes);
-  assert.ok(tripScan.result.shipment.estimatedTravelMinutes > 42);
-  assert.equal(tripScan.result.shipment.etaTrafficModel, "TIME_OF_DAY");
-  assert.ok(tripScan.result.shipment.estimatedArrivalAt);
+  const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage, ...(stage === "RECEIVED" ? { receipt: { outcome: "FULL", items: first.items.map(item => ({ itemId: item.id, acceptedQuantity: item.quantity })) } } : {}) } });
+  assert.equal((await scan(supplier.token, "TRIP")).response.status, 400);
+  assert.equal((await scan(supplier.token, "GATE")).response.status, 403);
   const gateInScan = await scan(security.token, "GATE");
   assert.equal(gateInScan.result.shipment.status, "GATE_IN");
   assert.equal(gateInScan.result.shipment.estimatedArrivalAt, null);
@@ -333,7 +342,82 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const gateOutScan = await scan(security.token, "GATE");
   assert.equal(gateOutScan.result.shipment.status, "GATE_OUT");
   assert.equal(gateOutScan.result.shipment.dock, null);
-  assert.deepEqual(gateOutScan.result.shipment.scanHistory.map((record) => record.actor), ["Supplier User", "Security User", "Warehouse Dressings", "Warehouse Dressings", "Security User"]);
+  assert.deepEqual(gateOutScan.result.shipment.scanHistory.map((record) => record.actor), ["Security User", "Warehouse Dressings", "Warehouse Dressings", "Security User"]);
+
+
+  // Inspection and lookup are scoped; repeated receipt scans cannot create duplicates.
+  const second = approvedGroup.find(row => row.id !== first.id);
+  const secondScan = (stage, receipt) => call('/api/shipments/scan-stage', { token: admin.token, method: 'POST', body: { scanValue: second.shipmentNumber, stage, receipt } });
+  assert.equal((await secondScan('RECEIVED')).response.status, 400);
+  assert.equal((await secondScan('GATE')).response.status, 200);
+  assert.equal((await secondScan('UNLOADING')).response.status, 200);
+  const partial = await secondScan('RECEIVED', { outcome: 'NOT_IN_FULL', items: second.items.map(item => ({ itemId: item.id, acceptedQuantity: item.quantity - 10, reason: 'Damaged packaging', date: '2026-09-10', time: '10:00' })) });
+  assert.equal(partial.response.status, 200, JSON.stringify(partial.result));
+  assert.equal(partial.result.shipment.receipt.inFull, false);
+  assert.equal(partial.result.shipment.replacementIds.length, 1);
+  assert.equal((await secondScan('RECEIVED')).result.alreadyRecorded, true);
+  assert.equal((await secondScan('GATE')).response.status, 200);
+  const replacementState = (await call('/api/bootstrap', { token: supplier.token })).result;
+  assert.equal(replacementState.shipments.filter(s => s.replacementForId === second.id).length, 1);
+  assert.equal((await call(`/api/shipments/${second.id}/status`, { token: admin.token, method: 'PATCH', body: { status: 'RECEIVED' } })).response.status, 410);
+  assert.equal((await call(`/api/shipments/lookup?code=${first.deliveryCode}`, { token: supplier.token })).response.status, 200);
+
+  await createAccount({ name: 'SAP Analyst', username: 'saptest', password: 'saptest123', role: 'sap' });
+  const sap = await login('saptest', 'saptest123');
+  assert.equal((await call('/api/sap/rows', { token: supplier.token })).response.status, 403);
+  assert.equal((await call('/api/sap/rows', { token: admin.token })).response.status, 200);
+  assert.equal((await call('/api/reports/kpi', { token: sap.token })).response.status, 403);
+  assert.equal((await call('/api/bootstrap', { token: sap.token })).result.shipments.length, 0);
+  const register = await call('/api/sap/rows', { token: sap.token });
+  assert.equal(register.response.status, 200);
+  const sapRow = register.result.rows[0];
+  sapRow.values.matdoc = '001234567';
+  assert.equal((await call('/api/sap/rows', { token: sap.token, method: 'PUT', body: { rows: [sapRow] } })).response.status, 200);
+  assert.equal((await call('/api/sap/rows', { token: sap.token, method: 'PUT', body: { rows: [sapRow] } })).response.status, 409);
+  const sapExport = await call('/api/sap/export.xlsx', { token: sap.token });
+  assert.equal(sapExport.response.status, 200);
+  const sapWorkbook = new ExcelJS.Workbook(); await sapWorkbook.xlsx.load(sapExport.result);
+  assert.equal(sapWorkbook.worksheets[0].getCell('N2').value, '001234567');
+  assert.equal(sapWorkbook.worksheets[0].getCell('A1').fill.fgColor.argb, 'FF08285F');
+  assert.equal(sapWorkbook.worksheets[0].getCell('J2').fill.fgColor.argb, 'FF00C663');
+  if (process.env.DOCKFLOW_SAP_ARTIFACT) await writeFile(process.env.DOCKFLOW_SAP_ARTIFACT, sapExport.result);
+  const kpi = await call('/api/reports/kpi?month=2026-08', { token: supplier.token });
+  assert.equal(kpi.result.evaluated, 2); assert.equal(kpi.result.inFullPercent, 50);
+
+  const ecoAccount = await createAccount({ name: 'Ecosystem Warehouse', username: 'ecotest', password: 'ecotest123', email: 'eco@example.com', role: 'ecosystem' });
+  const eco = await login('ecotest', 'ecotest123');
+  const inboundId = replacementState.shipments.find(s=>s.replacementForId===second.id).id;
+  assert.equal((await call(`/api/shipments/${inboundId}/destination`, { token: admin.token, method: 'PATCH', body: { ecosystemId: ecoAccount.supplierId } })).response.status, 200);
+  const ecoInbound = (await call('/api/bootstrap', { token: supplier.token })).result.shipments.find(s => s.id === inboundId);
+  assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: eco.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 403);
+  assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: supplier.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 200);
+  const inbound = (await call('/api/bootstrap', { token: eco.token })).result.shipments.find(s => s.id === inboundId);
+  const ecoScan = (token, stage, receipt) => call('/api/shipments/scan-stage', { token, method: 'POST', body: { scanValue: inbound.shipmentNumber, stage, receipt } });
+  assert.equal((await ecoScan(security.token, 'GATE')).response.status, 200);
+  assert.equal((await ecoScan(eco.token, 'UNLOADING')).response.status, 200);
+  assert.equal((await ecoScan(eco.token, 'RECEIVED', { outcome: 'FULL', items: inbound.items.map(item => ({ itemId: item.id, acceptedQuantity: item.quantity })) })).response.status, 200);
+  const added=await call('/api/ecosystem/materials',{token:eco.token,method:'POST',body:{materialCode:'ECO-100',uom:'KG'}});
+  assert.equal(added.response.status,201);
+  const added2=await call('/api/ecosystem/materials',{token:admin.token,method:'POST',body:{ecosystemId:ecoAccount.supplierId,materialCode:'ECO-200',uom:'PC'}});
+  assert.equal(added2.response.status,201);
+  const transfer={ecosystemId:ecoAccount.supplierId,items:[{id:added.result.material.id,quantity:9999},{id:added2.result.material.id,quantity:20}],date:'2026-09-12',time:'09:00',area:'DRESSINGS',requestId:'request-test-1'};
+  const requested=await call('/api/ecosystem/transfers',{token:planner.token,method:'POST',body:transfer});
+  assert.equal(requested.response.status,201,JSON.stringify(requested.result));
+  assert.equal(requested.result.shipment.items.length,2);
+  assert.equal(requested.result.shipment.supplierId,ecoAccount.supplierId);
+  assert.equal(requested.result.notification.status,'SENT');
+  assert.equal((await call('/api/ecosystem/transfers',{token:planner.token,method:'POST',body:transfer})).response.status,409);
+  assert.equal((await call(`/api/shipments/${first.id}/clearance.pdf`,{token:supplier.token})).response.status,403);
+  const clearance=await call(`/api/shipments/${first.id}/clearance`,{token:warehouse.token});
+  assert.equal(clearance.response.status,200);
+  assert.equal(clearance.result.records[0].truckPlate,first.truckPlate);
+  const clearancePdf=await call(`/api/shipments/${first.id}/clearance.pdf`,{token:warehouse.token});
+  assert.equal(clearancePdf.response.status,200);
+  assert.equal(clearancePdf.result.subarray(0,4).toString(),'%PDF');
+  const emailPlan=await call('/api/admin/email-schedule',{token:admin.token,method:'PUT',body:{day:7,time:'08:30'}});
+  assert.equal(emailPlan.response.status,200);
+  assert.equal((await call('/api/admin/email-schedule',{token:admin.token})).result.schedule.day,7);
+  assert.equal((await call('/api/bootstrap', { token: eco.token })).result.shipments.some(s => s.id === first.id), false);
 
   const report = await call("/api/reports/export.xlsx?supplierId=1", { token: admin.token });
   assert.equal(report.response.status, 200);
