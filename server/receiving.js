@@ -42,7 +42,7 @@ export function applySplits(state, proposal, nextId, nextCode) {
     delivery.scheduledEndTime = null;
     delivery.shipmentNumber = nextCode('SHP', delivery.id, delivery.scheduledDate);
     delivery.bookingReceipt = nextCode('BKG', delivery.id, delivery.scheduledDate);
-    delivery.items = original.items.filter(item => rows.some(row => row.itemId === item.id)).map(item => ({ ...item, id: created.length ? nextItem++ : item.id, quantity: roundQuantity(rows.filter(row => row.itemId === item.id).reduce((sum, row) => sum + row.quantity, 0)), supplierApprovedAt: null, assignedTruckPlate: null }));
+    delivery.items = original.items.filter(item => rows.some(row => row.itemId === item.id)).map(item => ({ ...item, id: created.length ? nextItem++ : item.id, sourceAllocationItemId: item.sourceAllocationItemId || item.id, quantity: roundQuantity(rows.filter(row => row.itemId === item.id).reduce((sum, row) => sum + row.quantity, 0)), supplierApprovedAt: null, assignedTruckPlate: null }));
     delivery.confirmedTruckLoads = [];
     delivery.bookingStatus = 'PENDING_SUPPLIER';
     delivery.status = 'PROPOSED';
@@ -53,7 +53,7 @@ export function applySplits(state, proposal, nextId, nextCode) {
   return created;
 }
 export function inspectReceipt(shipment, input, graceMinutes = 0) {
-  if (!input || !['FULL', 'NOT_IN_FULL'].includes(input.outcome)) fail('Choose Received or Received – Not in Full after inspection');
+  if (!input || !['FULL', 'NOT_IN_FULL', 'NOT_OTIF'].includes(input.outcome)) fail('Choose Received or Received – Not in Full after inspection');
   const submitted = input.items;
   if (!Array.isArray(submitted) || submitted.length !== shipment.items.length || new Set(submitted.map(row => Number(row.itemId))).size !== submitted.length) fail('Inspect every material exactly once');
   const items = shipment.items.map(item => {
@@ -61,18 +61,20 @@ export function inspectReceipt(shipment, input, graceMinutes = 0) {
     const acceptedQuantity = Number(row?.acceptedQuantity);
     if (!row || row.acceptedQuantity === '' || !Number.isFinite(acceptedQuantity) || acceptedQuantity < 0 || acceptedQuantity > item.quantity) fail(`Invalid accepted quantity for ${item.materialCode}`);
     const remainingQuantity = roundQuantity(item.quantity - acceptedQuantity);
-    if (remainingQuantity && (!String(row.reason || '').trim() || !validDay(row.date) || !validClock(row.time))) fail(`Provide replacement date, time and reason for ${item.materialCode}`);
+    if (remainingQuantity && !String(row.reason || '').trim()) fail(`Provide a rejection reason for ${item.materialCode}`);
+    if ((row.date || row.time) && (!validDay(row.date) || !validClock(row.time))) fail(`Provide both replacement date and time for ${item.materialCode}, or leave both blank`);
     return { itemId: item.id, materialCode: item.materialCode, uom: item.uom, expectedQuantity: item.quantity, acceptedQuantity, remainingQuantity, reason: remainingQuantity ? String(row.reason).trim().slice(0, 1000) : '', date: remainingQuantity ? row.date : null, time: remainingQuantity ? row.time : null };
   });
   const inFull = items.every(row => row.remainingQuantity === 0);
-  if ((input.outcome === 'FULL') !== inFull) fail('Receipt outcome must match the inspected quantities');
+  if (input.outcome !== 'NOT_OTIF' && (input.outcome === 'FULL') !== inFull) fail('Receipt outcome must match the inspected quantities');
+  if(input.outcome === 'NOT_OTIF' && !String(input.reason || '').trim()) fail('Choose a reason for Not OTIF');
   const scheduled = new Date(`${shipment.scheduledDate}T${shipment.scheduledTime}:00+08:00`).getTime();
   const onTime = shipment.gateInAt ? new Date(shipment.gateInAt).getTime() <= scheduled + Number(graceMinutes) * 60000 : null;
-  return { outcome: input.outcome, inFull, onTime, otif: onTime === null ? null : onTime && inFull, items };
+  return { outcome: input.outcome, reason: String(input.reason || '').trim().slice(0,1000), inFull, onTime, otif: onTime === null ? null : onTime && inFull && input.outcome !== 'NOT_OTIF', items };
 }
 export function createReplacements(state, shipment, nextId, nextCode) {
   const groups = new Map();
-  for (const row of shipment.receipt.items.filter(row => row.remainingQuantity > 0)) {
+  for (const row of shipment.receipt.items.filter(row => row.remainingQuantity > 0 && validDay(row.date) && validClock(row.time))) {
     const key = `${row.date} ${row.time}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);

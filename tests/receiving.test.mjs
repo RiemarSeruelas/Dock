@@ -30,7 +30,7 @@ test('inspection records an on-time partial receipt and creates only shortage qu
   assert.equal(replacements[0].replacementForId, 1); assert.equal(replacements[0].bookingStatus, 'PENDING_SUPPLIER');
   assert.equal(replacements[0].gateInAt, undefined);
   assert.throws(() => inspectReceipt(s, { outcome: 'FULL', items: [{ itemId: 1, acceptedQuantity: 70 }, { itemId: 2, acceptedQuantity: 5 }] }), /Invalid accepted/);
-  assert.throws(() => inspectReceipt(s, { outcome: 'NOT_IN_FULL', items: [{ itemId: 1, acceptedQuantity: 40 }, { itemId: 2, acceptedQuantity: 5 }] }), /replacement date/);
+  assert.throws(() => inspectReceipt(s, { outcome: 'NOT_IN_FULL', items: [{ itemId: 1, acceptedQuantity: 40 }, { itemId: 2, acceptedQuantity: 5 }] }), /rejection reason/);
 });
 test('late full receipt is not OTIF and missing inspection is not counted as success', () => {
   const s = proposal(); s.gateInAt = '2026-09-06T02:00:00Z';
@@ -39,8 +39,8 @@ test('late full receipt is not OTIF and missing inspection is not counted as suc
   const result = calculateKpi([s, { ...proposal(), id: 2 }, { ...s, id: 3, replacementForId: 1 }], '2026-09');
   assert.equal(result.confirmed, 2); assert.equal(result.evaluated, 1); assert.equal(result.otifPercent, 0); assert.equal(result.awaitingInspection, 1);
 });
-test('SAP uses accepted quantities, leaves unknown fields blank, and preserves saved encoding', () => {
+test('SAP uses DR quantities, leaves actual received blank, and preserves saved encoding', () => {
   const s = proposal(); s.receipt = { items: [{ itemId: 1, acceptedQuantity: 40 }] };
   const state = { shipments: [s], sapRows: { '1:1': { revision: 1, values: { matdoc: '001234' } } } };
-  const row = sapRows(state)[0]; assert.equal(row.values.quantity, 40); assert.equal(row.values.matdoc, '001234'); assert.equal(row.values.breakdown, ''); assert.equal(row.values.description, 'Internal name');
+  const row = sapRows(state)[0]; assert.equal(row.values.quantity, 60); assert.equal(row.values.matdoc, '001234'); assert.equal(row.values.breakdown, ''); assert.equal(row.values.description, 'Internal name');
 });

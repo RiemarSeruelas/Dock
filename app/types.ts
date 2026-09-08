@@ -33,6 +33,8 @@ export interface SessionUser {
   workArea?: WorkArea | null;
   email?: string;
   emailVerifiedAt?: string | null;
+  mustChangePassword?: boolean;
+  onboardingRequired?: boolean;
 }
 
 export interface ShipmentItem {
@@ -83,7 +85,7 @@ export interface ShipmentScanRecord {
 }
 
 export interface QuantityAllocation { itemId: number; materialCode?: string; uom?: string; quantity: number; date: string; time: string }
-export interface ReceiptInput { outcome: "FULL" | "NOT_IN_FULL"; items: { itemId: number; acceptedQuantity: number; reason?: string; date?: string; time?: string }[] }
+export interface ReceiptInput { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; items: { itemId: number; acceptedQuantity: number; reason?: string; date?: string; time?: string }[] }
 export interface Shipment {
   helper1Name?: string;
   helper2Name?: string;
@@ -93,7 +95,9 @@ export interface Shipment {
   replacementForId?: number;
   replacementIds?: number[];
   quantityAllocations?: QuantityAllocation[];
-  receipt?: { outcome: "FULL" | "NOT_IN_FULL"; inFull: boolean; onTime: boolean | null; otif: boolean | null; items: { itemId: number; materialCode: string; uom: string; acceptedQuantity: number; remainingQuantity: number; date?: string; time?: string; reason?: string }[] };
+  proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[]}[];
+  changeReason?: string;
+  receipt?: { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; inFull: boolean; onTime: boolean | null; otif: boolean | null; items: { itemId: number; materialCode: string; uom: string; acceptedQuantity: number; remainingQuantity: number; date?: string; time?: string; reason?: string }[] };
   id: number;
   shipmentNumber: string;
   bookingReceipt: string;
@@ -231,6 +235,7 @@ export interface AppNotification {
 }
 
 export interface AppData {
+  currentUser?: SessionUser;
   shipments: Shipment[];
   rdsRequests: RdsRequest[];
   materials: Material[];
