@@ -29,7 +29,7 @@ One supplier company can have one active supplier account. Deleting its account 
 
 ## Importing an SDS
 
-Open **Schedule → Import SDS** and choose an Excel, OpenDocument, CSV, or TSV file.
+Open **Schedule → Import SDS** and choose an Excel, OpenDocument, CSV, or TSV file. Dressings and Savoury Planner accounts remain restricted to their own area, but either may import rows explicitly marked with Site = Ecosystem.
 
 The main spreadsheet details are:
 
@@ -55,9 +55,9 @@ An imported row is only a proposed schedule. It is not a booking, does not appea
 
 ## Supplier truck confirmation
 
-Accept the proposed time or propose an alternative date, time or quantity split. Date/time/reason are optional. Split quantities must total the original amount for each material. Administrator or Planner/Production approval is required for alternatives; rejecting one requires a reason. Truck details are submitted with the alternative, and approval immediately creates booked QR codes.
+Accept the proposed time or propose an alternative date, time or quantity split. Split quantities must total the original amount for each material. Administrator or Planner/Production approval is required for alternatives; while waiting, the request is read-only and cannot be submitted again. Approval returns the new schedule for truck confirmation; rejection requires a reason. Both decisions email verified supplier recipients.
 
-Choose one or two trucks and assign every remaining material code once. Provide each truck's plate, driver, phone number (local Philippine numbers are accepted), PO and DR numbers; helper names are optional. Each fully confirmed truck receives a unique delivery code, QR, monitoring card and report entry.
+Choose one or two trucks and assign every remaining material code once. Provide each truck's `AAA-1111` plate, driver, phone number (local Philippine numbers are accepted), PO and DR numbers; helper names are optional. Each fully confirmed truck receives a unique delivery code, QR, monitoring card and report entry.
 
 ## Monitoring and history
 
@@ -69,12 +69,12 @@ The notification bell is in the top navigation. Opening an alert marks it read, 
 
 ## Scan flow
 
-`Booking → Gate in → Unloading → Received → Gate out`
+`Booking → optional Trip → Gate in → Unloading → Received → Gate out`
 
-- Supplier scans view QR data only.
+- Supplier can record Trip, but Trip may be skipped before Security records Gate in.
 - Security records Gate in and Gate out.
 - Authorized Warehouse, Ecosystem or Administrator users record Unloading and inspect Received.
-- Received can be full or **Received – Not in Full**, with outstanding quantities, reason and replacement schedule.
+- Received can be full or **Received – Not in Full**, with outstanding quantities, reason and a required Follow up schedule. Each shortage creates a linked **Follow up** entry.
 - Gate out finishes site time and releases the dock.
 - Over HTTP, use QR photos, hardware scanners or manual codes. Live camera scanning requires HTTPS.
 

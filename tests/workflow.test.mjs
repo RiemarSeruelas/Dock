@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import ExcelJS from "exceljs";
-import { buildSdsChangeEmail } from "../server/mailer.js";
+import { buildSdsChangeEmail, buildSupplierRescheduleEmail } from "../server/mailer.js";
 
 test("supplier schedule emails contain only that supplier's detailed changes", () => {
   const message = buildSdsChangeEmail({ supplier: "Trial Ingredients Supplier", changes: [{
@@ -21,6 +21,25 @@ test("supplier schedule emails contain only that supplier's detailed changes", (
   assert.match(message.text, /Before[\s\S]*2026-08-28[\s\S]*After[\s\S]*2026-08-29/);
   assert.match(message.text, /SDS-1001: 550 KG/);
   assert.doesNotMatch(message.text, /SDS summary|Other Supplier|\.csv/i);
+});
+
+test("supplier reschedule email clearly separates scheduled and undeliverable allocations", () => {
+  const message = buildSupplierRescheduleEmail({
+    supplier: "Ajinomoto",
+    shipmentNumber: "SHP-20260910-002",
+    requestedAt: "2026-09-09T03:00:00.000Z",
+    scheduledDate: "2026-09-10",
+    scheduledTime: "09:00",
+    alternativeDate: "2026-09-10",
+    alternativeTime: "09:00",
+    quantityAllocations: [
+      { materialCode: "62820903", quantity: 100, uom: "KG", date: "2026-09-11", time: "09:00" },
+      { materialCode: "62820903", quantity: 70, uom: "KG", cannotDeliver: true, reason: "Insufficient stock" },
+    ],
+  });
+  assert.match(message.text, /WAITING FOR APPROVAL/);
+  assert.match(message.text, /CANNOT DELIVER[\s\S]*Insufficient stock/);
+  assert.doesNotMatch(message.text, /09:00–09:00|70 KG on at/);
 });
 
 const freePort = () => new Promise((resolve, reject) => {
@@ -140,10 +159,10 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   sheet.addRow(["Supplier", "Material Code", "Description", "UOM", "Quantity", "Delivery Date", "Delivery Time", "End Time", "Site"]);
   sheet.addRow(["Trial Ingredients Supplier", "SDS-1001", "Protected ingredient A", "KG", 500, "28-Aug-2026", "09:00", "11:00", "Dressings"]);
   sheet.addRow(["Trial Ingredients Supplier", "SDS-1002", "Protected ingredient B", "KG", 300, "28-Aug-2026", "09:00", "11:00", "Dressings"]);
-  const uploadPreview = async (sourceWorkbook, fileName = "supplier-sds.xlsx") => {
+  const uploadPreview = async (sourceWorkbook, fileName = "supplier-sds.xlsx", token = admin.token) => {
     const form = new FormData();
     form.append("file", new Blob([Buffer.from(await sourceWorkbook.xlsx.writeBuffer())]), fileName);
-    const response = await fetch(`${baseUrl}/api/imports/excel/preview`, { method: "POST", headers: { Authorization: `Bearer ${admin.token}` }, body: form });
+    const response = await fetch(`${baseUrl}/api/imports/excel/preview`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
     return { response, result: await response.json() };
   };
   const { response: previewResponse, result: preview } = await uploadPreview(workbook);
@@ -156,6 +175,14 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(committed.result.notification.status, "SENT");
   assert.deepEqual(committed.result.notification.supplierNotifications[0].changeTypes, ["NEW"]);
   assert.equal(committed.result.notification.supplierNotifications[0].supplier, "Trial Ingredients Supplier");
+
+  const ecosystemWorkbook = new ExcelJS.Workbook();
+  const ecosystemSheet = ecosystemWorkbook.addWorksheet("SDS Schedule");
+  ecosystemSheet.addRow(["Supplier", "Material Code", "UOM", "Quantity", "Delivery Date", "Delivery Time", "Site"]);
+  ecosystemSheet.addRow(["Trial Ingredients Supplier", "ECO-EXEMPT-1", "KG", 25, "29-Aug-2026", "10:00", "Ecosystem"]);
+  const ecosystemPreview = await uploadPreview(ecosystemWorkbook, "ecosystem-exemption.xlsx", planner.token);
+  assert.equal(ecosystemPreview.response.status, 200);
+  assert.equal(ecosystemPreview.result.summary.readyRows, 1);
 
   const duplicatePreview = await uploadPreview(workbook, "same-data-renamed.xlsx");
   const duplicateCommit = await call("/api/imports/excel/commit", { token: admin.token, method: "POST", body: { previewToken: duplicatePreview.result.previewToken } });
@@ -288,10 +315,12 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(rejectionCommit.response.status, 201);
   const beforeReject = await call("/api/bootstrap", { token: supplier.token });
   const rejectionProposal = beforeReject.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-REJECT-1"));
-  const rejectedResponse = await call(`/api/shipments/${rejectionProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "Truck is unavailable", alternativeDate: "2026-08-31", alternativeTime: "10:00", alternativeEndTime: "11:00", loadConfirmed: true, trucks: [{truckPlate:"ALT 123",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:rejectionProposal.items.map(item=>item.id)}] } });
+  const rejectedResponse = await call(`/api/shipments/${rejectionProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "Truck is unavailable", alternativeDate: "2026-08-31", alternativeTime: "10:00", alternativeEndTime: "11:00", loadConfirmed: true, trucks: [{truckPlate:"ALT-0123",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:rejectionProposal.items.map(item=>item.id)}] } });
   assert.equal(rejectedResponse.response.status, 200);
   assert.equal(rejectedResponse.result.alternativeProposed, true);
   assert.equal(rejectedResponse.result.notification.status, "SENT");
+  const repeatedProposal = await call(`/api/shipments/${rejectionProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "Trying again", alternativeDate: "2026-09-02", alternativeTime: "11:00", loadConfirmed: true, trucks: [{truckPlate:"ALT-0123",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:rejectionProposal.items.map(item=>item.id)}] } });
+  assert.equal(repeatedProposal.response.status, 409);
   const companyReview = await call("/api/bootstrap", { token: planner.token });
   assert.equal(companyReview.result.shipments.find((shipment) => shipment.id === rejectionProposal.id).bookingStatus, "PENDING_COMPANY");
   const plannerDecisionNotification = companyReview.result.notifications.find((notification) => notification.shipmentId === rejectionProposal.id && notification.type === "WARNING" && notification.requiresAction);
@@ -310,7 +339,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal((await call(`/api/shipments/${rejectionProposal.id}/qr.svg`, { token: supplier.token })).response.status, 409);
 
   const approvalProposal = beforeReject.result.shipments.find((shipment) => shipment.items.some((item) => item.materialCode === "SDS-APPROVE-ALT-1"));
-  const approvalAlternative = await call(`/api/shipments/${approvalProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "A truck is available later", alternativeDate: "2026-09-01", alternativeTime: "08:00", alternativeEndTime: "09:00", loadConfirmed: true, trucks: [{truckPlate:"ALT 123",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:approvalProposal.items.map(item=>item.id)}] } });
+  const approvalAlternative = await call(`/api/shipments/${approvalProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", reason: "A truck is available later", alternativeDate: "2026-09-01", alternativeTime: "08:00", alternativeEndTime: "09:00", loadConfirmed: true, trucks: [{truckPlate:"ALT-0123",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:approvalProposal.items.map(item=>item.id)}] } });
   assert.equal(approvalAlternative.response.status, 200);
   const companyApprove = await call(`/api/shipments/${approvalProposal.id}/company-decision`, { token: planner.token, method: "PATCH", body: { decision: "APPROVE" } });
   assert.equal(companyApprove.response.status, 200);
@@ -357,7 +386,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const second = approvedGroup.find(row => row.id !== first.id);
   const secondScan = (stage, receipt) => call('/api/shipments/scan-stage', { token: admin.token, method: 'POST', body: { scanValue: second.shipmentNumber, stage, receipt } });
   assert.equal((await secondScan('RECEIVED')).response.status, 400);
-  assert.equal((await secondScan('TRIP')).response.status, 200);
+  // Trip is optional: Security may scan Gate in while the delivery is still Booked.
   assert.equal((await secondScan('GATE')).response.status, 200);
   assert.equal((await secondScan('UNLOADING')).response.status, 200);
   const partial = await secondScan('RECEIVED', { outcome: 'NOT_IN_FULL', items: second.items.map(item => ({ itemId: item.id, acceptedQuantity: item.quantity - 10, reason: 'Damaged packaging', date: '2026-09-10', time: '10:00' })) });
@@ -367,7 +396,9 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal((await secondScan('RECEIVED')).result.alreadyRecorded, true);
   assert.equal((await secondScan('GATE')).response.status, 200);
   const replacementState = (await call('/api/bootstrap', { token: supplier.token })).result;
-  assert.equal(replacementState.shipments.filter(s => s.replacementForId === second.id).length, 1);
+  const followUps = replacementState.shipments.filter(s => s.replacementForId === second.id);
+  assert.equal(followUps.length, 1);
+  assert.equal(followUps[0].isFollowUp, true);
   assert.equal((await call(`/api/shipments/${second.id}/status`, { token: admin.token, method: 'PATCH', body: { status: 'RECEIVED' } })).response.status, 410);
   assert.equal((await call(`/api/shipments/lookup?code=${first.deliveryCode}`, { token: supplier.token })).response.status, 200);
 

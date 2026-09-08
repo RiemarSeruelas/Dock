@@ -1,11 +1,11 @@
 # DockFlow — workflow and interface update
 
-This ZIP contains the changed files for the uploaded 7th Project. It includes the earlier receiving/SAP changes and the latest corrections. Existing business data remains in JSON; the SAP worksheet now has a separate PostgreSQL connection.
+This ZIP contains the complete DockFlow project source. It includes the earlier receiving/SAP changes and the latest workflow corrections. Existing business data remains in JSON; the SAP worksheet has a separate PostgreSQL connection.
 
 ## Apply the update
 
 1. Stop DockFlow and back up the project, including your private `.env` and `data` folder.
-2. Extract this ZIP into the project root and replace matching files. Do not replace your data or `.env`.
+2. Extract this ZIP into a new folder, or copy its files over the existing project. Do not replace your live `data` folder or private `.env`.
 3. Copy the new SAP/network variables from `.env.example` into your existing `.env`, then configure them as described below. Keep your location-encryption key and existing credentials unchanged.
 4. Docker: `docker compose up -d --build --force-recreate`. npm: `npm.cmd install`, then `npm.cmd run dev`; for production use `npm.cmd run build` followed by `npm.cmd run start` and a separate API process.
 5. Sign out and sign in again. No volumes need to be deleted.
@@ -16,30 +16,32 @@ The npm web commands now use `server/web.js`. Use these commands rather than inv
 
 - Overview uses the supplied truck image in larger receiving lanes, only when occupied. Dressings uses Dock 1; Savoury uses Dock 2. Ecosystem has separate receiving docks.
 - Administration opens accounts and the protected receiving-site editor directly. Account colors match schedule colors, and unverified accounts use a compact disclosure.
-- Schedule has a rescheduling button with a count and a searchable, scrolling review dialog. Booked-day counts are removed. Day view includes supplier, codes, quantities, truck and time.
+- Schedule keeps Approved Deliveries, Rescheduling, Day/Week, the date selector, and Import SDS together in that order inside the calendar header. Day view includes supplier, codes, quantities, truck and time.
 - The notification bell sits beside the theme button. Planner is labelled **Planner/Production**.
 - New accounts receive their verification email once, on their first successful sign-in, when SMTP is configured. Account creation itself does not send the code. Activation asks for the code and a new password twice, then enters the application without a second sign-in. Existing accounts retain their current activation state. Existing Quality Inspection accounts migrate to Warehouse; new Quality Inspection accounts cannot be created.
 - The report month filter remains; the large monthly OTIF scorecard is removed. Report tables and Excel downloads respect the month.
 
 ## Supplier confirmation and alternatives
 
-Choose one or two trucks. Each needs plate, driver, phone, PO, DR and assigned material codes; helper names are optional. Philippine `09…`, `9…`, `63…` and `+63…` numbers are normalized. Material codes start selected for the first truck. For two trucks, move the relevant codes to the second checklist; every code must appear exactly once.
+Choose one or two trucks. Each needs plate, driver, phone, PO, DR and assigned material codes; helper names are optional. Plates are normalized to `AAA-1111`: the first three characters are letters and the final four are numbers. Philippine `09…`, `9…`, `63…`, `+63…`, and a local number pasted after the prefilled `+63` are normalized. Material codes start selected for the first truck. For two trucks, move the relevant codes to the second checklist; every code must appear exactly once.
 
 Alternative reasons are Reschedule Time and Date, Change in quantities, and Other. Notes are optional. Blank date/time fields keep the existing schedule. Quantity splits add the remaining amount when you leave the quantity field, rather than on every keystroke. Each material must either be fully allocated across the proposed schedules or marked **Can't deliver** with a reason.
 
-Truck details are not requested with an alternative. Planner approval returns the approved schedule to the supplier, who then assigns one or two trucks and confirms the delivery. That final confirmation creates the booking and QR. Rejection requires a reason; the application never invents drivers or plates.
+Truck details are not requested with an alternative. After submission, the request timestamp and **Waiting for planner approval** state are read-only; the supplier cannot submit another proposal for the same pending request. Planner approval returns the approved schedule to the supplier, who then assigns one or two trucks and confirms the delivery. That final confirmation creates the booking and QR. Approval and rejection both email verified supplier recipients. Rejection requires a reason; the application never invents drivers or plates.
 
 ## Receiving and clearance
 
-The scan sequence is Booking → Trip → Gate in → Unloading → Received → Gate out. Supplier/driver starts Trip, Security handles the ULI gate, and Warehouse handles unloading/receiving. Each station supports QR scanning and a direct confirmation button after selecting a delivery. Ecosystem can record its own incoming gate and receiving stages.
+The scan sequence is Booking → optional Trip → Gate in → Unloading → Received → Gate out. Supplier/driver may record Trip, but Security can record Gate in directly from Booked. Security handles the ULI gate, and Warehouse handles unloading/receiving. Each station supports QR scanning and a direct confirmation button after selecting a delivery. Ecosystem can record its own incoming gate and receiving stages.
 
-At Received choose **OTIF — all items accepted** or **Not OTIF — record the issue**. Gate-in time, including the configured grace period, remains the source of timeliness: selecting full receipt cannot turn a late delivery into OTIF. Not OTIF records the reason and rejected/short quantity for each material. Replacement date/time is optional; supply both together. A supplied schedule creates linked replacement proposals. Without one, outstanding quantities and reasons are recorded and emailed with the schedule still to be agreed. Receiving finishes and the truck can proceed to Gate out.
+At Received choose **OTIF — all items accepted** or **Not OTIF — record the issue**. Gate-in time, including the configured grace period, remains the source of timeliness: selecting full receipt cannot turn a late delivery into OTIF. Not OTIF records the reason and rejected/short quantity for each material. Choosing Other requires a written explanation. Every outstanding quantity requires a Follow up date and time. Finishing receiving emails the supplier and creates a linked, visibly labelled **Follow up** proposal for that schedule. The original truck can then proceed to Gate out.
 
 Warehouse, Administrator and receiving Ecosystem users can open **Inbound clearance** in confirmed delivery details. Available supplier, material, truck, driver, helper, DR/PO, quantity, batch/lot and scan timestamps autofill. SAP Actual Received is used when available, then the recorded accepted quantity. Review any manual fields and download the PDF. Both halves use the same values, with one A4 landscape page per material. The supplied original form is retained as the printable background. Print at actual size.
 
 ## Ecosystem
 
 Incoming deliveries with Site = Ecosystem appear in its Overview, Monitoring and Schedule. Outgoing ULI requests appear in My entries and notifications. Dressings/Savoury operations use their own docks.
+
+A Dressings or Savoury Planner can import spreadsheet rows whose Site is Ecosystem. The account's normal work-area restriction still applies to every non-Ecosystem row in that upload.
 
 Administrator or Ecosystem maintains requestable material codes and UOMs under **Ecosystem → Manage materials**. Administrator or Planner/Production selects multiple codes, enters quantities, destination and date/time, then sends a delivery request. It appears for the Ecosystem supplier account and is emailed to its verified address. There are no inventory quantities or stock-availability limits. Duplicate submission IDs are rejected.
 
@@ -81,7 +83,7 @@ The API creates schema `"Analysis"` and table `"SAPAnalysis"` on the first autho
 
 SAP Analysis and Administrator can edit SAP fields and cell formatting. Planner/Production can view the register and edit Destination. Warehouse can view the register and edit receiving and clearance fields. Supplier booking inputs remain in Scheduling, and suppliers do not receive access to the internal historical register. The API enforces these permissions even if someone manipulates the browser.
 
-The register searches PostgreSQL server-side, loads 50 rows at a time, and loads more only when requested. It refreshes only the newest page every 10 seconds while the tab is visible and preserves unsaved edits. Outside the allowed network, or when the database is unavailable, it displays no data.
+The register searches PostgreSQL server-side, loads 50 rows at a time, and loads more only when requested. It refreshes only the newest page every 10 seconds while the tab is visible and preserves unsaved edits. The rest of DockFlow refreshes its JSON-backed operational snapshot every 30 seconds. Outside the allowed network, or when the database is unavailable, SAP displays no data.
 
 The worksheet supports multi-cell, whole-row, and whole-column selection; fill, undo, redo, delete contents, font, emphasis, color, fill, alignment, wrap, indent, borders, row height, column width, and hide/show controls. Copy, cut, paste, copy formatting, and paste formatting remain available through standard keyboard shortcuts even though their toolbar buttons were removed. Cell formatting, row height, and hidden-row state are stored in PostgreSQL. Hidden columns and column widths are browser layout preferences. Record cells are deliberately not mergeable because each database row must retain its own field boundaries.
 
@@ -116,7 +118,7 @@ For this unified update, the Excel download keeps the original 16 columns first 
 
 ## Verification and limits
 
-- Automated workflow, import, split, receiving, activation, SAP permissions/conflicts/pagination/network spoofing, Ecosystem catalog and clearance checks pass; production build and lint pass.
+- All 19 automated checks pass, covering workflow, import/work-area rules, split quantities, receiving/Follow ups, activation, SAP permissions/conflicts/pagination/network spoofing, Ecosystem catalog, emails and clearance. Production build and lint also pass.
 - The requested new Received-to-SAP/OTIF integration is deliberately deferred; this package retains the existing receiving behavior.
 - The clearance PDF was rendered and visually checked against the supplied form; both copies align.
 - Live PostgreSQL credentials/network were not supplied. Connection to your database, live SMTP delivery and Docker image execution remain unverified.

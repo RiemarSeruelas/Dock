@@ -110,6 +110,11 @@ const normalizeWorkArea = (value) => {
   if (/SAVOU?R/.test(normalized)) return "SAVOURY";
   return null;
 };
+const normalizePlate = (value) => {
+  const plate = String(value || "").trim().toUpperCase();
+  const match = plate.match(/^([A-Z]{3})[ -]?(\d{4})$/);
+  return match ? `${match[1]}-${match[2]}` : plate;
+};
 const shipmentWorkArea = (shipment) => normalizeWorkArea((shipment.items || []).find((item) => item.deliverySite)?.deliverySite);
 const validCoordinates = (value) => value && Number.isFinite(Number(value.lat)) && Number.isFinite(Number(value.lon));
 const LOCATION_ENCRYPTION_PREFIX = "enc:v1:";
@@ -284,7 +289,7 @@ const scanShipmentNumber = (rawValue) => {
 };
 const SCAN_STAGES = {
   TRIP: { status: "IN_TRANSIT", label: "Trip", roles: ["admin", "supplier", "driver", "ecosystem"], from: ["BOOKED"] },
-  GATE: { status: null, label: "Gate", roles: ["admin", "security", "ecosystem"], from: ["IN_TRANSIT", "RECEIVED"] },
+  GATE: { status: null, label: "Gate", roles: ["admin", "security", "ecosystem"], from: ["BOOKED", "IN_TRANSIT", "RECEIVED"] },
   UNLOADING: { status: "UNLOADING", label: "Unloading", roles: ["admin", "warehouse", "ecosystem"], from: ["GATE_IN"] },
   RECEIVED: { status: "RECEIVED", label: "Received", roles: ["admin", "warehouse", "ecosystem"], from: ["UNLOADING"] },
 };
@@ -348,7 +353,7 @@ const canAccessShipment = (user, shipment) => {
   if (companyScopedRoles.has(user.role)) return Number(user.supplierId) === Number(shipment.supplierId);
   if (["planner", "warehouse"].includes(user.role) && normalizeWorkArea(user.workArea)) {
     const area = shipmentWorkArea(shipment);
-    return area === normalizeWorkArea(user.workArea) || (user.role === "planner" && Boolean(shipment.destinationEcosystemId) && shipment.originWorkArea === normalizeWorkArea(user.workArea));
+    return area === normalizeWorkArea(user.workArea) || (user.role === "planner" && area === "ECOSYSTEM") || (user.role === "planner" && Boolean(shipment.destinationEcosystemId) && shipment.originWorkArea === normalizeWorkArea(user.workArea));
   }
   return true;
 };
@@ -547,6 +552,8 @@ await store.update(async (state) => {
     shipment.shipmentNumber ||= nextCode("SHP", shipment.id, shipment.scheduledDate);
     shipment.bookingReceipt ||= nextCode("BKG", shipment.id, shipment.scheduledDate);
     shipment.supplier = String(shipment.supplier || "Supplier to assign");
+    shipment.isFollowUp = Boolean(shipment.isFollowUp || shipment.replacementForId);
+    shipment.followUpLabel = shipment.isFollowUp ? String(shipment.followUpLabel || "Follow up") : null;
     shipment.vendorCode = String(shipment.vendorCode || "SUPPLIER");
     shipment.supplierId = Number(shipment.supplierId) || state.suppliers.find((supplier) => supplier.vendorCode === shipment.vendorCode || supplier.name === shipment.supplier)?.id || null;
     delete shipment.dppNumber;
@@ -830,7 +837,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
   if (decision === "ACCEPT" && !request.body?.loadConfirmed) return response.status(400).json({ message: "Confirm that every material is assigned to a truck" });
   if (decision === "ACCEPT" && !trucks.length) return response.status(400).json({ message: "Add one or two delivery entries" });
   const normalizedTrucks = trucks.map((truck) => ({
-    truckPlate: String(truck?.truckPlate || "").trim().toUpperCase(),
+    truckPlate: normalizePlate(truck?.truckPlate),
     driverName: String(truck?.driverName || "").trim() || "To be assigned",
     driverPhone: normalizePhone(truck?.driverPhone),
     helper1Name: String(truck?.helper1Name || "").trim().slice(0, 100),
@@ -839,22 +846,32 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
     drNumber: String(truck?.drNumber || "").trim().slice(0, 100),
     itemIds: [...new Set((Array.isArray(truck?.itemIds) ? truck.itemIds : []).map(Number).filter(Number.isFinite))],
   }));
-  if (decision === "ACCEPT" && normalizedTrucks.some((truck) => !truck.truckPlate || !truck.driverName || truck.driverName === "To be assigned" || !truck.driverPhone || !truck.poNumber || !truck.drNumber || !truck.itemIds.length)) return response.status(400).json({ message: "Complete the plate, driver, Philippine phone, PO, DR, and material selection for every entry" });
-  if (decision === "ACCEPT" && normalizedTrucks.some((truck) => !/^[A-Z]{3}[ -]?\d{4}$/.test(truck.truckPlate))) return response.status(400).json({ message: "Plate numbers must contain 3 letters and 4 numbers, such as ABC 1234" });
+  if (decision === "ACCEPT") {
+    const invalidIndex = normalizedTrucks.findIndex((truck) => !truck.truckPlate || !truck.driverName || truck.driverName === "To be assigned" || !truck.driverPhone || !truck.poNumber || !truck.drNumber || !truck.itemIds.length);
+    if (invalidIndex >= 0) {
+      const truck = normalizedTrucks[invalidIndex];
+      const missing = [!truck.truckPlate && "plate", (!truck.driverName || truck.driverName === "To be assigned") && "driver", !truck.driverPhone && "Philippine phone", !truck.poNumber && "PO", !truck.drNumber && "DR", !truck.itemIds.length && "material selection"].filter(Boolean);
+      return response.status(400).json({ message: `Entry ${invalidIndex + 1}: add ${missing.join(", ")}` });
+    }
+  }
+  if (decision === "ACCEPT" && normalizedTrucks.some((truck) => !/^[A-Z]{3}-\d{4}$/.test(truck.truckPlate))) return response.status(400).json({ message: "Plate numbers must use AAA-1111: 3 letters, a hyphen, then 4 numbers" });
   if (decision === "ACCEPT" && new Set(normalizedTrucks.map((truck) => truck.truckPlate)).size !== normalizedTrucks.length) return response.status(400).json({ message: "Each truck plate must be unique" });
-  if (decision === "ACCEPT" && normalizedTrucks.some((truck) => !/^\+639\d{9}$/.test(truck.driverPhone))) return response.status(400).json({ message: "Use a Philippine mobile number such as +639171234567 or 09171234567" });
+  if (decision === "ACCEPT") {
+    const invalidPhone = normalizedTrucks.findIndex((truck) => !/^\+639\d{9}$/.test(truck.driverPhone));
+    if (invalidPhone >= 0) return response.status(400).json({ message: `Entry ${invalidPhone + 1}: use a Philippine mobile number such as +639171234567 or 09171234567` });
+  }
   const result = await store.update((state) => {
     const proposal = state.shipments.find((shipment) => shipment.id === Number(request.params.id));
     if (!proposal) return null;
     if (Number(request.user.supplierId) !== Number(proposal.supplierId)) return { forbidden: true };
-    if (proposal.bookingStatus !== "PENDING_SUPPLIER" && !(proposal.bookingStatus === "PENDING_COMPANY" && decision === "PROPOSE_ALTERNATIVE")) return { alreadyResponded: true };
+    if (proposal.bookingStatus !== "PENDING_SUPPLIER") return { alreadyResponded: true };
     if (decision === "PROPOSE_ALTERNATIVE") {
       proposal.proposedTrucks = [];
       proposal.changeReason = String(request.body.changeReason || "Others");
       if (proposal.confirmedTruckLoads?.length) return { alreadyResponded: true };
       alternativeDate ||= proposal.scheduledDate;
       alternativeTime ||= proposal.scheduledTime;
-      alternativeEndTime ||= proposal.scheduledEndTime || alternativeTime;
+      alternativeEndTime ||= proposal.scheduledEndTime || "";
       proposal.quantityAllocations = normalizeSplits(proposal, request.body.quantityAllocations, alternativeDate, alternativeTime);
       resolveShipmentNotifications(state, proposal, [request.user.id]);
       const respondedAt = new Date().toISOString();
@@ -875,7 +892,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
       const companyUsers = state.users.filter((user) => ["admin", "planner"].includes(user.role) && canAccessShipment(user, proposal));
       companyUsers.forEach((user) => addNotification(state, user, { type: "WARNING", title: "Reschedule decision required", message: `${proposal.supplier} requested ${alternativeDate} at ${alternativeTime}${reason ? `. Reason: ${reason}` : ""}`, shipment: proposal, requiresAction: true }));
       const recipients = companyUsers.filter((user) => user.emailVerifiedAt && user.email).map((user) => user.email);
-      return { quantityAllocations: proposal.quantityAllocations, alternativeProposed: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, scheduledDate: proposal.scheduledDate, scheduledTime: proposal.scheduledTime, scheduledEndTime: proposal.scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, recipients };
+      return { quantityAllocations: proposal.quantityAllocations, alternativeProposed: true, partial: false, remainingMaterialCount: proposal.items.length, shipmentNumber: proposal.shipmentNumber, supplier: proposal.supplier, reason, changeReason: proposal.changeReason, requestedAt: respondedAt, scheduledDate: proposal.scheduledDate, scheduledTime: proposal.scheduledTime, scheduledEndTime: proposal.scheduledEndTime, alternativeDate, alternativeTime, alternativeEndTime, recipients };
     }
     const expectedIds = new Set(proposal.items.map((item) => Number(item.id)));
     const existingLoads = Array.isArray(proposal.confirmedTruckLoads) ? proposal.confirmedTruckLoads : [];
@@ -958,7 +975,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
   if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
   if (result.alternativeProposed && result.recipients) {
-    try { notification = await emailNotifications.sendSupplierReschedule({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, reason: result.reason, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime, scheduledEndTime: result.scheduledEndTime, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime, alternativeEndTime: result.alternativeEndTime, quantityAllocations: result.quantityAllocations }); }
+    try { notification = await emailNotifications.sendSupplierReschedule({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, reason: result.reason || result.changeReason, requestedAt: result.requestedAt, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime, scheduledEndTime: result.scheduledEndTime, alternativeDate: result.alternativeDate, alternativeTime: result.alternativeTime, alternativeEndTime: result.alternativeEndTime, quantityAllocations: result.quantityAllocations }); }
     catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Supplier decision notification failed: ${error.message}`); }
   }
   const { recipients: _recipients, ...publicResult } = result;
@@ -1032,7 +1049,9 @@ app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner")
   if (!result) return response.status(404).json({ message: "SDS proposal not found" });
   if (result.forbidden) return response.status(403).json({ message: "This reschedule request belongs to another work area" });
   if (result.alreadyDecided) return response.status(409).json({ message: "This proposed schedule has already been reviewed" });
-  const notification = await emailNotifications.sendDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, decision: result.decision, reason: result.reason });
+  let notification;
+  try { notification = await emailNotifications.sendDecision({ sender: emailSender, recipients: result.recipients, shipmentNumber: result.shipmentNumber, supplier: result.supplier, decision: result.decision, reason: result.reason, scheduledDate: result.scheduledDate, scheduledTime: result.scheduledTime }); }
+  catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Schedule-decision notification failed: ${error.message}`); }
   const { recipients: _recipients, ...publicResult } = result; void _recipients;
   response.json({ ...publicResult, notification });
 }));
@@ -1150,7 +1169,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
       shipment.replacementIds = createReplacements(state, shipment, nextId, nextCode).map(row => row.id);
       for (const user of state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId))) {
         addNotification(state, user, { title: receipt.inFull ? "Delivery received" : "Received – Not in Full", message: receipt.items.filter(row => row.remainingQuantity).map(row => `${row.materialCode}: ${row.remainingQuantity} ${row.uom}, ${row.date} ${row.time}. ${row.reason}`).join("; ") || shipment.shipmentNumber, shipment });
-        for (const id of shipment.replacementIds) addNotification(state, user, { title: "Replacement delivery requested", message: "Review the outstanding quantities and confirm the replacement delivery.", shipment: state.shipments.find(row => row.id === id), requiresAction: true });
+        for (const id of shipment.replacementIds) addNotification(state, user, { title: "Follow up delivery created", message: "Review the outstanding quantities and confirm the Follow up delivery.", shipment: state.shipments.find(row => row.id === id), requiresAction: true });
       }
     }
     if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
@@ -1192,7 +1211,7 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   const fallbackDate = state.settings.availableDates[0] || localDate(1);
   const preview = await parseDeliveryWorkbook(request.file.buffer, request.file.originalname, { fallbackDate });
   if (request.user.role === "planner" && normalizeWorkArea(request.user.workArea)) {
-    const outsideArea = [...new Set(preview.rows.map((row) => normalizeWorkArea(row.site)).filter((area) => area && area !== normalizeWorkArea(request.user.workArea)))];
+    const outsideArea = [...new Set(preview.rows.map((row) => normalizeWorkArea(row.site)).filter((area) => area && area !== "ECOSYSTEM" && area !== normalizeWorkArea(request.user.workArea)))];
     if (outsideArea.length) return response.status(403).json({ message: `This Planner account can only import ${String(request.user.workArea).toLowerCase()} schedules` });
   }
   const accountBySupplier = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplierHasAccount(state, supplier.id)]));

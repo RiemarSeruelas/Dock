@@ -95,6 +95,8 @@ export interface Shipment {
   destinationEcosystemId?: number | null;
   replacementForId?: number;
   replacementIds?: number[];
+  isFollowUp?: boolean;
+  followUpLabel?: string;
   quantityAllocations?: QuantityAllocation[];
   proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[]}[];
   changeReason?: string;

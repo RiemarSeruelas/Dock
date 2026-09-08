@@ -25,6 +25,7 @@ test('alternative approval preserves split quantities and books distinct QR code
  assert.throws(()=>validateProposedTrucks(shipment(),[{itemIds:[1]},{itemIds:[1,2]}]),/exactly one/);
  assert.equal(normalizePhone('0917 123-4567'),'+639171234567');
  assert.equal(normalizePhone('+63 (917) 123 4567'),'+639171234567');
+ assert.equal(normalizePhone('+63 0917 123 4567'),'+639171234567');
 });
 test('SAP denies unknown networks and ignores forwarded identities from untrusted peers',()=>{
  const saved={allowed:process.env.SAP_ALLOWED_CIDRS,trusted:process.env.SAP_TRUSTED_PROXY_CIDRS};
@@ -63,11 +64,13 @@ test('missing PostgreSQL configuration fails closed',async()=>{
  const prior=process.env.POSTGRES_HOST;process.env.POSTGRES_HOST='your_postgres_host';
  try {await assert.rejects(()=>createSapRepository().page(0,25),/not configured/);} finally {if(prior===undefined)delete process.env.POSTGRES_HOST;else process.env.POSTGRES_HOST=prior;}
 });
-test('Not OTIF supports full quantities and partial receipts without inventing a replacement date',()=>{
+test('short receipts require a follow-up schedule and create labelled follow-up entries',()=>{
  const row=shipment();
- row.receipt=inspectReceipt(row,{outcome:'NOT_OTIF',reason:'Quality rejected',items:[{itemId:1,acceptedQuantity:280,reason:'Damaged bag'},{itemId:2,acceptedQuantity:20}]});
+ assert.throws(()=>inspectReceipt(row,{outcome:'NOT_OTIF',reason:'Quality rejected',items:[{itemId:1,acceptedQuantity:280,reason:'Damaged bag'},{itemId:2,acceptedQuantity:20}]}),/follow-up date and time/);
+ row.receipt=inspectReceipt(row,{outcome:'NOT_OTIF',reason:'Quality rejected',items:[{itemId:1,acceptedQuantity:280,reason:'Damaged bag',date:'2026-09-10',time:'10:00'},{itemId:2,acceptedQuantity:20}]});
  assert.equal(row.receipt.otif,false);assert.equal(row.receipt.items[0].remainingQuantity,20);
- assert.deepEqual(createReplacements({shipments:[row]},row,nextId,nextCode),[]);
+ const replacements=createReplacements({shipments:[row]},row,nextId,nextCode);
+ assert.equal(replacements.length,1);assert.equal(replacements[0].isFollowUp,true);assert.equal(replacements[0].followUpLabel,'Follow up');
  const full=inspectReceipt(row,{outcome:'NOT_OTIF',reason:'Missing documents',items:row.items.map(item=>({itemId:item.id,acceptedQuantity:item.quantity}))});
  assert.equal(full.inFull,true);assert.equal(full.otif,false);
 });

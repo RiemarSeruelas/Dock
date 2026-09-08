@@ -67,7 +67,7 @@ export function inspectReceipt(shipment, input, graceMinutes = 0) {
     if (!row || row.acceptedQuantity === '' || !Number.isFinite(acceptedQuantity) || acceptedQuantity < 0 || acceptedQuantity > item.quantity) fail(`Invalid accepted quantity for ${item.materialCode}`);
     const remainingQuantity = roundQuantity(item.quantity - acceptedQuantity);
     if (remainingQuantity && !String(row.reason || '').trim()) fail(`Provide a rejection reason for ${item.materialCode}`);
-    if ((row.date || row.time) && (!validDay(row.date) || !validClock(row.time))) fail(`Provide both replacement date and time for ${item.materialCode}, or leave both blank`);
+    if (remainingQuantity && (!validDay(row.date) || !validClock(row.time))) fail(`Provide the follow-up date and time for ${item.materialCode}`);
     return { itemId: item.id, materialCode: item.materialCode, uom: item.uom, expectedQuantity: item.quantity, acceptedQuantity, remainingQuantity, reason: remainingQuantity ? String(row.reason).trim().slice(0, 1000) : '', date: remainingQuantity ? row.date : null, time: remainingQuantity ? row.time : null };
   });
   const inFull = items.every(row => row.remainingQuantity === 0);
@@ -87,7 +87,7 @@ export function createReplacements(state, shipment, nextId, nextCode) {
   let nextItem = Math.max(0, ...state.shipments.flatMap(s => s.items.map(item => item.id))) + 1;
   return [...groups.values()].map(rows => {
     const id = nextId(state.shipments);
-    const replacement = { id, shipmentNumber: nextCode('SHP', id, rows[0].date), bookingReceipt: nextCode('BKG', id, rows[0].date), supplier: shipment.supplier, supplierId: shipment.supplierId, vendorCode: shipment.vendorCode, destinationEcosystemId: shipment.destinationEcosystemId || null, replacementForId: shipment.id, scheduledDate: rows[0].date, scheduledTime: rows[0].time, scheduledEndTime: null, status: 'PROPOSED', bookingStatus: 'PENDING_SUPPLIER', truckPlate: '', driverName: '', driverPhone: '', confirmedTruckLoads: [], palletsScanned: 0, palletsTotal: 0, materialWeightKg: 0, items: rows.map(row => ({ ...shipment.items.find(item => item.id === row.itemId), id: nextItem++, quantity: row.remainingQuantity, supplierApprovedAt: null, assignedTruckPlate: null, remarks: row.reason })) };
+    const replacement = { id, shipmentNumber: nextCode('SHP', id, rows[0].date), bookingReceipt: nextCode('BKG', id, rows[0].date), supplier: shipment.supplier, supplierId: shipment.supplierId, vendorCode: shipment.vendorCode, destinationEcosystemId: shipment.destinationEcosystemId || null, replacementForId: shipment.id, isFollowUp: true, followUpLabel: 'Follow up', scheduledDate: rows[0].date, scheduledTime: rows[0].time, scheduledEndTime: null, status: 'PROPOSED', bookingStatus: 'PENDING_SUPPLIER', truckPlate: '', driverName: '', driverPhone: '', confirmedTruckLoads: [], palletsScanned: 0, palletsTotal: 0, materialWeightKg: 0, items: rows.map(row => ({ ...shipment.items.find(item => item.id === row.itemId), id: nextItem++, quantity: row.remainingQuantity, supplierApprovedAt: null, assignedTruckPlate: null, remarks: row.reason })) };
     state.shipments.push(replacement);
     return replacement;
   });
