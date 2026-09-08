@@ -1,88 +1,124 @@
-# DockFlow receiving and SAP update
+# DockFlow — workflow and interface update
 
-This update uses the uploaded **7th Project.zip** as its baseline. PostgreSQL stays disconnected. Existing accounts, records, encrypted locations and private environment settings are retained.
+This ZIP contains the changed files for the uploaded 7th Project. It includes the earlier receiving/SAP changes and the latest corrections. Existing business data remains in JSON; the SAP worksheet now has a separate PostgreSQL connection.
 
-## Install
+## Apply the update
 
-1. Stop DockFlow and back up the project, including its private `.env` and `data` folder.
-2. Extract the update ZIP into the project root, replacing the matching files. The ZIP contains only changed/new source files and this guide. Do not replace your data or `.env`.
-3. For Docker, run `docker compose up -d --build --force-recreate`.
-4. For npm development, stop the running process and run `npm.cmd run dev` again. No new packages are required.
-5. Sign out and sign in again, then refresh the browser.
+1. Stop DockFlow and back up the project, including your private `.env` and `data` folder.
+2. Extract this ZIP into the project root and replace matching files. Do not replace your data or `.env`.
+3. Copy the new SAP/network variables from `.env.example` into your existing `.env`, then configure them as described below. Keep your location-encryption key and existing credentials unchanged.
+4. Docker: `docker compose up -d --build --force-recreate`. npm: `npm.cmd install`, then `npm.cmd run dev`; for production use `npm.cmd run build` followed by `npm.cmd run start` and a separate API process.
+5. Sign out and sign in again. No volumes need to be deleted.
 
-Do not delete volumes. Keep your existing `LOCATION_ENCRYPTION_KEY` unchanged.
+The npm web commands now use `server/web.js`. Use these commands rather than invoking `next start` directly: the wrapper verifies the client address before forwarding API requests.
 
-## Supplier schedule and trucks
+## Screens and accounts
 
-- Accept the proposed time or propose an alternative. Proposed date, time and reason are optional; blank fields retain the original schedule.
-- Select **Split proposed quantities** to divide an order into delivery installments. Entering less than the total adds another quantity row. Set a date/time on each row.
-- Quantities must be positive and total the original amount **for each material line and unit**. For example, 60 KG can become 30 KG today and 30 KG tomorrow; quantities from different materials are never combined.
-- The planner reviews all allocations. Rejection requires a reason. Approval creates separate pending proposals for distinct delivery dates/times, then the supplier confirms their trucks.
-- Choose one or two trucks and assign every remaining material code once. Each truck needs plate, driver, international phone number, PO number and DR number. Two helper names are optional.
-- Each confirmed truck receives its own delivery code and QR. Existing partially confirmed proposals remain usable, up to the two-truck limit.
+- Overview uses the supplied truck image in larger receiving lanes, only when occupied. Dressings uses Dock 1; Savoury uses Dock 2. Ecosystem has separate receiving docks.
+- Administration opens accounts and the protected receiving-site editor directly. Account colors match schedule colors, and unverified accounts use a compact disclosure.
+- Schedule has a rescheduling button with a count and a searchable, scrolling review dialog. Booked-day counts are removed. Day view includes supplier, codes, quantities, truck and time.
+- The notification bell sits beside the theme button. Planner is labelled **Planner/Production**.
+- New accounts receive their verification email once, on their first successful sign-in, when SMTP is configured. Account creation itself does not send the code. Activation asks for the code and a new password twice, then enters the application without a second sign-in. Existing accounts retain their current activation state. Existing Quality Inspection accounts migrate to Warehouse; new Quality Inspection accounts cannot be created.
+- The report month filter remains; the large monthly OTIF scorecard is removed. Report tables and Excel downloads respect the month.
 
-## Gate and receiving inspection
+## Supplier confirmation and alternatives
 
-The workflow is **Booked → Gate in → Unloading → Received → Gate out**. Trip scanning has been removed. Supplier QR scans only display their delivery data.
+Choose one or two trucks. Each needs plate, driver, phone, PO, DR and assigned material codes; helper names are optional. Philippine `09…`, `9…`, `63…` and `+63…` numbers are normalized. Material codes start selected for the first truck. For two trucks, move the relevant codes to the second checklist; every code must appear exactly once.
 
-- Security records Gate in and Gate out. Gate in always records arrival even when both docks are occupied; such trucks wait for a dock before unloading.
-- Warehouse, Quality inspection, Ecosystem receivers and Administrators can perform authorized receiving steps. Work-area and Ecosystem ownership restrictions are enforced by the API.
-- Received opens an inspection form. Choose **Received — In Full** or **Received – Not in Full**.
-- A partial receipt requires accepted quantities, issue/reason, and replacement date/time for each affected material. Unaffected items retain their full accepted quantity.
-- Finishing a partial receipt completes receiving for that truck. Gate out still releases its dock. Linked pending replacement proposals contain only the outstanding quantities, and the supplier receives the details in-app and by email when configured.
-- Repeated receiving scans do not create another replacement proposal. The old direct status-update API is disabled so it cannot bypass inspection.
-- Previous Trip timestamps are retained as historical data; new deliveries do not use them.
+Alternative reasons are Reschedule Time and Date, Change in quantities, and Other. Notes are optional. Blank date/time fields keep the existing schedule. Quantity splits add the remaining amount when you leave the quantity field, rather than on every keystroke. Each material must either be fully allocated across the proposed schedules or marked **Can't deliver** with a reason.
 
-## OTIF and monthly email
+Truck details are not requested with an alternative. Planner approval returns the approved schedule to the supplier, who then assigns one or two trucks and confirms the delivery. That final confirmation creates the booking and QR. Rejection requires a reason; the application never invents drivers or plates.
 
-- On time: Gate in is no later than scheduled entrance plus `settings.graceMinutes` (the existing default is 30 minutes).
-- In full: all quantities are accepted by inspection.
-- OTIF: both conditions are true. A late full delivery and an on-time partial delivery both fail OTIF.
-- The monthly scorecard groups original confirmed deliveries by scheduled month. Only inspected deliveries with a Gate-in timestamp enter the percentage denominator; pending inspection is shown separately. Replacement trips are excluded from the original-delivery denominator.
-- Site time is Gate in to Gate out. Reports include helpers, PO/DR and inspection outcomes.
-- The single-instance API checks hourly and emails the previous calendar month's results to verified Supplier/Ecosystem recipients and ULI Administrator/Planner recipients. Planner emails follow work-area scope; supplier emails contain only their own performance.
-- Enable the existing `EMAIL_NOTIFICATIONS_ENABLED` and SMTP settings. Account email verification remains required. Successful recipient/month sends persist in JSON; failed sends retry. The API must be running. After downtime it catches up the immediately previous month, not every historical missed month.
-- Live SMTP was not exercised. This trial scheduler has no durable outbox: a crash after SMTP accepts a message but before the success record is written can cause a duplicate email.
+## Receiving and clearance
 
-## Ecosystem receiving and supplying
+The scan sequence is Booking → Trip → Gate in → Unloading → Received → Gate out. Supplier/driver starts Trip, Security handles the ULI gate, and Warehouse handles unloading/receiving. Each station supports QR scanning and a direct confirmation button after selecting a delivery. Ecosystem can record its own incoming gate and receiving stages.
 
-Create **Ecosystem (receive & supply)** in Administration using the warehouse company's name and email.
+At Received choose **OTIF — all items accepted** or **Not OTIF — record the issue**. Gate-in time, including the configured grace period, remains the source of timeliness: selecting full receipt cannot turn a late delivery into OTIF. Not OTIF records the reason and rejected/short quantity for each material. Replacement date/time is optional; supply both together. A supplied schedule creates linked replacement proposals. Without one, outstanding quantities and reasons are recorded and emailed with the schedule still to be agreed. Receiving finishes and the truck can proceed to Gate out.
 
-1. An Administrator/Planner opens **Ecosystem** and assigns a pending, unconfirmed inbound proposal to that receiving warehouse.
-2. The original supplier confirms its delivery. The named Ecosystem account sees its inbound delivery and can record unloading and inspection. Security records gate events.
-3. Accepted inventory appears in **Ecosystem stock & transfers**. Rejected quantities do not enter available stock.
-4. An Administrator/Planner requests an available material quantity, destination Dressings/Savoury, and date/time.
-5. The Ecosystem receives a supplier proposal and confirms truck/material details. The normal receiving workflow then runs at ULI.
+Warehouse, Administrator and receiving Ecosystem users can open **Inbound clearance** in confirmed delivery details. Available supplier, material, truck, driver, helper, DR/PO, quantity, batch/lot and scan timestamps autofill. SAP Actual Received is used when available, then the recorded accepted quantity. Review any manual fields and download the PDF. Both halves use the same values, with one A4 landscape page per material. The supplied original form is retained as the printable background. Print at actual size.
 
-Stock is reserved atomically when a transfer is requested. Requests above available stock are rejected, including repeated requests after the stock has been reserved. This is a delivery-linked trial stock ledger, not a complete warehouse-management or stock-adjustment system.
+## Ecosystem
 
-## SAP receiving register
+Incoming deliveries with Site = Ecosystem appear in its Overview, Monitoring and Schedule. Outgoing ULI requests appear in My entries and notifications. Dressings/Savoury operations use their own docks.
 
-Create **SAP Analysis** in Administration. Only that role can open, edit, verify, save or download the register; Administrator and Supplier accounts cannot call the SAP worksheet endpoints.
+Administrator or Ecosystem maintains requestable material codes and UOMs under **Ecosystem → Manage materials**. Administrator or Planner/Production selects multiple codes, enters quantities, destination and date/time, then sends a delivery request. It appears for the Ecosystem supplier account and is emailed to its verified address. There are no inventory quantities or stock-availability limits. Duplicate submission IDs are rejected.
 
-The layout follows the reference: navy headers, teal source hints, green Batch cells and red MATDOC values. Rows appear after Gate in.
+For a single Ecosystem account, an SDS Site of Ecosystem is sufficient. The destination API can associate an unconfirmed delivery with a specific Ecosystem account when multiple receiving warehouses are used. Existing destination assignments are retained.
 
-| Column | Initial source |
-| --- | --- |
-| Delivery date | Gate in, displayed in Manila time |
-| Encoded by | Current SAP analyst on save |
-| Item | DockFlow material code |
-| Description | Internal material description when present |
-| DR / PO | Truck confirmation or existing item record |
-| Quantity | Accepted amount after inspection; scheduled amount before inspection |
-| Batch / manufacturing / expiry | Existing item fields when present |
-| Breakdown / MATDOC / supplier lot / remarks | Blank for SAP entry |
+## Monthly performance emails
 
-Use **Configure visible columns**, edit cells, mark rows verified, then **Save**. Download exports saved data as a styled Excel workbook. Concurrent edits use row revisions; stale saves are rejected instead of silently overwriting another analyst. The SAP verified checkbox is independent of physical receiving inspection.
+Administration includes **Monthly performance emails**, with day 1–28, Manila time, next planned send, recipient verification status and last successful send per account. Default is the first day at 09:00 Manila. Reports cover the previous calendar month. Only inspected original deliveries enter the OTIF denominator; replacement deliveries are excluded.
 
-This release is a JSON prototype. It makes no PostgreSQL connection and does not claim to enforce access based on membership of a PostgreSQL network. The later database integration needs a server-side trusted-network/VPN gateway and database permissions; a browser cannot prove database-network membership.
+SMTP and a running API are required. The scheduler checks each minute once the selected time is due, persists successful recipient/month sends, and retries failures. After downtime it catches up the immediately previous month. It remains a single-instance trial scheduler; a crash between SMTP acceptance and saving success can cause a duplicate.
 
-## Verification
+## SAP PostgreSQL and network setup
 
-- `npm test`: 11 tests pass, including the expanded API workflow, followed by a successful production build.
-- `npm run lint`: passes.
-- Coverage includes per-material split totals, partial receipt validation, replacement idempotency, role/ownership restrictions, SAP save conflicts, workbook contents/styles, Ecosystem stock reservation and report calculations.
-- Tests use isolated synthetic data. User data, credentials and live emails are not used.
-- Local browser-preview access was denied. Desktop/mobile/fullscreen visual checks and live SMTP delivery therefore remain unverified. Test those on your local trial before operational use.
+Set the following server variables to your actual private database configuration:
 
-No PostgreSQL migration or Docker image build was performed in this environment.
+```dotenv
+SAP_STORAGE=postgres
+POSTGRES_HOST=your_postgres_host
+POSTGRES_PORT=5432
+POSTGRES_DB=docker
+POSTGRES_USER=user
+POSTGRES_PASSWORD=password
+POSTGRES_SCHEMA=Analysis
+POSTGRES_SESSION_LOGS_TABLE=SAPAnalysis
+POSTGRES_SSL=false
+SAP_ALLOWED_CIDRS=
+SAP_TRUSTED_PROXY_CIDRS=
+WEB_TRUSTED_PROXY_CIDRS=
+```
+
+The values above are placeholders, not credentials. Use `POSTGRES_SSL=true` when the database requires TLS; certificate verification stays enabled. `DB_ENABLED=false` still applies to the separate JSON trial/business storage and does not disable the SAP connection.
+
+The API creates schema `"Analysis"` and table `"SAPAnalysis"` on the first authorized request, if absent. It also adds missing unified-data and formatting columns to an existing importer-created DockFlow table without deleting or replacing its rows. Give the configured database user schema and table privileges. Back up and reconcile an unrelated or incompatible table before starting DockFlow.
+
+- `SAP_ALLOWED_CIDRS`: the actual approved client/VPN address ranges as observed by the web/API path. Empty means nobody can see SAP data.
+- `SAP_TRUSTED_PROXY_CIDRS`: only the web server's actual address/range on the private API connection. The API trusts client addresses from those proxies only. Keep the API private; do not publish its Docker port to public clients.
+- `WEB_TRUSTED_PROXY_CIDRS`: only a trusted ingress/reverse proxy in front of the web server. Leave empty when clients connect directly to the DockFlow web server. A proxy must append the observed peer or overwrite the forwarded chain; do not trust arbitrary public clients.
+- Behind Docker or a VPN, confirm the observed source addresses before choosing ranges. Do not allow the entire Docker/private address space merely to make the worksheet load. An IP/network check is not a browser connection to PostgreSQL: the API connects to the database and separately enforces approved client-network access.
+
+SAP Analysis and Administrator can edit SAP fields and cell formatting. Planner/Production can view the register and edit Destination. Warehouse can view the register and edit receiving and clearance fields. Supplier booking inputs remain in Scheduling, and suppliers do not receive access to the internal historical register. The API enforces these permissions even if someone manipulates the browser.
+
+The register searches PostgreSQL server-side, loads 50 rows at a time, and loads more only when requested. It refreshes only the newest page every 10 seconds while the tab is visible and preserves unsaved edits. Outside the allowed network, or when the database is unavailable, it displays no data.
+
+The worksheet supports multi-cell, whole-row, and whole-column selection; fill, undo, redo, delete contents, font, emphasis, color, fill, alignment, wrap, indent, borders, row height, column width, and hide/show controls. Copy, cut, paste, copy formatting, and paste formatting remain available through standard keyboard shortcuts even though their toolbar buttons were removed. Cell formatting, row height, and hidden-row state are stored in PostgreSQL. Hidden columns and column widths are browser layout preferences. Record cells are deliberately not mergeable because each database row must retain its own field boundaries.
+
+Rows imported by the standalone Python importer appear immediately; their blank SAP fields are editable according to the signed-in role. New application rows appear after Gate in. Existing SAP edits are preserved when application rows synchronize. Saves use optimistic revision checks; stale application saves return a conflict. Direct SQL writers must increment `revision` on each update to participate in conflict detection. No user deletion or application resync deletes SAP records.
+
+| Display column | PostgreSQL column | Initial source |
+|---|---|---|
+| Delivery date | delivery_date | Gate in, Manila |
+| Encoded by | encoded_by | Current analyst/administrator when saved |
+| Item | item | Material code |
+| Description | description | Internal description, if available |
+| DR No | dr_number | Truck/item DR |
+| Quantity | quantity | Original DR/scheduled quantity |
+| UOM | uom | Material UOM |
+| Actual Received | actual_received | Blank for SAP entry |
+| PO Number | po_number | Truck/item PO |
+| Batch | batch | Available application batch |
+| Breakdown | breakdown | Blank |
+| Mfg. Date | mfg_date | Available application value |
+| Exp Date | exp_date | Available application value |
+| MATDOC | matdoc | Blank |
+| Supplier's Lot | supplier_lot | Blank |
+| Remarks | remarks | Blank |
+
+The unified register also adds supplier, plate, driver, Gate in/out, destination, gatepass, inventory and receiving controller, helper count, truck type, pallet count, warehouse remarks, unloading timestamps, QA timestamps, and QA disposition. Existing importer rows keep blank values for fields that were not present in the workbook.
+
+Cell columns are TEXT to preserve leading zeros and source formatting. Internal metadata is `id`, `record_key`, `shipment_id`, `supplier`, `revision`, `verified`, and `updated_at`. `record_key` is `shipmentId:itemId`. Excel exports the same 16 visible columns, navy headers, green Batch cells and red MATDOC; the source-hint row is removed. Configure visible columns in the compact disclosure. Save before downloading.
+
+For this unified update, the Excel download keeps the original 16 columns first and appends the added unified columns. Cell formatting metadata is stored in `cell_formats`; row sizing and visibility use `row_height` and `row_hidden`. Imported historical keys remain unchanged, while app-created keys use `shipmentId:itemId`.
+
+`SAP_STORAGE=json` remains available only as an explicit local trial option; network checks still apply. Production defaults to PostgreSQL, with no silent JSON fallback.
+
+## Verification and limits
+
+- Automated workflow, import, split, receiving, activation, SAP permissions/conflicts/pagination/network spoofing, Ecosystem catalog and clearance checks pass; production build and lint pass.
+- The requested new Received-to-SAP/OTIF integration is deliberately deferred; this package retains the existing receiving behavior.
+- The clearance PDF was rendered and visually checked against the supplied form; both copies align.
+- Live PostgreSQL credentials/network were not supplied. Connection to your database, live SMTP delivery and Docker image execution remain unverified.
+- Browser-preview permission was unavailable. Desktop/mobile/fullscreen layout changes were checked in source against your screenshots, not in a live browser.
+- Business records remain in the single-instance JSON trial store. This update does not migrate the entire application to PostgreSQL.
