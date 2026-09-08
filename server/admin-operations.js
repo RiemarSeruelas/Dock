@@ -7,28 +7,52 @@ export function nextReportSend(schedule = {}, now = new Date()) {
   if (Date.parse(target) <= now.getTime()) { date.setUTCMonth(date.getUTCMonth()+1, 1); target = `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}T${time}:00+08:00`; }
   return new Date(target).toISOString();
 }
-export function registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database }) {
+export function registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt }) {
+  const performanceRoles = new Set(['admin','planner','production','supplier','ecosystem','warehouse']);
+  const emailPlan = state => {
+    const fallback = state.settings.monthlyEmailSchedule || { day: 1, time: '09:00' };
+    return {
+      configured: Boolean(emailSender),
+      accounts: state.users.filter(user => performanceRoles.has(user.role)).map(user => {
+        const day = Math.min(28, Math.max(1, Number(user.monthlyPerformanceDay || fallback.day || 1)));
+        const time = validClock(user.monthlyPerformanceTime) ? user.monthlyPerformanceTime : validClock(fallback.time) ? fallback.time : '09:00';
+        return { id: user.id, name: user.name, email: user.email || '', verified: Boolean(user.emailVerifiedAt), enabled: user.monthlyPerformanceEnabled !== false, day, time, nextSendAt: nextReportSend({ day, time }), lastSentAt: Object.entries(state.monthlyKpiSent || {}).filter(([key]) => key.includes(`:${user.id}:`)).map(([,at]) => at).sort().at(-1) || null };
+      }),
+    };
+  };
   app.post('/api/auth/change-password', auth, asyncRoute(async (req, res) => {
     const password = String(req.body.newPassword || '');
     if (password.length < 8 || password.length > 100) fail('Use a new password of 8–100 characters');
     const user = await store.update(async state => {
       const user = state.users.find(user => user.id === Number(req.user.id));
-      if (!user || !(await bcrypt.compare(String(req.body.currentPassword || ''), user.passwordHash))) fail('Current password is incorrect', 403);
+      if (!user) fail('Account not found', 404);
+      const onboardingChange = Boolean(user.onboardingRequired && user.mustChangePassword && user.emailVerifiedAt);
+      if (!onboardingChange && !(await bcrypt.compare(String(req.body.currentPassword || ''), user.passwordHash))) fail('Current password is incorrect', 403);
       if (await bcrypt.compare(password, user.passwordHash)) fail('Choose a different password from the initial one');
-      user.passwordHash = await bcrypt.hash(password, 10); user.mustChangePassword = false;
+      user.passwordHash = await bcrypt.hash(password, 10); user.mustChangePassword = false; user.onboardingRequired = false;
       user.passwordChangedAt = new Date().toISOString();
       addAudit(state, req.user, 'PASSWORD_CHANGED', 'Account password updated');
       return publicUser(user);
-    }); await database.revokeUserRefreshTokens(req.user.id); res.json({ user, signInAgain: true });
+    }); res.json({ user, signInAgain: false });
   }));
   app.get('/api/admin/email-schedule', auth, allow('admin'), asyncRoute(async (_req, res) => {
-    const state = await store.read(); const schedule = state.settings.monthlyEmailSchedule || { day: 1, time: '09:00' };
-    res.json({ schedule, configured: Boolean(emailSender), nextSendAt: nextReportSend(schedule), accounts: state.users.filter(user => ['admin','planner','production','supplier','ecosystem'].includes(user.role)).map(user => ({ id: user.id, name: user.name, email: user.email || '', verified: Boolean(user.emailVerifiedAt), lastSentAt: Object.entries(state.monthlyKpiSent || {}).filter(([key]) => key.includes(`:${user.id}:`)).map(([,at]) => at).sort().at(-1) || null })) });
+    res.json(emailPlan(await store.read()));
   }));
   app.put('/api/admin/email-schedule', auth, allow('admin'), asyncRoute(async (req, res) => {
-    const day = Number(req.body.day); const time = String(req.body.time || '');
-    if (!Number.isInteger(day) || day < 1 || day > 28 || !validClock(time)) fail('Choose day 1–28 and a valid Manila time');
-    await store.update(state => { state.settings.monthlyEmailSchedule = { day, time }; }); res.json({ ok: true, nextSendAt: nextReportSend({ day, time }) });
+    const plans = req.body.accounts;
+    if (!Array.isArray(plans) || plans.length > 500 || new Set(plans.map(plan => Number(plan.id))).size !== plans.length) fail('Choose unique monthly performance accounts');
+    for (const plan of plans) if (!Number.isInteger(Number(plan.day)) || Number(plan.day) < 1 || Number(plan.day) > 28 || !validClock(String(plan.time || '')) || typeof plan.enabled !== 'boolean') fail('Choose day 1–28, a valid Manila time, and an enabled setting for every account');
+    const result = await store.update(state => {
+      for (const plan of plans) {
+        const user = state.users.find(user => Number(user.id) === Number(plan.id) && performanceRoles.has(user.role));
+        if (!user) fail('Monthly performance account not found', 404);
+        user.monthlyPerformanceEnabled = plan.enabled;
+        user.monthlyPerformanceDay = Number(plan.day);
+        user.monthlyPerformanceTime = String(plan.time);
+      }
+      return emailPlan(state);
+    });
+    res.json(result);
   }));
   app.get('/api/ecosystem', auth, allow('admin','planner','production','ecosystem'), asyncRoute(async (req, res) => {
     const state = await store.read();

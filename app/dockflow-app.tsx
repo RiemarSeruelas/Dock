@@ -46,7 +46,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import jsQR from "jsqr";
 import { apiRequest, authenticatedFetch, clearApiSession, configureApiSession, getBootstrap, login as apiLogin, logoutSession } from "./api-client";
-import { EcosystemPage, KpiPanel, ReceiptModal } from "./receiving-ui";
+import { EcosystemPage, ReceiptModal } from "./receiving-ui";
 import { SapPage } from "./sap-workbook";
 import { AccountActivation, EmailSchedule, ClearanceModal } from "./admin-ui";
 import { supplierHue } from "./company-colors";
@@ -81,7 +81,7 @@ const NAV_ITEMS: { id: View; label: string; icon: Icon; roles?: Role[] }[] = [
   { id: "operations", label: "Scan", icon: ScanLine },
   { id: "history", label: "History", icon: History },
   { id: "reports", label: "Reports", icon: BarChart3, roles: ["admin", "planner", "production", "warehouse", "supplier", "ecosystem"] },
-  { id: "sap", label: "SAP register", icon: ClipboardList, roles: ["admin", "sap", "planner", "warehouse"] },
+  { id: "sap", label: "SAP Analysis", icon: ClipboardList, roles: ["admin", "sap", "planner", "warehouse"] },
   { id: "ecosystem", label: "Ecosystem", icon: Warehouse, roles: ["admin", "planner", "ecosystem"] },
   { id: "admin", label: "Administration", icon: Settings, roles: ["admin"] },
 ];
@@ -102,11 +102,11 @@ const ROLE_VIEWS: Record<Role, View[]> = {
 const STATUS_META: Record<ShipmentStatus, { label: string; color: string; step: number }> = {
   PROPOSED: { label: "Supplier approval", color: "purple", step: 0 },
   BOOKED: { label: "Booked", color: "slate", step: 1 },
-  IN_TRANSIT: { label: "Awaiting gate in", color: "blue", step: 2 },
-  GATE_IN: { label: "Gate in", color: "amber", step: 2 },
-  UNLOADING: { label: "Unloading", color: "orange", step: 3 },
-  RECEIVED: { label: "Received", color: "green", step: 4 },
-  GATE_OUT: { label: "Gate out", color: "teal", step: 5 },
+  IN_TRANSIT: { label: "In transit", color: "blue", step: 2 },
+  GATE_IN: { label: "Gate in", color: "amber", step: 3 },
+  UNLOADING: { label: "Unloading", color: "orange", step: 4 },
+  RECEIVED: { label: "Received", color: "green", step: 5 },
+  GATE_OUT: { label: "Gate out", color: "teal", step: 6 },
   REJECTED: { label: "Rejected", color: "red", step: 0 },
 };
 
@@ -218,12 +218,8 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
   return (
     <main className="login-shell">
       <section className="login-story">
-        <div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div>
-        <div className="story-copy">
-          <span className="eyebrow light">One flow. Every handoff.</span>
-          <h1>Move deliveries from plan to received—with no blind spots.</h1>
-          <p>Coordinate suppliers, drivers, security, and warehouse teams in one live receiving schedule.</p>
-        </div>
+        <div className="brand-lockup brand-light login-floating-brand"><span className="brand-mark"><img src="/uploads/dockflow-logo.png" alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} /><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div>
+        <div className="story-copy"><h1>From dock to done.</h1></div>
         <div className="journey-strip">
           {[{ icon: ClipboardList, label: "Plan" }, { icon: Truck, label: "Transit" }, { icon: ShieldCheck, label: "Gate" }, { icon: Warehouse, label: "Receive" }].map(({ icon: JourneyIcon, label }, index) => (
             <div className="journey-item" key={label}><span><JourneyIcon size={18} /></span><b>{label}</b>{index < 3 && <i />}</div>
@@ -235,7 +231,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
           <div className="mobile-brand brand-lockup"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b><small>Delivery scheduling</small></span></div>
           <span className="eyebrow">Welcome back</span>
           <h2>Sign in to your workspace</h2>
-          <p>Use the account assigned to your role.</p>
           <div className="login-form" role="form" aria-label="DockFlow sign in" onKeyDown={(event) => { if (event.key === "Enter") void submit(); }}>
             <label>Username<input name="dockflow_identity" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="Enter your username" required /></label>
             <label>Password<input name="dockflow_access_key" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="Enter your password" required /></label>
@@ -314,6 +309,7 @@ function OverviewPage({ data, user, onOpenShipment }: { data: AppData; user: Ses
 
 const SCAN_STATIONS: Record<ScanStage, { label: string; helper: string; icon: Icon; roles: Role[] }> = {
   LOOKUP: { label: "View delivery", helper: "Read QR data", icon: QrCode, roles: ["admin", "supplier", "driver", "ecosystem"] },
+  TRIP: { label: "Start trip", helper: "Record departure", icon: Truck, roles: ["admin", "supplier", "driver", "ecosystem"] },
   GATE: { label: "Gate in / out", helper: "Same scanner for entry and exit", icon: MapPin, roles: ["admin", "security", "ecosystem"] },
   UNLOADING: { label: "Unloading", helper: "Record unloading start", icon: Boxes, roles: ["admin", "warehouse", "ecosystem"] },
   RECEIVED: { label: "Received", helper: "Complete delivery", icon: PackageCheck, roles: ["admin", "warehouse", "ecosystem"] },
@@ -436,7 +432,7 @@ function OperationsPage({ data, user, onScanStage, onOpenShipment }: { data: App
   const [scanRecorded, setScanRecorded] = useState(false);
   const approvedShipments = data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED");
   const visibleShipments = user.role === "ecosystem" && stage !== "LOOKUP" ? approvedShipments.filter(shipment => (Number(shipment.destinationEcosystemId) === Number(user.supplierId) || (!shipment.destinationEcosystemId && shipment.items.some(item=>item.deliverySite?.toUpperCase().includes("ECOSYSTEM"))))) : user.role === "supplier" ? approvedShipments.filter(shipment => Number(shipment.supplierId) === Number(user.supplierId)) : approvedShipments;
-  const stageStatuses: Record<ScanStage, ShipmentStatus[]> = { LOOKUP: ["BOOKED", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT"], GATE: ["BOOKED", "IN_TRANSIT", "RECEIVED"], UNLOADING: ["GATE_IN"], RECEIVED: ["UNLOADING"] };
+  const stageStatuses: Record<ScanStage, ShipmentStatus[]> = { LOOKUP: ["BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT"], TRIP: ["BOOKED"], GATE: ["IN_TRANSIT", "RECEIVED"], UNLOADING: ["GATE_IN"], RECEIVED: ["UNLOADING"] };
   const queue = visibleShipments.filter((shipment) => stageStatuses[stage].includes(shipment.status)).slice(0, 6);
   const recordScan = async (value: string) => {
     setFeedback(null);
@@ -465,9 +461,9 @@ function OperationsPage({ data, user, onScanStage, onOpenShipment }: { data: App
           <div className="verification-head"><div><span className="eyebrow">Latest scan recorded</span><h2>{selected.shipmentNumber}</h2></div><StatusPill status={selected.status} receipt={selected.receipt} /></div>
           <div className="identity-strip"><div className="truck-tile large"><Truck size={26} /></div><div><strong>{selected.truckPlate}</strong><span>{selected.supplier}</span></div><button className="text-button" onClick={() => onOpenShipment(selected)}>View all details</button></div>
           <dl className="verification-data"><div><dt>Driver</dt><dd>{selected.driverName}</dd></div><div><dt>Phone</dt><dd>{selected.driverPhone}</dd></div><div><dt>Entrance time</dt><dd>{selected.scheduledTime}</dd></div><div><dt>Gate in</dt><dd>{formatTime(selected.gateInAt)}</dd></div></dl>
-          <div className="flow-progress">{["Booking", "Gate in", "Unload", "Received", "Gate out"].map((label, index) => <div className={next && next >= index + 1 ? "done" : ""} key={label}><span>{next && next > index + 1 ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div>
+          <div className="flow-progress">{["Booking", "Trip", "Gate in", "Unload", "Received", "Gate out"].map((label, index) => <div className={next && next >= index + 1 ? "done" : ""} key={label}><span>{next && next > index + 1 ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div>
           <div className="operation-actions">
-            {scanRecorded ? <div className="scan-recorded-note"><CheckCircle2 size={18} /><span><b>{activeStation.label} recorded</b><small>Use the next station’s scanner when the truck moves forward.</small></span></div> : <div className="scan-recorded-note waiting"><QrCode size={18} /><span><b>Record still unchanged</b><small>Scan this delivery’s QR at {activeStation.label} to update it.</small></span></div>}
+            {scanRecorded ? <div className="scan-recorded-note"><CheckCircle2 size={18} /><span><b>{activeStation.label} recorded</b><small>Use the next station when the truck moves forward.</small></span></div> : <><div className="scan-recorded-note waiting"><QrCode size={18} /><span><b>Ready to record</b><small>Scan the QR or confirm this selected delivery.</small></span></div>{stage !== "LOOKUP" && <button type="button" className="button primary" onClick={() => void recordScan(selected.shipmentNumber)}>Confirm {activeStation.label}</button>}</>}
           </div>
         </>}
       </article>
@@ -483,7 +479,7 @@ function EntriesPage({ data, onOpenShipment }: { data: AppData; onOpenShipment: 
     .filter((shipment) => status === "ALL" || (status === "PENDING" ? !["APPROVED", "REJECTED"].includes(shipment.bookingStatus || "") : shipment.bookingStatus === "APPROVED"))
     .filter((shipment) => `${shipment.shipmentNumber} ${shipment.deliveryCode || ""} ${shipment.truckPlate} ${shipment.driverName}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => `${b.scheduledDate}${b.scheduledTime}`.localeCompare(`${a.scheduledDate}${a.scheduledTime}`));
-  return <div className="page-stack supplier-entries-page"><section className="hero-row"><div><span className="eyebrow">My supplier account</span><h1>My delivery entries</h1></div><span className="count-chip">{data.shipments.length} entries</span></section><section className="panel entries-panel"><div className="toolbar entries-toolbar"><label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search delivery code, truck, or driver" /></label><div className="view-toggle"><button className={status === "ALL" ? "active" : ""} onClick={() => setStatus("ALL")}>All</button><button className={status === "PENDING" ? "active" : ""} onClick={() => setStatus("PENDING")}>Pending</button><button className={status === "APPROVED" ? "active" : ""} onClick={() => setStatus("APPROVED")}>Approved</button></div></div><div className="entries-grid">{entries.map((shipment) => {
+  return <div className="page-stack supplier-entries-page"><section className="hero-row"><div><span className="eyebrow">My supplier account</span><h1>My delivery entries</h1></div><span className="count-chip">{data.shipments.length} entries</span></section><section className="panel entries-panel"><div className="toolbar entries-toolbar"><label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Delivery Entry" /></label><div className="view-toggle"><button className={status === "ALL" ? "active" : ""} onClick={() => setStatus("ALL")}>All</button><button className={status === "PENDING" ? "active" : ""} onClick={() => setStatus("PENDING")}>Pending</button><button className={status === "APPROVED" ? "active" : ""} onClick={() => setStatus("APPROVED")}>Approved</button></div></div><div className="entries-grid">{entries.map((shipment) => {
     const site = shipment.items.find((item) => item.deliverySite)?.deliverySite || "Site not supplied";
     return <article className="entry-card" key={shipment.id}><div className="entry-card-head"><span className="truck-tile"><Truck size={18} /></span><div><strong>{shipment.truckPlate}</strong><small>{shipment.shipmentNumber}</small></div><StatusPill status={shipment.status} receipt={shipment.receipt} /></div><dl><div><dt>Site</dt><dd>{site}</dd></div><div><dt>Delivery</dt><dd>{formatDate(shipment.scheduledDate, "short")} · {shipment.scheduledTime}</dd></div><div><dt>Delivery code</dt><dd>{shipment.deliveryCode || shipment.confirmedTruckLoads?.[0]?.deliveryCode || "Waiting for Confirmation"}</dd></div><div><dt>Approval</dt><dd>{shipment.bookingStatus === "PENDING_SUPPLIER" ? "Waiting for Confirmation" : shipment.bookingStatus === "PENDING_COMPANY" ? "Waiting for Confirmation" : shipment.bookingStatus === "REJECTED" ? "Rejected" : "Confirmed"}</dd></div></dl><button className={`button full ${shipment.bookingStatus === "APPROVED" ? "primary" : shipment.bookingStatus === "PENDING_SUPPLIER" ? "primary" : "secondary"}`} onClick={() => onOpenShipment(shipment)}>{shipment.bookingStatus === "APPROVED" ? <><QrCode size={16} /> View entry & QR</> : shipment.bookingStatus === "PENDING_SUPPLIER" ? <><ClipboardList size={16} /> Review & confirm delivery</> : <><ClipboardList size={16} /> View entry</>}</button></article>;
   })}</div>{!entries.length && <EmptyState icon={ClipboardList} title="No matching entries" body="Your SDS proposals and approved truck deliveries will appear here." />}</section></div>;
@@ -500,6 +496,8 @@ function ReportsPage({ data, user, token, onOpenShipment }: { data: AppData; use
   const filteredShipments = supplierFilter === "ALL" ? reportableShipments : reportableShipments.filter((shipment) => String(shipment.supplierId) === supplierFilter);
   const total = filteredShipments.length;
   const completed = filteredShipments.filter((shipment) => shipment.status === "GATE_OUT").length;
+  const otifEvaluated = filteredShipments.filter((shipment) => shipment.receipt?.otif !== null && shipment.receipt?.otif !== undefined);
+  const otifRate = otifEvaluated.length ? Math.round(otifEvaluated.filter((shipment) => shipment.receipt?.otif).length / otifEvaluated.length * 100) : 0;
   const supplierRows = Array.from(new Set(filteredShipments.map((shipment) => shipment.supplier))).map((supplier) => { const rows = filteredShipments.filter((shipment) => shipment.supplier === supplier); return { supplier, rows, deliveries: rows.length, completed: rows.filter((shipment) => shipment.status === "GATE_OUT").length, trip: average(rows.map((shipment) => elapsed(shipment.gateInAt, shipment.unloadingAt))), unload: average(rows.map((shipment) => elapsed(shipment.unloadingAt, shipment.receivedAt))), turnaround: average(rows.map((shipment) => elapsed(shipment.gateInAt, shipment.gateOutAt))) }; });
   const reportDetail = supplierRows.find((row) => row.supplier === selectedSupplier) || null;
   const exportReport = async () => {
@@ -516,9 +514,9 @@ function ReportsPage({ data, user, token, onOpenShipment }: { data: AppData; use
       anchor.href = url; anchor.download = fileName; anchor.click(); URL.revokeObjectURL(url);
     } finally { setExporting(false); }
   };
-  return <div className="page-stack reports-page"><KpiPanel month={reportMonth} onChange={setReportMonth} />
-    <section className="hero-row"><div><span className="eyebrow">{user.role === "supplier" ? "My supplier account" : "Company supplier scorecard"}</span><h1>{user.role === "supplier" ? "My delivery performance" : "Supplier performance"}</h1></div><div className="report-controls">{user.role !== "supplier" && <label><span>Supplier account</span><select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)}><option value="ALL">View all suppliers</option>{data.suppliers.map((supplier) => <option value={supplier.id} key={supplier.id}>{supplier.name}</option>)}</select></label>}<button className="button secondary" disabled={exporting} onClick={() => void exportReport()}>{exporting ? <Loader2 className="spin" size={17} /> : <Download size={17} />} {exporting ? "Building workbook" : "Export styled Excel"}</button></div></section>
-    <section className="metrics-grid report-metrics"><MetricCard label="Confirmed deliveries" value={total} helper="Supplier-confirmed bookings" icon={ShieldCheck} tone="blue" /><MetricCard label="Gate-out complete" value={completed} helper="Full journey completed" icon={PackageCheck} tone="green" /><MetricCard label="Average unloading" value={`${average(filteredShipments.map((shipment) => elapsed(shipment.unloadingAt, shipment.receivedAt)))} min`} helper="Unload to received" icon={Gauge} tone="orange" /><MetricCard label="Average site time" value={`${average(filteredShipments.map((shipment) => elapsed(shipment.gateInAt, shipment.gateOutAt)))} min`} helper="Gate in to gate out" icon={Clock3} tone="violet" /></section>
+  return <div className="page-stack reports-page">
+    <section className="hero-row"><div><span className="eyebrow">{user.role === "supplier" ? "My supplier account" : "Company supplier scorecard"}</span><h1>{user.role === "supplier" ? "My delivery performance" : "Supplier performance"}</h1></div><div className="report-controls"><input className="report-month-input" type="month" aria-label="Report month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} />{user.role !== "supplier" && <label><span>Supplier account</span><select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)}><option value="ALL">View all suppliers</option>{data.suppliers.map((supplier) => <option value={supplier.id} key={supplier.id}>{supplier.name}</option>)}</select></label>}<button className="button secondary" disabled={exporting} onClick={() => void exportReport()}>{exporting ? <Loader2 className="spin" size={17} /> : <Download size={17} />} {exporting ? "Building workbook" : "Export styled Excel"}</button></div></section>
+    <section className="metrics-grid report-metrics"><MetricCard label="Confirmed deliveries" value={total} helper="Supplier-confirmed bookings" icon={ShieldCheck} tone="blue" /><MetricCard label="OTIF" value={`${otifRate}%`} helper={`${otifEvaluated.length} evaluated deliveries`} icon={CheckCircle2} tone="teal" /><MetricCard label="Gate-out complete" value={completed} helper="Full journey completed" icon={PackageCheck} tone="green" /><MetricCard label="Average unloading" value={`${average(filteredShipments.map((shipment) => elapsed(shipment.unloadingAt, shipment.receivedAt)))} min`} helper="Unload to received" icon={Gauge} tone="orange" /><MetricCard label="Average site time" value={`${average(filteredShipments.map((shipment) => elapsed(shipment.gateInAt, shipment.gateOutAt)))} min`} helper="Gate in to gate out" icon={Clock3} tone="violet" /></section>
     <section className="panel report-performance-panel"><div className="panel-head"><div><span className="eyebrow">{user.role === "supplier" ? "Account report" : supplierFilter === "ALL" ? "All suppliers" : "Filtered supplier"}</span><h2>Operational performance</h2></div><span className="count-chip">Select a row for details</span></div><div className="table-wrap"><table><thead><tr><th>Supplier</th><th>Confirmed</th><th>Gate-out complete</th><th>Gate in → Unloading</th><th>Unload</th><th>Site turnaround</th><th /></tr></thead><tbody>{supplierRows.map((row) => <tr className="report-click-row" tabIndex={0} role="button" key={row.supplier} onClick={() => setSelectedSupplier(row.supplier)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedSupplier(row.supplier); }}><td><b>{row.supplier}</b><small>View delivery records</small></td><td><b>{row.deliveries}</b></td><td>{row.completed}</td><td>{row.trip} min</td><td>{row.unload} min</td><td><span className={`score-chip ${row.turnaround && row.turnaround <= 180 ? "good" : "watch"}`}>{row.turnaround} min</span></td><td><ArrowRight size={16} /></td></tr>)}</tbody></table></div>{!supplierRows.length && <EmptyState icon={BarChart3} title="No confirmed report data yet" body="Supplier-confirmed delivery records will appear here." />}</section>
     {reportDetail && <Modal className="report-detail-window" title={`${reportDetail.supplier} report`} subtitle={`${reportDetail.deliveries} confirmed deliver${reportDetail.deliveries === 1 ? "y" : "ies"}`} onClose={() => setSelectedSupplier(null)} wide><div className="report-detail-modal"><div className="report-detail-kpis"><span><small>Completed</small><b>{reportDetail.completed}</b></span><span><small>Gate in → Unloading</small><b>{reportDetail.trip} min</b></span><span><small>Unloading</small><b>{reportDetail.unload} min</b></span><span><small>Site time</small><b>{reportDetail.turnaround} min</b></span></div><div className="table-wrap"><table><thead><tr><th>Date & entrance</th><th>Truck / driver</th><th>Booking</th><th>Material codes</th><th>Status</th><th /></tr></thead><tbody>{reportDetail.rows.map((shipment) => <tr key={shipment.id}><td><b>{formatDate(shipment.scheduledDate, "short")}</b><small>{shipment.scheduledTime}</small></td><td>{shipment.truckPlate}<small>{shipment.driverName}</small></td><td>{shipment.bookingReceipt}<small>{shipment.deliveryCode || "No delivery code"}</small></td><td><b>{shipment.items.length}</b><small>{shipment.items.map((item) => item.materialCode).join(", ")}</small></td><td><StatusPill status={shipment.status} receipt={shipment.receipt} /></td><td><button className="icon-button" aria-label={`View ${shipment.shipmentNumber}`} onClick={() => { setSelectedSupplier(null); onOpenShipment(shipment); }}><ArrowRight size={16} /></button></td></tr>)}</tbody></table></div></div></Modal>}
   </div>;
@@ -565,10 +563,8 @@ function AdminPage({ data, token, currentUser, onAddUser, onDeleteUser, onUnlock
   const [deleting, setDeleting] = useState<SessionUser | null>(null);
   const [etaSupplier, setEtaSupplier] = useState<SupplierAccount | null>(null);
   const finishCreate = async (form: Record<string, string | number>) => { await onAddUser(form); setCreating(false); };
-  const emailAccounts = data.users.filter((account) => account.email);
-  const unverified = emailAccounts.filter((account) => !account.emailVerifiedAt);
   return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">System control</span><h1>Administration</h1></div></section>
-    <details className="panel compact-verification"><summary><ShieldCheck size={16}/><b>{unverified.length} unverified accounts</b></summary><div className="unverified-list">{unverified.map(account=><span key={account.id}><b>{account.name}</b><small>{account.email}</small></span>)}{!unverified.length && <span>All account emails are verified.</span>}</div></details><section className="panel admin-panel"><div className="toolbar"><label className="search-box"><Search size={17} /><input placeholder="Search accounts" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="button primary" onClick={() => setCreating(true)}><Plus size={17} /> Add account</button></div><div className="user-cards">{data.users.filter(user => `${user.name} ${user.username} ${user.email || ""}`.toLowerCase().includes(search.toLowerCase())).map(account => { const RoleIcon = ROLE_ICONS[account.role]; const supplier = data.suppliers.find((row) => Number(row.id) === Number(account.supplierId)); const emailEnabled = Boolean(account.email); return <article className="user-card" key={account.id} style={{"--company-hue": supplierHue(account.supplierId, account.name)} as CSSProperties}><span className="user-avatar">{initials(account.name)}</span><div><strong>{account.name}</strong><small>@{account.username}{emailEnabled && account.email ? ` · ${account.email}` : ""}</small>{supplier && <small className="account-eta">{supplier.routeDurationMinutes ? `ETA ${supplier.routeDurationMinutes} min · ${supplier.routeDistanceKm} km${supplier.routeTrafficModel === "TIME_OF_DAY" ? supplier.routeTrafficDelayMinutes ? ` · estimated traffic +${supplier.routeTrafficDelayMinutes} min` : " · estimated traffic" : " · base road time"}` : "ETA route not configured"}</small>}</div><span className="role-chip"><RoleIcon size={14} /> {accountRoleLabel(account)}</span><span className="account-actions">{supplier && <button className="icon-button" title="Configure ETA route" aria-label={`Configure ETA for ${account.name}`} onClick={() => setEtaSupplier(supplier)}><MapPinned size={16} /></button>}<button className="icon-button danger" title={account.id === currentUser.id ? "You cannot delete your current account" : "Delete account"} aria-label={`Delete ${account.name}`} disabled={account.id === currentUser.id} onClick={() => setDeleting(account)}><Trash2 size={16} /></button></span></article>; })}</div></section><ReceivingSitePanel onUnlock={onUnlockSiteAddress} onSave={onSaveSiteAddress}/><EmailSchedule token={token}/>{creating && <AdminCreateModal onClose={() => setCreating(false)} onSubmit={finishCreate} />}{deleting && <DeleteAccountModal account={deleting} onClose={() => setDeleting(null)} onDelete={async (password) => { await onDeleteUser(deleting, password); setDeleting(null); }} />}{etaSupplier && <SupplierEtaModal supplier={etaSupplier} siteConfigured={Boolean(data.settings.siteAddressConfigured)} onClose={() => setEtaSupplier(null)} onCalculate={async (address, mapReference) => { await onCalculateSupplierEta(etaSupplier, address, mapReference); setEtaSupplier(null); }} />}
+    <section className="panel admin-panel"><div className="toolbar"><label className="search-box"><Search size={17} /><input placeholder="Search accounts" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="button primary" onClick={() => setCreating(true)}><Plus size={17} /> Add account</button></div><div className="user-cards">{data.users.filter(user => `${user.name} ${user.username} ${user.email || ""}`.toLowerCase().includes(search.toLowerCase())).map(account => { const RoleIcon = ROLE_ICONS[account.role]; const supplier = data.suppliers.find((row) => Number(row.id) === Number(account.supplierId)); const emailEnabled = Boolean(account.email); return <article className="user-card" key={account.id} style={{"--company-hue": supplierHue(account.supplierId, account.name)} as CSSProperties}><span className="user-avatar">{initials(account.name)}</span><div><strong>{account.name}</strong><small>@{account.username}{emailEnabled && account.email ? ` · ${account.email}` : ""}</small>{supplier && <small className="account-eta">{supplier.routeDurationMinutes ? `ETA ${supplier.routeDurationMinutes} min · ${supplier.routeDistanceKm} km${supplier.routeTrafficModel === "TIME_OF_DAY" ? supplier.routeTrafficDelayMinutes ? ` · estimated traffic +${supplier.routeTrafficDelayMinutes} min` : " · estimated traffic" : " · base road time"}` : "ETA route not configured"}</small>}</div><span className="role-chip"><RoleIcon size={14} /> {accountRoleLabel(account)}</span><span className="account-actions">{supplier && <button className="icon-button" title="Configure ETA route" aria-label={`Configure ETA for ${account.name}`} onClick={() => setEtaSupplier(supplier)}><MapPinned size={16} /></button>}<button className="icon-button danger" title={account.id === currentUser.id ? "You cannot delete your current account" : "Delete account"} aria-label={`Delete ${account.name}`} disabled={account.id === currentUser.id} onClick={() => setDeleting(account)}><Trash2 size={16} /></button></span></article>; })}</div></section><details className="panel system-admin-settings"><summary><span><ShieldCheck size={17}/><b>System Administrator</b></span><small>Protected receiving-site settings</small></summary><ReceivingSitePanel onUnlock={onUnlockSiteAddress} onSave={onSaveSiteAddress}/></details><EmailSchedule token={token}/>{creating && <AdminCreateModal onClose={() => setCreating(false)} onSubmit={finishCreate} />}{deleting && <DeleteAccountModal account={deleting} onClose={() => setDeleting(null)} onDelete={async (password) => { await onDeleteUser(deleting, password); setDeleting(null); }} />}{etaSupplier && <SupplierEtaModal supplier={etaSupplier} siteConfigured={Boolean(data.settings.siteAddressConfigured)} onClose={() => setEtaSupplier(null)} onCalculate={async (address, mapReference) => { await onCalculateSupplierEta(etaSupplier, address, mapReference); setEtaSupplier(null); }} />}
   </div>;
 }
 
@@ -592,6 +588,7 @@ function ShipmentModal({ shipment, token, user, onClose, onDownloadPdf }: { ship
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const duration = (start?: string | null, end?: string | null) => { if (!start) return "Not started"; const seconds = Math.max(0, Math.floor(((end ? Date.parse(end) : now ?? Date.parse(start)) - Date.parse(start)) / 1000)); const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60); return `${hours ? `${hours}h ` : ""}${minutes}m ${seconds % 60}s${end ? "" : " · live"}`; };
   const stages = [
+    { label: "Trip", status: "IN_TRANSIT" as ShipmentStatus, at: shipment.tripAt },
     { label: "Gate in", status: "GATE_IN" as ShipmentStatus, at: shipment.gateInAt },
     { label: "Unloading", status: "UNLOADING" as ShipmentStatus, at: shipment.unloadingAt },
     { label: "Received", status: "RECEIVED" as ShipmentStatus, at: shipment.receivedAt },
@@ -678,6 +675,10 @@ export default function DockFlowApp() {
     setUser(nextUser); setToken(nextToken); setView(ROLE_VIEWS[nextUser.role][0]);
     localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token: nextToken }));
   };
+  const activateUser = (nextUser: SessionUser) => {
+    setUser(nextUser);
+    localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token }));
+  };
   const logout = () => { void logoutSession().finally(() => { clearApiSession(); setUser(null); setToken(""); setData(EMPTY_DATA); localStorage.removeItem("dockflow-session"); }); };
   const notify = (message: string) => setToast(message);
   const persist = async (path: string, method: string, body: unknown, message: string) => {
@@ -740,7 +741,7 @@ export default function DockFlowApp() {
     setCompanyDecisionShipment(null);
     setSelectedShipment(shipment);
   };
-  const addUser = async (form: Record<string, string | number>) => { const result=await apiRequest<{notification:{status:string}}>(token,"/api/users","POST",form); await refresh(); notify(`${form.name} added. ${result.notification.status === "SENT" ? "Verification email sent." : "Email was not sent; check SMTP settings and resend from the account activation screen."}`); };
+  const addUser = async (form: Record<string, string | number>) => { await apiRequest(token,"/api/users","POST",form); await refresh(); notify(`${form.name} added. Their verification code will be sent on first login.`); };
   const deleteUser = async (account: SessionUser, password: string) => persist(`/api/users/${account.id}`, "DELETE", { adminPassword: password }, `${account.name} deleted. All delivery and history records were retained.`);
   const unlockSiteAddress = async (password: string) => apiRequest<{ siteAddress: string; configured: boolean }>(token, "/api/settings/site-address/access", "POST", { adminPassword: password });
   const saveSiteAddress = async (address: string, mapReference: string, password: string) => {
@@ -782,7 +783,7 @@ export default function DockFlowApp() {
   };
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
-  if (user.onboardingRequired && (!user.emailVerifiedAt || user.mustChangePassword)) return <AccountActivation user={user} token={token} onUpdate={setUser} onLogout={logout}/>;
+  if (user.onboardingRequired && (!user.emailVerifiedAt || user.mustChangePassword)) return <AccountActivation user={user} token={token} onUpdate={activateUser} onLogout={logout}/>;
   const receivingData = user.role === "ecosystem" || user.workArea === "ECOSYSTEM" ? {...data, shipments: data.shipments.filter(row => row.destinationEcosystemId === user.supplierId || (!row.destinationEcosystemId && row.items.some(item => item.deliverySite?.toUpperCase().includes("ECOSYSTEM"))))} : {...data, shipments: data.shipments.filter(row => !row.items.some(item => item.deliverySite?.toUpperCase().includes("ECOSYSTEM")))};
   const schedulingData = user.role === "ecosystem" ? receivingData : data;
   const outgoingData = user.role === "ecosystem" ? {...data, shipments: data.shipments.filter(row => Number(row.supplierId) === Number(user.supplierId))} : data;

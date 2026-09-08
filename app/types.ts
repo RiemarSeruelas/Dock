@@ -12,7 +12,7 @@ export type ShipmentStatus =
   | "REJECTED";
 
 export type BookingStatus = "PENDING_SUPPLIER" | "PENDING_COMPANY" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
-export type ScanStage = "LOOKUP" | "GATE" | "UNLOADING" | "RECEIVED";
+export type ScanStage = "LOOKUP" | "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
 
 export interface AvailabilitySlot {
   id: number;
@@ -35,6 +35,7 @@ export interface SessionUser {
   emailVerifiedAt?: string | null;
   mustChangePassword?: boolean;
   onboardingRequired?: boolean;
+  verificationCodeSentAt?: string | null;
 }
 
 export interface ShipmentItem {
@@ -84,7 +85,7 @@ export interface ShipmentScanRecord {
   role: Role;
 }
 
-export interface QuantityAllocation { itemId: number; materialCode?: string; uom?: string; quantity: number; date: string; time: string }
+export interface QuantityAllocation { itemId: number; materialCode?: string; uom?: string; quantity: number; date: string; time: string; cannotDeliver?: boolean; reason?: string }
 export interface ReceiptInput { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; items: { itemId: number; acceptedQuantity: number; reason?: string; date?: string; time?: string }[] }
 export interface Shipment {
   helper1Name?: string;

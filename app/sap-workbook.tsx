@@ -203,7 +203,7 @@ export function SapPage({ token }: { token: string }) {
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void fetchRows(false, queryRef.current);
-    }, 30000);
+    }, 10000);
     return () => clearInterval(timer);
   }, [fetchRows]);
 
@@ -407,10 +407,10 @@ export function SapPage({ token }: { token: string }) {
   });
 
   return <div className="page-stack sap-page">
+    {!available && message && <div className="sap-network-alert" role="alert">{message}</div>}
     <div className="hero-row">
       <div><span className="eyebrow">SAP Analysis</span><h1>Unified receiving worksheet</h1></div>
       <div className="sap-actions">
-        <span className={"connection-chip " + (available ? "connected" : "")}>{available ? "Connected · refresh 30s" : "No data · network unavailable"}</span>
         <button className="button secondary" disabled={busy} onClick={() => void fetchRows(false, query)}>Refresh</button>
         <button className="button primary" disabled={busy || !dirty.length || !available} onClick={() => void save()}>Save {dirty.length || ""}</button>
         <button className="button secondary" disabled={busy || !available} onClick={() => void download()}>Download Excel</button>
@@ -419,7 +419,6 @@ export function SapPage({ token }: { token: string }) {
     <div className="sap-search-row">
       <label className="sap-search-field">Search all PostgreSQL rows<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="DR, batch, material, supplier…"/></label>
       <div className="sap-search-meta">
-        <small>{editable.length ? "You can edit " + editable.length + " assigned columns." : "View-only access."} Formatting is {canFormat ? "enabled" : "view only"}.</small>
         <details className="sap-column-config sap-column-filter">
           <summary>Columns <span>{visibleColumns.length}/{columns.length}</span></summary>
           <div className="worksheet-options">{columns.map(([key, label]) => <label key={key}><input type="checkbox" checked={!hiddenColumns.includes(key)} onChange={(event) => setHiddenColumns(event.target.checked ? hiddenColumns.filter((item) => item !== key) : [...hiddenColumns, key])}/><button type="button" onClick={() => selectColumn(key)}>{label}</button></label>)}</div>
@@ -462,7 +461,7 @@ export function SapPage({ token }: { token: string }) {
         <button disabled={!canFormat} onClick={hideRows}>Hide rows</button><button disabled={!canFormat} onClick={showRows}>Show rows</button>
       </div>
     </div>
-    {message && <p className="sap-message" role="status">{message}{dirty.length ? " Unsaved edits are kept locally." : ""}</p>}
+    {message && available && <p className="sap-message" role="status">{message}{dirty.length ? " Unsaved edits are kept locally." : ""}</p>}
     <div
       className="sap-scroll"
       tabIndex={0}

@@ -11,10 +11,14 @@ export function normalizeSplits(proposal, input, date, time) {
   const result = rows.map(row => {
     const item = proposal.items.find(item => item.id === Number(row.itemId));
     const quantity = Number(row.quantity);
+    const cannotDeliver = Boolean(row.cannotDeliver);
     const day = row.date || date || proposal.scheduledDate;
     const clock = row.time || time || proposal.scheduledTime;
-    if (!item || !Number.isFinite(quantity) || quantity <= 0 || !validDay(day) || !validClock(clock)) fail('Each allocation needs a valid material, positive quantity, date and time');
-    return { itemId: item.id, materialCode: item.materialCode, uom: item.uom, quantity: roundQuantity(quantity), date: day, time: clock };
+    const reason = String(row.reason || '').trim().slice(0, 1000);
+    if (!item || !Number.isFinite(quantity) || quantity <= 0) fail('Each allocation needs a valid material and positive quantity');
+    if (cannotDeliver && !reason) fail(`Explain why ${item.materialCode} cannot be delivered`);
+    if (!cannotDeliver && (!validDay(day) || !validClock(clock))) fail('Each scheduled allocation needs a valid date and time');
+    return { itemId: item.id, materialCode: item.materialCode, uom: item.uom, quantity: roundQuantity(quantity), date: cannotDeliver ? '' : day, time: cannotDeliver ? '' : clock, cannotDeliver, reason: cannotDeliver ? reason : '' };
   });
   for (const item of proposal.items) {
     const sum = roundQuantity(result.filter(row => row.itemId === item.id).reduce((sum, row) => sum + row.quantity, 0));
@@ -25,11 +29,12 @@ export function normalizeSplits(proposal, input, date, time) {
 export function applySplits(state, proposal, nextId, nextCode) {
   const original = structuredClone(proposal);
   const groups = new Map();
-  for (const row of proposal.quantityAllocations || []) {
+  for (const row of (proposal.quantityAllocations || []).filter(row => !row.cannotDeliver)) {
     const key = `${row.date} ${row.time}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   }
+  if (!groups.size) return [];
   const created = [];
   let nextItem = Math.max(0, ...state.shipments.flatMap(s => s.items.map(item => item.id))) + 1;
   for (const rows of groups.values()) {

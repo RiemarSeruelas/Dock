@@ -117,11 +117,12 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
       const current = new Date(Date.now() + 8 * 3600000);
       const month = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
       const state = await store.read();
-      const schedule = state.settings.monthlyEmailSchedule || { day: 1, time: '09:00' };
       const clock = `${String(current.getUTCHours()).padStart(2,'0')}:${String(current.getUTCMinutes()).padStart(2,'0')}`;
-      if(current.getUTCDate()<schedule.day || (current.getUTCDate()===schedule.day && clock<schedule.time)) return;
-      const recipients = state.users.filter(user => ['admin', 'planner', 'production', 'supplier', 'ecosystem'].includes(user.role) && user.email && user.emailVerifiedAt);
+      const fallback = state.settings.monthlyEmailSchedule || { day: 1, time: '09:00' };
+      const recipients = state.users.filter(user => ['admin', 'planner', 'production', 'supplier', 'ecosystem', 'warehouse'].includes(user.role) && user.monthlyPerformanceEnabled !== false && user.email && user.emailVerifiedAt);
       for (const user of recipients) {
+        const schedule = { day: Math.min(28, Math.max(1, Number(user.monthlyPerformanceDay || fallback.day || 1))), time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(user.monthlyPerformanceTime || '')) ? user.monthlyPerformanceTime : fallback.time || '09:00' };
+        if(current.getUTCDate()<schedule.day || (current.getUTCDate()===schedule.day && clock<schedule.time)) continue;
         const key = `${month}:${user.id}:${user.email}`;
         if (state.monthlyKpiSent?.[key]) continue;
         const rows = state.shipments.filter(row => canAccessShipment(user, row) && (user.role !== 'ecosystem' || Number(row.supplierId) === Number(user.supplierId)));
