@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
 import { clientAddress, inNetworks } from './client-network.js';
 import { fail } from './receiving.js';
 
@@ -54,6 +55,12 @@ export function sapEditableColumns(role) {
 
 export function sapCanFormat(role) {
   return role === 'sap' || role === 'admin';
+}
+
+export function encodedByName(name) {
+  const parts = String(name || 'SAP Analyst').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts[0] || 'SAP Analyst';
+  return `${parts[0][0].toUpperCase()}. ${parts.at(-1)}`;
 }
 
 const identifier = value => {
@@ -142,7 +149,7 @@ export function createSapRepository() {
         ON CONFLICT (record_key) DO NOTHING`, [JSON.stringify(records)]);
       records.forEach(row => synced.add(row.record_key));
     },
-    async page(offset, limit, search = '') {
+    async page(offset, limit, search = '', sort = 'desc') {
       await initialize();
       const term = String(search || '').trim().slice(0, 200);
       const args = [limit + 1, offset];
@@ -152,7 +159,12 @@ export function createSapRepository() {
         const searchable = ['record_key', 'supplier', ...sapColumns.map(([, , , db]) => db)];
         where = `WHERE concat_ws(' ', ${searchable.map(identifier).join(',')}) ILIKE $3`;
       }
-      const result = await pool.query(`SELECT * FROM ${table} ${where} ORDER BY id DESC LIMIT $1 OFFSET $2`, args);
+      const direction = String(sort).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+      const duplicateColumns = sapColumns.map(([, , , db]) => identifier(db)).join(',');
+      const result = await pool.query(`WITH ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY ${duplicateColumns} ORDER BY id DESC) AS duplicate_rank
+        FROM ${table} ${where}
+      ) SELECT * FROM ranked WHERE duplicate_rank=1 ORDER BY id ${direction} LIMIT $1 OFFSET $2`, args);
       return { rows: result.rows.slice(0, limit).map(decode), hasMore: result.rows.length > limit };
     },
     async byKeys(keys) {
@@ -161,11 +173,23 @@ export function createSapRepository() {
     },
     async all() {
       await initialize();
-      return (await pool.query(`SELECT * FROM ${table} ORDER BY id DESC`)).rows.map(decode);
+      const duplicateColumns = sapColumns.map(([, , , db]) => identifier(db)).join(',');
+      return (await pool.query(`WITH ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY ${duplicateColumns} ORDER BY id DESC) AS duplicate_rank FROM ${table}
+      ) SELECT * FROM ranked WHERE duplicate_rank=1 ORDER BY id DESC`)).rows.map(decode);
     },
     async forShipment(id) {
       await initialize();
       return (await pool.query(`SELECT * FROM ${table} WHERE shipment_id=$1 ORDER BY id`, [id])).rows.map(decode);
+    },
+    async add(values, name) {
+      await initialize();
+      const key = `manual:${randomUUID()}`;
+      const record = Object.fromEntries(sapColumns.map(([field, , , db]) => [db, String(field === 'encodedBy' ? encodedByName(name) : values?.[field] ?? '')]));
+      const result = await pool.query(`INSERT INTO ${table} (record_key, supplier, ${sapColumns.map(([, , , db]) => identifier(db)).join(',')})
+        VALUES ($1, $2, ${sapColumns.map((_, index) => `$${index + 3}`).join(',')}) RETURNING *`,
+      [key, record.supplier_name || '', ...sapColumns.map(([, , , db]) => record[db])]);
+      return decode(result.rows[0]);
     },
     async save(rows, name, role) {
       await initialize();
@@ -183,7 +207,7 @@ export function createSapRepository() {
             assignments.push(`${identifier(db)}=$${args.length}`);
           }
           if ((role === 'sap' || role === 'admin') && assignments.length) {
-            args.push(name);
+            args.push(encodedByName(name));
             assignments.push(`${identifier('encoded_by')}=$${args.length}`);
           }
           if (formatAllowed && row.formats) {

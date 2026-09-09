@@ -73,6 +73,7 @@ export interface ConfirmedTruckLoad {
   driverName: string;
   driverPhone: string;
   itemIds: number[];
+  itemQuantities?: { itemId: number; quantity: number }[];
   confirmedAt: string;
 }
 
@@ -95,8 +96,10 @@ export interface Shipment {
   destinationEcosystemId?: number | null;
   replacementForId?: number;
   replacementIds?: number[];
+  isFollowUp?: boolean;
+  followUpLabel?: string;
   quantityAllocations?: QuantityAllocation[];
-  proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[]}[];
+  proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[];itemQuantities?:{itemId:number;quantity:number}[]}[];
   changeReason?: string;
   receipt?: { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; inFull: boolean; onTime: boolean | null; otif: boolean | null; items: { itemId: number; materialCode: string; uom: string; acceptedQuantity: number; remainingQuantity: number; date?: string; time?: string; reason?: string }[] };
   id: number;

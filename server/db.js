@@ -156,7 +156,7 @@ export const database = {
   },
 
   async saveRefreshToken({ tokenId, tokenHash, userId, expiresAt, ipAddress, userAgent }) {
-    if (!enabled) {
+    if (!enabled || !connected) {
       memoryTokens.set(tokenId, { tokenHash, userId, expiresAt: Date.parse(expiresAt), revokedAt: null });
       return;
     }
@@ -164,7 +164,7 @@ export const database = {
   },
 
   async findRefreshToken(tokenId, tokenHash) {
-    if (!enabled) {
+    if (!enabled || !connected) {
       const record = memoryTokens.get(tokenId);
       return Boolean(record && record.tokenHash === tokenHash && !record.revokedAt && record.expiresAt > Date.now());
     }
@@ -174,7 +174,7 @@ export const database = {
 
   async revokeRefreshToken(tokenId) {
     if (!tokenId) return;
-    if (!enabled) {
+    if (!enabled || !connected) {
       const record = memoryTokens.get(tokenId);
       if (record) record.revokedAt = Date.now();
       return;
@@ -183,7 +183,7 @@ export const database = {
   },
 
   async revokeUserRefreshTokens(userId) {
-    if (!enabled) {
+    if (!enabled || !connected) {
       for (const record of memoryTokens.values()) if (Number(record.userId) === Number(userId)) record.revokedAt = Date.now();
       return;
     }

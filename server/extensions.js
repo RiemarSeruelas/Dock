@@ -2,11 +2,13 @@ import { registerClearance } from "./clearance.js";
 import { createSapRepository, sapCanFormat, sapColumns, sapEditableColumns, sapNetworkAllowed } from "./sap-postgres.js";
 import { registerAdminOperations } from "./admin-operations.js";
 import ExcelJS from 'exceljs';
+import { randomUUID } from 'node:crypto';
 import { calculateKpi, fail } from './receiving.js';
+import { encodedByName } from './sap-postgres.js';
 
 const columns = sapColumns;
 const manila = date => date ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(date)) : '';
-export const sapRows = state => state.shipments.filter(s => s.bookingStatus === 'APPROVED' && s.gateInAt).flatMap(s => s.items.map(item => {
+export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus === 'APPROVED' && s.gateInAt).flatMap(s => s.items.map(item => {
   const key = `${s.id}:${item.id}`;
   const saved = state.sapRows?.[key];
   const clearance = s.clearance?.[item.id] || {};
@@ -25,11 +27,15 @@ export const sapRows = state => state.shipments.filter(s => s.bookingStatus === 
     qaStart: clearance.qaStart || '', qaEnd: clearance.qaEnd || '', qaDisposition: clearance.disposition || '',
   };
   return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values: { ...defaults, ...saved?.values }, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
-}));
+})), ...(state.sapManualRows || []).map(row=>{const saved=state.sapRows?.[row.key];return saved?{...row,...saved,values:{...row.values,...saved.values}}:row;})];
+const uniqueSapRows = rows => {
+  const seen = new Set();
+  return rows.filter(row => { const signature=JSON.stringify(sapColumns.map(([key])=>row.values?.[key]??'')); if(seen.has(signature))return false;seen.add(signature);return true; });
+};
 export function registerExtensions({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database }) {
   registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database });
   const sap = createSapRepository();
-  registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,sap});
+  registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,supplierSafeShipment,sap});
   app.get('/api/shipments/lookup', auth, asyncRoute(async (req, res) => {
     const state = await store.read();
     const raw = String(req.query.code || '').trim();
@@ -46,17 +52,30 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     const offset = Math.max(0, Math.min(1000000, Math.floor(Number(req.query.offset)||0)));
     const limit = Math.max(1, Math.min(100, Math.floor(Number(req.query.limit)||25)));
     const search = String(req.query.search || '').trim().slice(0,200);
+    const sort = String(req.query.sort || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
     const keys = req.query.keys ? String(req.query.keys).split(",") : null;
     if(keys && (keys.length>50 || keys.some(key=>!key || key.length>200 || /[\u0000-\u001f]/.test(key)))) fail("Refresh at most 50 valid rows");
     try {
       const defaults = sapRows(await store.read());
       if(keys) { if(sap.jsonTrial) return res.json({rows:defaults.filter(row=>keys.includes(row.key)),columns,...access,hasMore:false,available:true}); return res.json({rows:await sap.byKeys(keys),columns,...access,hasMore:false,available:true}); }
       if (sap.jsonTrial) {
-        const term=search.toLowerCase();const filtered=term?defaults.filter(row=>Object.values(row.values).some(value=>String(value).toLowerCase().includes(term))):defaults;
-        return res.json({ rows: filtered.slice(offset,offset+limit), columns, ...access, hasMore: filtered.length>offset+limit, available:true });
+        const term=search.toLowerCase();const unique=uniqueSapRows(defaults);const filtered=term?unique.filter(row=>Object.values(row.values).some(value=>String(value).toLowerCase().includes(term))):unique;const sorted=sort==='asc'?[...filtered].reverse():filtered;
+        return res.json({ rows: sorted.slice(offset,offset+limit), columns, ...access, hasMore: sorted.length>offset+limit, available:true });
       }
-      await sap.sync(defaults); res.json({ ...await sap.page(offset,limit,search), columns, ...access, available:true });
+      await sap.sync(defaults); res.json({ ...await sap.page(offset,limit,search,sort), columns, ...access, available:true });
     } catch { res.json({ rows: [], columns, ...access, hasMore:false, available:false, message:'No data. The SAP database is unavailable on this network.' }); }
+  }));
+  app.post('/api/sap/rows', auth, allow('sap','admin'), asyncRoute(async (req,res) => {
+    if (!sapNetworkAllowed(req)) fail('Connect to the authorized SAP network',403);
+    const values = req.body?.values && typeof req.body.values === 'object' && !Array.isArray(req.body.values) ? req.body.values : {};
+    if (Object.keys(values).some(key=>!columns.some(column=>column[0]===key)) || Object.values(values).some(value=>!['string','number'].includes(typeof value)||String(value).length>2000)) fail('Invalid worksheet cells');
+    const encodedBy=encodedByName(req.user?.name);
+    let row;
+    if(sap.jsonTrial) {
+      row={key:`manual:${randomUUID()}`,revision:0,verified:false,values:Object.fromEntries(columns.map(([key])=>[key,key==='encodedBy'?encodedBy:(values[key]??'')])),formats:{},rowHeight:null,rowHidden:false};
+      await store.update(state=>{state.sapManualRows ||= [];state.sapManualRows.unshift(row);});
+    } else { try { row=await sap.add(values,req.user?.name); } catch { fail('SAP database could not add the worksheet row',503); } }
+    res.status(201).json({row});
   }));
   app.put('/api/sap/rows', auth, allow('sap','admin','planner','warehouse'), asyncRoute(async (req,res) => {
     if (!sapNetworkAllowed(req)) fail('Connect to the authorized SAP network',403);
@@ -75,7 +94,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
       const current=sapRows(state);
       for(const row of rows) if(current.find(item=>item.key===row.key)?.revision !== Number(row.revision)) fail('Worksheet changed. Reload before saving.',409);
       state.sapRows ||= {};
-      for(const row of rows) {const previous=state.sapRows[row.key]||{};state.sapRows[row.key]={...previous,values:{...previous.values,...row.values,...(['sap','admin'].includes(role)?{encodedBy:req.user?.name||'SAP Analyst'}:{})},formats:row.formats??previous.formats,rowHeight:row.rowHeight??previous.rowHeight,rowHidden:row.rowHidden??previous.rowHidden,revision:Number(row.revision)+1,verified:['sap','admin'].includes(role)?!!row.verified:!!previous.verified,updatedBy:req.user?.id,updatedAt:new Date().toISOString()};}
+      for(const row of rows) {const previous=state.sapRows[row.key]||{};state.sapRows[row.key]={...previous,values:{...previous.values,...row.values,...(['sap','admin'].includes(role)?{encodedBy:encodedByName(req.user?.name)}:{})},formats:row.formats??previous.formats,rowHeight:row.rowHeight??previous.rowHeight,rowHidden:row.rowHidden??previous.rowHidden,revision:Number(row.revision)+1,verified:['sap','admin'].includes(role)?!!row.verified:!!previous.verified,updatedBy:req.user?.id,updatedAt:new Date().toISOString()};}
     });
     else { try { await sap.save(rows,req.user?.name||'SAP Analyst',role); } catch(error) { if(error.status===409||error.status===403) throw error; fail('SAP database could not save the worksheet',503); } }
     res.json({saved:rows.map(row=>({key:row.key,revision:Number(row.revision)+1}))});

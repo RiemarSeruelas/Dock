@@ -10,7 +10,8 @@ export function clearanceData(shipment, item, sapValues = {}, manual = {}) {
 export function makeClearancePdf(shipment, records) {
   const document = new PDFDocument({autoFirstPage:false,margin:0,info:{Title:'Inbound Clearance Form',Author:'DockFlow'}});
   const scale=842.88/1600;
-  for(const record of records) {
+  const joined = records.length <= 1 ? records : [{...records[0],code:records.map(row=>row.code).filter(Boolean).join(' / '),description:records.map(row=>row.description).filter(Boolean).join(' / '),quantity:records.map(row=>row.quantity).filter(value=>value!==''&&value!=null).join(' / '),uom:records.map(row=>row.uom).filter(Boolean).join(' / '),actualReceived:records.map(row=>row.actualReceived).filter(value=>value!==''&&value!=null).join(' / '),actualUom:records.map(row=>row.actualUom).filter(Boolean).join(' / '),lot:records.map(row=>row.lot).filter(Boolean).join(' / '),batch:records.map(row=>row.batch).filter(Boolean).join(' / ')}];
+  for(const record of joined) {
     document.addPage({size:[842.88,595.92],margin:0}); document.image(template,0,0,{width:842.88,height:595.92});
     for(const shift of [0,704]) {
       const text=(value,x,y,width,height=22)=>{
@@ -38,7 +39,7 @@ export function makeClearancePdf(shipment, records) {
   }
   return document;
 }
-export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,sap}) {
+export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,supplierSafeShipment,sap}) {
   const load = async req => {
     const state=await store.read();const shipment=state.shipments.find(row=>row.id===Number(req.params.id));
     if(!shipment||!canAccessShipment(req.user,shipment)) fail('Delivery not found',404);
@@ -47,7 +48,8 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
     try { sapData=sap.jsonTrial ? Object.entries(state.sapRows||{}).filter(([key])=>key.startsWith(`${shipment.id}:`)).map(([key,row])=>({key,values:row.values})) : await sap.forShipment(shipment.id); } catch {}
     return {shipment,records:shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},sapData.find(row=>row.key===`${shipment.id}:${item.id}`)?.values,shipment.clearance?.[item.id])}))};
   };
-  app.get('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem'),asyncRoute(async(req,res)=>res.json(await load(req))));
+  app.get('/api/clearance',auth,allow('admin','warehouse','sap'),asyncRoute(async(req,res)=>{const state=await store.read();res.json({shipments:state.shipments.filter(row=>row.bookingStatus==='APPROVED'&&canAccessShipment(req.user,row)).map(supplierSafeShipment)});}));
+  app.get('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>res.json(await load(req))));
   app.put('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem'),asyncRoute(async(req,res)=>{
     const {shipment}=await load(req);const input=req.body.records;
     if(!Array.isArray(input)||input.length!==shipment.items.length||new Set(input.map(row=>row.itemId)).size!==input.length) fail('Complete one clearance entry for each material');
@@ -61,7 +63,7 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
     }
     await store.update(state=>{const row=state.shipments.find(row=>row.id===shipment.id);row.clearance=sanitized;row.clearanceUpdatedBy=req.user.name;row.clearanceUpdatedAt=new Date().toISOString();});res.json({ok:true});
   }));
-  app.get('/api/shipments/:id/clearance.pdf',auth,allow('admin','warehouse','ecosystem'),asyncRoute(async(req,res)=>{
+  app.get('/api/shipments/:id/clearance.pdf',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{
     const {shipment,records}=await load(req);res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`attachment; filename="inbound-clearance-${shipment.shipmentNumber}.pdf"`);const document=makeClearancePdf(shipment,records);document.pipe(res);document.end();
   }));
 }

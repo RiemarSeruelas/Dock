@@ -1,10 +1,12 @@
 import { fail } from './receiving.js';
 export function normalizePhone(value) {
-  let phone = String(value || '').replace(/[\s().-]/g, '');
-  if (/^09\d{9}$/.test(phone)) phone = `+63${phone.slice(1)}`;
-  else if (/^9\d{9}$/.test(phone)) phone = `+63${phone}`;
-  else if (/^63\d{10}$/.test(phone)) phone = `+${phone}`;
-  return phone;
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('0063')) digits = digits.slice(2);
+  if (/^6309\d{9}$/.test(digits)) digits = `63${digits.slice(3)}`;
+  if (/^09\d{9}$/.test(digits)) return `+63${digits.slice(1)}`;
+  if (/^9\d{9}$/.test(digits)) return `+63${digits}`;
+  if (/^639\d{9}$/.test(digits)) return `+${digits}`;
+  return String(value || '').trim();
 }
 export function validateProposedTrucks(proposal, trucks) {
   if (!trucks.length || trucks.length > 2) fail('Choose one or two trucks and complete their details before sending the alternative');

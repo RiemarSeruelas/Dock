@@ -89,6 +89,7 @@ export function SapPage({ token }: { token: string }) {
   const [showHiddenRows, setShowHiddenRows] = useState(false);
   const [editingCell, setEditingCell] = useState("");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"asc" | "desc">("desc");
   const [message, setMessage] = useState("");
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -98,6 +99,7 @@ export function SapPage({ token }: { token: string }) {
   const offsetRef = useRef(0);
   const loadingRef = useRef(false);
   const queryRef = useRef("");
+  const sortRef = useRef<"asc" | "desc">("desc");
   const loadedQueryRef = useRef("");
   const anchorRef = useRef<{ row: number; column: number } | null>(null);
   const undoRef = useRef<Snapshot[]>([]);
@@ -107,6 +109,7 @@ export function SapPage({ token }: { token: string }) {
   useEffect(() => { rowsRef.current = rows; }, [rows]);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
   useEffect(() => { queryRef.current = query; }, [query]);
+  useEffect(() => { sortRef.current = sort; }, [sort]);
   useEffect(() => {
     if (columns.length) localStorage.setItem("dockflow-sap-layout", JSON.stringify({ hidden: hiddenColumns, widths: columnWidths }));
   }, [hiddenColumns, columnWidths, columns.length]);
@@ -146,12 +149,12 @@ export function SapPage({ token }: { token: string }) {
     restore(next);
   };
 
-  const fetchRows = useCallback(async (more = false, search = "") => {
+  const fetchRows = useCallback(async (more = false, search = "", order = sortRef.current) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     const start = more ? offsetRef.current : 0;
     try {
-      const path = "/api/sap/rows?offset=" + start + "&limit=50&search=" + encodeURIComponent(search);
+      const path = "/api/sap/rows?offset=" + start + "&limit=50&search=" + encodeURIComponent(search) + "&sort=" + order;
       const result = await apiRequest<{ rows: SheetRow[]; columns: SheetColumn[]; editableColumns: string[]; canFormat: boolean; hasMore: boolean; available: boolean; message?: string }>(token, path, "GET");
       setColumns(result.columns || []);
       setEditable(result.editableColumns || []);
@@ -197,9 +200,9 @@ export function SapPage({ token }: { token: string }) {
 
   useEffect(() => {
     offsetRef.current = 0;
-    const timer = setTimeout(() => void fetchRows(false, query), query ? 350 : 0);
+    const timer = setTimeout(() => void fetchRows(false, query, sort), query ? 350 : 0);
     return () => clearTimeout(timer);
-  }, [query, fetchRows]);
+  }, [query, sort, fetchRows]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void fetchRows(false, queryRef.current);
@@ -371,6 +374,22 @@ export function SapPage({ token }: { token: string }) {
       setBusy(false);
     }
   };
+  const addRow = async () => {
+    if (!available || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await apiRequest<{ row: SheetRow }>(token, "/api/sap/rows", "POST", { values: {} });
+      rowsRef.current = [result.row, ...rowsRef.current];
+      setRows(rowsRef.current);
+      setSelected(new Set());
+      setMessage("New PostgreSQL row added. Select a cell to enter its values.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to add a row");
+    } finally {
+      setBusy(false);
+    }
+  };
   const download = async () => {
     try {
       const response = await authenticatedFetch("/api/sap/export.xlsx", {}, token);
@@ -411,6 +430,7 @@ export function SapPage({ token }: { token: string }) {
     <div className="hero-row">
       <div><span className="eyebrow">SAP Analysis</span><h1>Unified receiving worksheet</h1></div>
       <div className="sap-actions">
+        {editable.includes("item") && <button className="button primary" disabled={busy || !available} onClick={() => void addRow()}>+ Add row</button>}
         <button className="button secondary" disabled={busy} onClick={() => void fetchRows(false, query)}>Refresh</button>
         <button className="button primary" disabled={busy || !dirty.length || !available} onClick={() => void save()}>Save {dirty.length || ""}</button>
         <button className="button secondary" disabled={busy || !available} onClick={() => void download()}>Download Excel</button>
@@ -419,6 +439,7 @@ export function SapPage({ token }: { token: string }) {
     <div className="sap-search-row">
       <label className="sap-search-field">Search all PostgreSQL rows<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="DR, batch, material, supplier…"/></label>
       <div className="sap-search-meta">
+        <button type="button" className="button secondary sap-sort-button" onClick={() => setSort((current) => current === "desc" ? "asc" : "desc")}>{sort === "desc" ? "Newest first ↓" : "Oldest first ↑"}</button>
         <details className="sap-column-config sap-column-filter">
           <summary>Columns <span>{visibleColumns.length}/{columns.length}</span></summary>
           <div className="worksheet-options">{columns.map(([key, label]) => <label key={key}><input type="checkbox" checked={!hiddenColumns.includes(key)} onChange={(event) => setHiddenColumns(event.target.checked ? hiddenColumns.filter((item) => item !== key) : [...hiddenColumns, key])}/><button type="button" onClick={() => selectColumn(key)}>{label}</button></label>)}</div>
@@ -513,7 +534,7 @@ export function SapPage({ token }: { token: string }) {
           })}
         </tr>)}</tbody>
       </table>
-      <div className="sap-load-more">{hasMore ? <button className="text-button" onClick={() => void fetchRows(true, query)}>Load 50 more</button> : rows.length ? String(rows.length) + " records loaded" : "No data"}{rows.some((row) => row.rowHidden) && <label><input type="checkbox" checked={showHiddenRows} onChange={(event) => setShowHiddenRows(event.target.checked)}/> Show hidden rows</label>}</div>
+      <div className="sap-load-more">{hasMore ? <button className="text-button" onClick={() => void fetchRows(true, query, sort)}>Load 50 more</button> : rows.length ? String(rows.length) + " records loaded" : "No data"}{rows.some((row) => row.rowHidden) && <label><input type="checkbox" checked={showHiddenRows} onChange={(event) => setShowHiddenRows(event.target.checked)}/> Show hidden rows</label>}</div>
     </div>
   </div>;
 }

@@ -45,7 +45,7 @@ const pad = (value) => String(value).padStart(2, "0");
 
 const toDate = (value, now = new Date()) => {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+    return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
   }
   if (typeof value === "number" && value > 20000) {
     const parsed = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
@@ -66,7 +66,7 @@ const toDate = (value, now = new Date()) => {
 };
 
 const toTime = (value) => {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return `${pad(value.getHours())}:${pad(value.getMinutes())}`;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}`;
   if (typeof value === "number" && value >= 0 && value < 1) {
     const minutes = Math.round(value * 24 * 60) % (24 * 60);
     return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;

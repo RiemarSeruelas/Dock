@@ -11,7 +11,7 @@ services:
       - "${APP_PORT:-5059}:3000"
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
   api:
