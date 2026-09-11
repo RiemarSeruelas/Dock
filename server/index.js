@@ -296,10 +296,14 @@ const SCAN_STAGES = {
 const dockStatuses = new Set(["GATE_IN", "UNLOADING", "RECEIVED"]);
 const assignAvailableDock = (state, shipment) => {
   if (shipment.dock) return shipment.dock;
-  const occupied = new Set(state.shipments.filter((row) => row.id !== shipment.id && (row.destinationEcosystemId || (shipmentWorkArea(row) === "ECOSYSTEM" ? "ECOSYSTEM" : null)) === (shipment.destinationEcosystemId || (shipmentWorkArea(shipment) === "ECOSYSTEM" ? "ECOSYSTEM" : null)) && dockStatuses.has(row.status) && row.dock).map((row) => row.dock));
-  const dockCount = Math.max(1, Number(state.settings.dockCount || 2));
-  const area = shipmentWorkArea(shipment);
-  const candidates = area === "DRESSINGS" ? ["Dock 1"] : area === "SAVOURY" ? ["Dock 2"] : Array.from({ length: dockCount }, (_, index) => `Dock ${index + 1}`);
+  const receivingArea = shipmentWorkArea(shipment);
+  const occupied = new Set(state.shipments.filter((row) => row.id !== shipment.id && shipmentWorkArea(row) === receivingArea && (receivingArea !== "ECOSYSTEM" || Number(row.destinationEcosystemId) === Number(shipment.destinationEcosystemId)) && dockStatuses.has(row.status) && row.dock).map((row) => row.dock));
+  const materialTypes = new Set((shipment.items || []).map(item => String(item.materialType || "").trim().toUpperCase()).filter(value => value === "PM" || value === "RM"));
+  const candidates = materialTypes.size === 1 && materialTypes.has("RM")
+    ? ["Dock 3 - RM"]
+    : materialTypes.size === 1 && materialTypes.has("PM")
+      ? ["Dock 1 - PM", "Dock 2 - PM"]
+      : ["Dock 1 - PM", "Dock 2 - PM", "Dock 3 - RM"];
   const available = candidates.find(dock => !occupied.has(dock));
   if (available) shipment.dock = available;
   return available || null;
@@ -365,6 +369,9 @@ const supplierSafeShipment = (shipment) => ({
   items: (shipment.items || []).map((item) => ({
     id: item.id,
     materialCode: item.materialCode,
+    materialType: item.materialType || "",
+    poNumber: item.poNumber || "",
+    dnNumber: item.dnNumber || "",
     quantity: item.quantity,
     uom: item.uom,
     palletCount: item.palletCount,
@@ -414,7 +421,7 @@ async function createInitialState() {
   const adminEmail = String(process.env.SMTP_USER || "").trim().toLowerCase();
   return {
     version: 11,
-    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
+    settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
     users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, workArea: null, email: adminEmail, emailVerifiedAt: adminEmail ? new Date().toISOString() : null }],
     suppliers: [],
     materials: [],
@@ -480,7 +487,7 @@ await store.update(async (state) => {
     if (!user.passwordHash) user.passwordHash = await bcrypt.hash(`${user.username}123`, 10);
     delete user.password;
   }
-  state.settings.dockCount = 2;
+  state.settings.dockCount = 3;
   state.settings.flexibleScheduling = true;
   state.settings.graceMinutes = Number(state.settings.graceMinutes ?? 30);
   state.settings.deliveryCodeSequence = Number(state.settings.deliveryCodeSequence || Math.max(0, ...state.shipments.map((shipment) => Number(String(shipment.deliveryCode || "").split("-").at(-1)) || 0)));
@@ -597,6 +604,13 @@ await store.update(async (state) => {
     shipment.sdsImportIdentity ||= null;
     shipment.sdsImportFingerprint ||= null;
     shipment.scanHistory = Array.isArray(shipment.scanHistory) ? shipment.scanHistory : [];
+    shipment.gateDecision = ["ACCEPTED", "REJECTED"].includes(shipment.gateDecision) ? shipment.gateDecision : null;
+    shipment.gateDecisionAt ||= null;
+    shipment.gateDecisionBy ||= null;
+    shipment.gateRejectionReason ||= null;
+    if (shipment.dock === "Dock 1") shipment.dock = "Dock 1 - PM";
+    if (shipment.dock === "Dock 2") shipment.dock = "Dock 2 - PM";
+    if (shipment.dock === "Dock 3") shipment.dock = "Dock 3 - RM";
     if (shipment.gateInAt) clearShipmentEta(shipment);
     else if (shipment.tripAt && !shipment.estimatedArrivalAt) applyShipmentEta(state, shipment, shipment.tripAt);
     if (legacyStatus === "RECEIVED" && shipment.completedAt) shipment.status = "GATE_OUT";
@@ -782,7 +796,7 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const visibleSupplierIds = new Set(shipments.map((shipment) => Number(shipment.supplierId)).filter(Number.isFinite));
   const shipmentDates = [...new Set(shipments.map((shipment) => shipment.scheduledDate).filter(validDate))].sort();
   const scopedSuppliers = _request.user.role === "ecosystem" ? state.suppliers.filter(supplier => visibleSupplierIds.has(Number(supplier.id)) || Number(supplier.id) === Number(_request.user.supplierId)) : companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : _request.user.role === "planner" && normalizeWorkArea(_request.user.workArea) ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers;
-  const publicSettings = { ...state.settings, siteAddressConfigured: Boolean(state.settings.siteAddress && validCoordinates(state.settings.siteCoordinates)), availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 2 };
+  const publicSettings = { ...state.settings, siteAddressConfigured: Boolean(state.settings.siteAddress && validCoordinates(state.settings.siteCoordinates)), availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 3 };
   delete publicSettings.siteCoordinates;
   delete publicSettings.siteAddress;
   response.json({
@@ -831,6 +845,40 @@ app.post("/api/admin/database/trials", auth, allow("admin"), asyncRoute(async (r
 
 app.all("/api/rds", auth, (_request, response) => response.status(410).json({ message: "Manual delivery requests were replaced by the SDS supplier-confirmation workflow" }));
 app.post("/api/shipments", auth, (_request, response) => response.status(410).json({ message: "Deliveries are created from an imported SDS, not from a manual request" }));
+
+app.patch("/api/shipments/:id/supplier-details", auth, allow("supplier", "ecosystem"), asyncRoute(async (request, response) => {
+  const details = {
+    truckPlate: normalizePlate(request.body?.truckPlate),
+    driverName: String(request.body?.driverName || "").trim().slice(0, 100),
+    driverPhone: normalizePhone(request.body?.driverPhone),
+    helper1Name: String(request.body?.helper1Name || "").trim().slice(0, 100),
+    helper2Name: String(request.body?.helper2Name || "").trim().slice(0, 100),
+    poNumber: String(request.body?.poNumber || "").trim().slice(0, 300),
+    drNumber: String(request.body?.drNumber || "").trim().slice(0, 300),
+  };
+  if (!/^[A-Z]{3}-\d{4}$/.test(details.truckPlate)) return response.status(400).json({ message: "Plate numbers must use AAA-1111" });
+  if (!details.driverName) return response.status(400).json({ message: "Enter the driver name" });
+  if (!/^\+639\d{9}$/.test(details.driverPhone)) return response.status(400).json({ message: "Use a Philippine mobile number such as 09171234567" });
+  const result = await store.update((state) => {
+    const shipment = state.shipments.find(row => row.id === Number(request.params.id));
+    if (!shipment) return null;
+    if (Number(request.user.supplierId) !== Number(shipment.supplierId)) return { forbidden: true };
+    if (["UNLOADING", "RECEIVED", "GATE_OUT"].includes(shipment.status) || shipment.unloadingAt) return { locked: true };
+    Object.assign(shipment, details);
+    if (shipment.confirmedTruckLoads?.length === 1) Object.assign(shipment.confirmedTruckLoads[0], details);
+    shipment.gateDecision = null;
+    shipment.gateDecisionAt = null;
+    shipment.gateDecisionBy = null;
+    shipment.gateRejectionReason = null;
+    resolveShipmentNotifications(state, shipment, [request.user.id]);
+    addAudit(state, request.user, "SUPPLIER_DETAILS_UPDATED", `${shipment.shipmentNumber} truck and delivery details updated`, shipment.shipmentNumber);
+    return { shipment: supplierSafeShipment(shipment) };
+  });
+  if (!result) return response.status(404).json({ message: "Shipment not found" });
+  if (result.forbidden) return response.status(403).json({ message: "This delivery belongs to another supplier" });
+  if (result.locked) return response.status(409).json({ message: "Details are locked because unloading has started" });
+  response.json({ ...result, message: "Delivery details updated" });
+}));
 
 app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosystem"), asyncRoute(async (request, response) => {
   const decision = String(request.body?.decision || "").toUpperCase();
@@ -1074,11 +1122,14 @@ app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRou
   const scheduledDate = String(request.body?.scheduledDate || "");
   const scheduledTime = String(request.body?.scheduledTime || "").slice(0, 5);
   const scheduledEndTime = String(request.body?.scheduledEndTime || "").slice(0, 5);
+  const itemChanges = Array.isArray(request.body?.items) ? request.body.items.map(item => ({ id: Number(item?.id), quantity: Number(item?.quantity) })) : [];
   if (!validDate(scheduledDate) || !validTime(scheduledTime) || !validTime(scheduledEndTime) || toMinutes(scheduledEndTime) <= toMinutes(scheduledTime)) return response.status(400).json({ message: "Choose a valid date and an end time later than the start time" });
+  if (itemChanges.some(item => !Number.isFinite(item.id) || !Number.isFinite(item.quantity) || item.quantity < 0)) return response.status(400).json({ message: "Every material quantity must be zero or greater" });
   const result = await store.update((state) => {
     const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
     if (!shipment) return null;
-    if (shipment.status !== "BOOKED") return { locked: true };
+    if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
+    if (["GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"].includes(shipment.status)) return { locked: true };
     const previous = `${shipment.scheduledDate} ${shipment.scheduledTime}`;
     shipment.scheduledDate = scheduledDate;
     shipment.scheduledTime = scheduledTime;
@@ -1086,11 +1137,18 @@ app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRou
     shipment.expectedDurationMinutes = durationMinutes(scheduledTime, scheduledEndTime);
     shipment.timeSlot = scheduleLabel(scheduledTime, scheduledEndTime);
     shipment.availabilitySlotId = matchingAvailability(state, scheduledDate, scheduledTime, scheduledEndTime)?.id || null;
+    const requested = new Map(itemChanges.map(item => [item.id, item.quantity]));
+    for (const item of shipment.items) if (requested.has(Number(item.id))) item.quantity = requested.get(Number(item.id));
+    shipment.materialWeightKg = shipment.items.reduce((sum, item) => sum + (String(item.uom).toUpperCase() === "KG" ? Number(item.quantity || 0) : String(item.uom).toUpperCase() === "MT" ? Number(item.quantity || 0) * 1000 : 0), 0);
+    shipment.sdsImportFingerprint = null;
+    const supplierUsers = state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId));
+    supplierUsers.forEach(user => addNotification(state, user, { type: "WARNING", title: "Delivery schedule updated", message: `${shipment.shipmentNumber} is now ${scheduledDate} at ${scheduledTime}. Review the updated quantities and booking.`, shipment }));
     addAudit(state, request.user, "BOOKING_RESCHEDULED", `${shipment.shipmentNumber} moved from ${previous} to ${scheduledDate} ${scheduledTime}`, shipment.shipmentNumber);
     return { ok: true, shipment };
   });
   if (!result) return response.status(404).json({ message: "Shipment not found" });
-  if (result.locked) return response.status(409).json({ message: "Only bookings that have not started their trip can be dragged to another time" });
+  if (result.forbidden) return response.status(403).json({ message: "This delivery belongs to another receiving area" });
+  if (result.locked) return response.status(409).json({ message: "The schedule is locked after Gate In or unloading begins" });
   response.json(result);
 }));
 
@@ -1152,6 +1210,41 @@ app.delete("/api/availability/:id", auth, allow(...planningRoles), asyncRoute(as
   response.json(result);
 }));
 
+app.patch("/api/shipments/:id/gate-review", auth, allow("admin", "security", "ecosystem"), asyncRoute(async (request, response) => {
+  const reasonCode = String(request.body?.reasonCode || "").trim().toUpperCase();
+  const allowedReasons = new Set(["CREDENTIALS_MISMATCH", "TOO_EARLY", "MISSING_DOCUMENTS", "VEHICLE_MISMATCH", "SAFETY_CONCERN", "OTHER"]);
+  const otherReason = String(request.body?.otherReason || "").trim().slice(0, 300);
+  if (!allowedReasons.has(reasonCode)) return response.status(400).json({ message: "Choose a gate rejection reason" });
+  if (reasonCode === "OTHER" && !otherReason) return response.status(400).json({ message: "Describe the other gate rejection reason" });
+  const labels = {
+    CREDENTIALS_MISMATCH: "Driver or vehicle credentials do not match the booking",
+    TOO_EARLY: "Truck arrived earlier than the 15-minute entry allowance",
+    MISSING_DOCUMENTS: "Required delivery documents are missing or incomplete",
+    VEHICLE_MISMATCH: "Truck or plate number does not match the booking",
+    SAFETY_CONCERN: "Vehicle or delivery presents a safety concern",
+    OTHER: otherReason,
+  };
+  const result = await store.update((state) => {
+    const shipment = state.shipments.find(row => row.id === Number(request.params.id));
+    if (!shipment) return null;
+    if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
+    if (shipment.bookingStatus !== "APPROVED" || !["BOOKED", "IN_TRANSIT"].includes(shipment.status)) return { locked: true };
+    const reviewedAt = new Date().toISOString();
+    shipment.gateDecision = "REJECTED";
+    shipment.gateDecisionAt = reviewedAt;
+    shipment.gateDecisionBy = request.user.name;
+    shipment.gateRejectionReason = labels[reasonCode];
+    const supplierUsers = state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId));
+    supplierUsers.forEach(user => addNotification(state, user, { type: "ERROR", title: "Gate entry needs correction", message: `${shipment.shipmentNumber}: ${shipment.gateRejectionReason}. Correct the booking details and present the QR again.`, shipment, requiresAction: true }));
+    addAudit(state, request.user, "GATE_ENTRY_REJECTED", `${shipment.shipmentNumber}: ${shipment.gateRejectionReason}`, shipment.shipmentNumber);
+    return { shipment: supplierSafeShipment(shipment) };
+  });
+  if (!result) return response.status(404).json({ message: "Shipment not found" });
+  if (result.forbidden) return response.status(403).json({ message: "This account cannot review that shipment" });
+  if (result.locked) return response.status(409).json({ message: "This delivery can no longer be rejected at the gate" });
+  response.json({ ...result, message: "Gate entry rejected. The supplier was notified." });
+}));
+
 app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response) => {
   const stage = String(request.body?.stage || "").toUpperCase();
   const configuration = SCAN_STAGES[stage];
@@ -1165,6 +1258,11 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     if (!canAccessShipment(request.user, shipment) || (request.user.role === "ecosystem" && Number(request.user.supplierId) !== Number(shipment.destinationEcosystemId) && (shipment.destinationEcosystemId || shipmentWorkArea(shipment) !== "ECOSYSTEM"))) return { forbidden: true };
     if (shipment.bookingStatus !== "APPROVED") return { approvalRequired: true };
     const targetStatus = stage === "GATE" ? (shipment.status === "RECEIVED" || shipment.status === "GATE_OUT" ? "GATE_OUT" : "GATE_IN") : configuration.status;
+    if (targetStatus === "GATE_IN" && String(request.body?.gateDecision || "").toUpperCase() !== "ACCEPT") return { gateDecisionRequired: true };
+    if (targetStatus === "GATE_IN") {
+      const scheduledAt = Date.parse(`${shipment.scheduledDate}T${shipment.scheduledTime}:00+08:00`);
+      if (Number.isFinite(scheduledAt) && Date.now() < scheduledAt - 15 * 60_000) return { tooEarly: true, earliestAt: new Date(scheduledAt - 15 * 60_000).toISOString() };
+    }
     const alreadyRecorded = shipment.status === targetStatus || (stage === "TRIP" && Boolean(shipment.tripAt)) || (stage === "RECEIVED" && Boolean(shipment.receivedAt)) || (stage === "UNLOADING" && Boolean(shipment.unloadingAt));
     if (alreadyRecorded) return { shipment: supplierSafeShipment(shipment), alreadyRecorded: true, stageLabel: configuration.label, receivedRecipients: [] };
     const receipt = stage === "RECEIVED" ? inspectReceipt(shipment, request.body.receipt, state.settings.graceMinutes) : null;
@@ -1175,7 +1273,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     const scannedAt = new Date().toISOString();
     shipment.lastProcessAt = scannedAt;
     if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; applyShipmentEta(state, shipment, shipment.tripAt); }
-    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; clearShipmentEta(shipment); }
+    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; shipment.gateDecision = "ACCEPTED"; shipment.gateDecisionAt = scannedAt; shipment.gateDecisionBy = request.user.name; shipment.gateRejectionReason = null; clearShipmentEta(shipment); resolveShipmentNotifications(state, shipment); }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
     if (stage === "RECEIVED") {
       shipment.receivedAt ||= scannedAt;
@@ -1201,6 +1299,8 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
   if (!result) return response.status(404).json({ message: "Shipment not found in this QR code" });
   if (result.approvalRequired) return response.status(409).json({ message: "This booking must be approved before it can be scanned" });
   if (result.forbidden) return response.status(403).json({ message: "This supplier account cannot access that shipment" });
+  if (result.gateDecisionRequired) return response.status(400).json({ message: "Review the scanned booking, then choose Accept or Reject" });
+  if (result.tooEarly) return response.status(409).json({ message: `Entry opens 15 minutes before the schedule. Earliest Gate In: ${new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: TIME_ZONE }).format(new Date(result.earliestAt))}` });
   if (result.wrongStage) return response.status(409).json({ message: `This delivery is currently ${String(result.currentStatus).replaceAll("_", " ").toLowerCase()}. Complete the earlier scan stage first.` });
   if (result.noDock) return response.status(409).json({ message: "The receiving dock for this work area is occupied. Complete Gate out before starting another unloading." });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
@@ -1712,7 +1812,7 @@ app.patch("/api/settings", auth, allow("admin"), asyncRoute(async (request, resp
     state.settings = {
       ...state.settings,
       flexibleScheduling: true,
-      dockCount: 2,
+      dockCount: 3,
       graceMinutes: Number(request.body?.graceMinutes ?? state.settings.graceMinutes),
       siteName: String(request.body?.siteName || state.settings.siteName),
       availableSlots,
@@ -1741,6 +1841,36 @@ app.post("/api/shipment-items/:id/documents", auth, allow("admin", "supplier"), 
   response.status(201).json(result);
 }));
 
+app.get("/api/schedule/export.xlsx", auth, allow("admin", "planner", "production"), asyncRoute(async (request, response) => {
+  const state = await store.read();
+  const requestedArea = normalizeWorkArea(request.query.area);
+  const rows = state.shipments
+    .filter(shipment => canAccessShipment(request.user, shipment) && shipment.status !== "REJECTED" && (!requestedArea || shipmentWorkArea(shipment) === requestedArea))
+    .sort((a, b) => `${a.scheduledDate}${a.scheduledTime}${a.supplier}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}${b.supplier}`));
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "DockFlow";
+  const sheet = workbook.addWorksheet("Updated SDS", { views: [{ state: "frozen", ySplit: 1 }] });
+  sheet.columns = [
+    ["week", "Week", 13], ["site", "Site", 15], ["materialType", "PM or RM", 12], ["supplier", "Supplier", 27],
+    ["materialCode", "Material Code", 18], ["materialName", "Description", 36], ["quantity", "Quantity", 15], ["uom", "UOM", 10],
+    ["poNumber", "PO Number", 24], ["deliveryDate", "Delivery Date", 16], ["deliveryTime", "Delivery Time", 14], ["endTime", "End Time", 14], ["remarks", "Remarks", 30],
+  ].map(([key, header, width]) => ({ key, header, width }));
+  for (const shipment of rows) for (const item of shipment.items || []) sheet.addRow({
+    week: item.deliveryWeek || "", site: item.deliverySite || shipmentWorkArea(shipment) || "", materialType: item.materialType || "",
+    supplier: shipment.supplier, materialCode: item.materialCode, materialName: item.materialName || "", quantity: Number(item.quantity || 0), uom: item.uom || "",
+    poNumber: item.poNumber || shipment.poNumber || "", deliveryDate: shipment.scheduledDate, deliveryTime: shipment.scheduledTime,
+    endTime: shipment.scheduledEndTime || "", remarks: item.remarks || "",
+  });
+  sheet.getRow(1).height = 30;
+  sheet.getRow(1).eachCell(cell => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1E38" } }; cell.alignment = { vertical: "middle", wrapText: true }; });
+  sheet.autoFilter = { from: "A1", to: `M${Math.max(1, sheet.rowCount)}` };
+  sheet.getColumn("quantity").numFmt = "#,##0.00";
+  response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  response.setHeader("Content-Disposition", `attachment; filename="dockflow-updated-sds-${String(requestedArea || "all").toLowerCase()}.xlsx"`);
+  await workbook.xlsx.write(response);
+  response.end();
+}));
+
 app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production", "warehouse", "supplier", "ecosystem", "driver"), asyncRoute(async (request, response) => {
   const state = await store.read();
   const requestedSupplierId = (companyScopedRoles.has(request.user.role) || request.user.role === "ecosystem") ? Number(request.user.supplierId) : Number(request.query.supplierId || 0);
@@ -1748,6 +1878,11 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return response.status(400).json({message:"Choose a valid month"});
   const shipments = state.shipments.filter((shipment) => canAccessShipment(request.user, shipment) && (!month || shipment.scheduledDate.startsWith(month)) && shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED" && (!requestedSupplierId || Number(shipment.supplierId) === requestedSupplierId));
   const duration = (start, end) => start && end ? Math.max(0, Math.round((Date.parse(end) - Date.parse(start)) / 60000)) : null;
+  const gateParts = (value) => {
+    if (!value) return { date: "", time: "" };
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value)).map(part => [part.type, part.value]));
+    return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+  };
   const average = (values) => {
     const valid = values.filter((value) => Number.isFinite(value));
     return valid.length ? Math.round(valid.reduce((sum, value) => sum + value, 0) / valid.length) : 0;
@@ -1828,36 +1963,40 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   summary.autoFilter = { from: "A7", to: `F${Math.max(7, summary.rowCount)}` };
 
   const details = workbook.addWorksheet("Deliveries", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  details.columns = [18, 18, 26, 14, 12, 16, 20, 18, 18, 17, 16, 20, 20, 22, 22, 24, 16, 16].map((width) => ({ width }));
-  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "R", 4);
-  const detailHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)", "PO number", "DR number", "Helper 1", "Helper 2", "Receipt outcome", "On time", "OTIF"];
+  details.columns = [18, 18, 26, 16, 14, 16, 20, 18, 18, 17, 16, 20, 20, 22, 22, 24, 16].map((width) => ({ width }));
+  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "Q", 4);
+  const detailHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)", "PO number", "DR number", "Helper 1", "Helper 2", "Receipt outcome", "On time"];
   const detailHeader = details.getRow(4);
   detailHeaders.forEach((value, index) => { detailHeader.getCell(index + 1).value = value; });
   detailHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
   detailHeader.height = 28;
   shipments.sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)).forEach((shipment, index) => {
+    const entrance = gateParts(shipment.gateInAt);
     const output = details.addRow([
-      shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime,
-      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—", shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "", shipment.receipt ? shipment.receipt.inFull ? "Received" : "Received – Not in Full" : "Pending inspection", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No", shipment.receipt?.otif == null ? "Not evaluated" : shipment.receipt.otif ? "Yes" : "No",
+      shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time,
+      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—", shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "", shipment.receipt ? shipment.receipt.inFull ? "Received" : "Received – Not in Full" : "Pending inspection", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No",
     ]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 9, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "top", wrapText: true }; if (index % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(10).font = { name: "Aptos", size: 9, bold: true, color: { argb: ["GATE_OUT", "RECEIVED"].includes(shipment.status) ? "08766B" : blue } };
     output.height = 28;
   });
   details.getColumn(8).numFmt = "@";
-  details.autoFilter = { from: "A4", to: `R${Math.max(4, details.rowCount)}` };
+  details.autoFilter = { from: "A4", to: `Q${Math.max(4, details.rowCount)}` };
 
   const materials = workbook.addWorksheet("Material Codes", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  materials.columns = [18, 18, 25, 14, 12, 18, 22, 14, 12, 14].map((width) => ({ width }));
-  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "J", 4);
-  const materialHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Material code", "Quantity", "UOM", "Site"];
+  materials.columns = [18, 18, 25, 16, 14, 18, 22, 14, 12, 14, 14, 19, 14].map((width) => ({ width }));
+  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "M", 4);
+  const materialHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Material code", "Total need", "UOM", "Site", "On Time", "Quantity Received", "OTIF %"];
   const materialHeader = materials.getRow(4);
   materialHeaders.forEach((value, index) => { materialHeader.getCell(index + 1).value = value; });
   materialHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
   materialHeader.height = 28;
   let materialIndex = 0;
   shipments.forEach((shipment) => shipment.items.forEach((item) => {
-    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime, shipment.truckPlate, item.materialCode, Number(item.quantity || 0), item.uom || "—", item.deliverySite || "—"]);
+    const entrance = gateParts(shipment.gateInAt);
+    const received = Number(shipment.receipt?.items?.find(row => Number(row.itemId) === Number(item.id))?.acceptedQuantity || 0);
+    const need = Number(item.quantity || 0);
+    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time, shipment.truckPlate, item.materialCode, need, item.uom || "—", item.deliverySite || "—", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No", received, need > 0 ? received / need : 0]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; if (materialIndex % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(7).font = { name: "Aptos", size: 10, bold: true, color: { argb: blue } };
     output.height = 25;
@@ -1865,7 +2004,9 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   }));
   materials.getColumn(7).numFmt = "@";
   materials.getColumn(8).numFmt = "#,##0.00";
-  materials.autoFilter = { from: "A4", to: `J${Math.max(4, materials.rowCount)}` };
+  materials.getColumn(12).numFmt = "#,##0.00";
+  materials.getColumn(13).numFmt = "0.00%";
+  materials.autoFilter = { from: "A4", to: `M${Math.max(4, materials.rowCount)}` };
 
   const safeName = selectedSupplier.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "all-suppliers";
   response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

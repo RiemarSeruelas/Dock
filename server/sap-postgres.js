@@ -39,9 +39,21 @@ export const sapColumns = [
   ['qaStart', 'QA INSPECTION (START)', 23, 'qa_start', 'warehouse'],
   ['qaEnd', 'QA INSPECTION (END)', 23, 'qa_end', 'warehouse'],
   ['qaDisposition', 'QA DISPOSITION', 20, 'qa_disposition', 'warehouse'],
+  ['title', 'LOG TITLE', 20, 'title', 'log'],
+  ['company', 'LOG COMPANY', 24, 'company', 'log'],
+  ['logPlateNumber', 'LOG PLATE NO.', 16, 'plate_no', 'log'],
+  ['helper1Name', 'HELPER 1 NAME', 22, 'helper_1_name', 'log'],
+  ['helper2Name', 'HELPER 2 NAME', 22, 'helper_2_name', 'log'],
+  ['dateTimeIn', 'DATE AND TIME IN', 23, 'date_time_in', 'log'],
+  ['timeIn', 'TIME IN', 13, 'time_in', 'log'],
+  ['dateTimeOut', 'DATE AND TIME OUT', 23, 'date_time_out', 'log'],
+  ['timeOut', 'TIME OUT', 13, 'time_out', 'log'],
+  ['hoursStay', 'HOURS STAY', 14, 'hours_stay', 'log'],
+  ['sortPriority', 'SORT PRIORITY', 14, 'sort_priority', 'log'],
 ];
 
-const sapFields = ['destination', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'uom', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks'];
+const logFields = ['title', 'company', 'logPlateNumber', 'helper1Name', 'helper2Name', 'dateTimeIn', 'timeIn', 'dateTimeOut', 'timeOut', 'hoursStay', 'sortPriority'];
+const sapFields = ['destination', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'uom', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks', ...logFields];
 const warehouseFields = ['inventoryController', 'receivingController', 'helperCount', 'truckType', 'actualReceived', 'palletCount', 'warehouseRemarks', 'qaStart', 'qaEnd', 'qaDisposition'];
 const adminFields = [...new Set([...sapFields, ...warehouseFields])];
 
@@ -160,11 +172,7 @@ export function createSapRepository() {
         where = `WHERE concat_ws(' ', ${searchable.map(identifier).join(',')}) ILIKE $3`;
       }
       const direction = String(sort).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-      const duplicateColumns = sapColumns.map(([, , , db]) => identifier(db)).join(',');
-      const result = await pool.query(`WITH ranked AS (
-        SELECT *, ROW_NUMBER() OVER (PARTITION BY ${duplicateColumns} ORDER BY id DESC) AS duplicate_rank
-        FROM ${table} ${where}
-      ) SELECT * FROM ranked WHERE duplicate_rank=1 ORDER BY id ${direction} LIMIT $1 OFFSET $2`, args);
+      const result = await pool.query(`SELECT * FROM ${table} ${where} ORDER BY id ${direction} LIMIT $1 OFFSET $2`, args);
       return { rows: result.rows.slice(0, limit).map(decode), hasMore: result.rows.length > limit };
     },
     async byKeys(keys) {
@@ -173,14 +181,24 @@ export function createSapRepository() {
     },
     async all() {
       await initialize();
-      const duplicateColumns = sapColumns.map(([, , , db]) => identifier(db)).join(',');
-      return (await pool.query(`WITH ranked AS (
-        SELECT *, ROW_NUMBER() OVER (PARTITION BY ${duplicateColumns} ORDER BY id DESC) AS duplicate_rank FROM ${table}
-      ) SELECT * FROM ranked WHERE duplicate_rank=1 ORDER BY id DESC`)).rows.map(decode);
+      return (await pool.query(`SELECT * FROM ${table} ORDER BY id DESC`)).rows.map(decode);
     },
     async forShipment(id) {
       await initialize();
       return (await pool.query(`SELECT * FROM ${table} WHERE shipment_id=$1 ORDER BY id`, [id])).rows.map(decode);
+    },
+    async forClearance(shipment) {
+      await initialize();
+      const materialCodes = [...new Set((shipment.items || []).map(item => String(item.materialCode || '').trim()).filter(Boolean))];
+      const drNumbers = [...new Set([shipment.drNumber, ...(shipment.items || []).map(item => item.dnNumber)].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean))];
+      const poNumbers = [...new Set([shipment.poNumber, ...(shipment.items || []).map(item => item.poNumber)].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean))];
+      const result = await pool.query(`SELECT * FROM ${table}
+        WHERE shipment_id=$1
+          OR (${identifier('item')} <> '' AND ${identifier('item')}=ANY($2::text[]))
+          OR (${identifier('dr_number')} <> '' AND ${identifier('dr_number')}=ANY($3::text[]))
+          OR (${identifier('po_number')} <> '' AND ${identifier('po_number')}=ANY($4::text[]))
+        ORDER BY CASE WHEN shipment_id=$1 THEN 0 ELSE 1 END, id DESC LIMIT 250`, [shipment.id, materialCodes, drNumbers, poNumbers]);
+      return result.rows.map(decode);
     },
     async add(values, name) {
       await initialize();

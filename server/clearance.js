@@ -40,18 +40,26 @@ export function makeClearancePdf(shipment, records) {
   return document;
 }
 export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,supplierSafeShipment,sap}) {
+  const chooseSapRow = (shipment, item, sapData) => {
+    const exact = sapData.find(row => row.key === `${shipment.id}:${item.id}` || (String(row.shipmentId) === String(shipment.id) && row.values?.item === item.materialCode));
+    if (exact) return exact;
+    const drValues = [shipment.drNumber, item.dnNumber].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean);
+    const poValues = [shipment.poNumber, item.poNumber].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean);
+    return sapData.find(row => row.values?.item === item.materialCode && (drValues.includes(String(row.values?.drNumber || '').trim()) || poValues.includes(String(row.values?.poNumber || '').trim())))
+      || sapData.find(row => row.values?.item === item.materialCode);
+  };
   const load = async req => {
     const state=await store.read();const shipment=state.shipments.find(row=>row.id===Number(req.params.id));
     if(!shipment||!canAccessShipment(req.user,shipment)) fail('Delivery not found',404);
     if(shipment.bookingStatus!=='APPROVED') fail('Confirm the delivery before preparing clearance',409);
     let sapData=[];
-    try { sapData=sap.jsonTrial ? Object.entries(state.sapRows||{}).filter(([key])=>key.startsWith(`${shipment.id}:`)).map(([key,row])=>({key,values:row.values})) : await sap.forShipment(shipment.id); } catch {}
-    return {shipment,records:shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},sapData.find(row=>row.key===`${shipment.id}:${item.id}`)?.values,shipment.clearance?.[item.id])}))};
+    try { sapData=sap.jsonTrial ? Object.entries(state.sapRows||{}).filter(([key])=>key.startsWith(`${shipment.id}:`)).map(([key,row])=>({key,values:row.values,revision:row.revision||0})) : await sap.forClearance(shipment); } catch {}
+    return {shipment,sapData,records:shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},chooseSapRow(shipment,item,sapData)?.values,shipment.clearance?.[item.id])}))};
   };
   app.get('/api/clearance',auth,allow('admin','warehouse','sap'),asyncRoute(async(req,res)=>{const state=await store.read();res.json({shipments:state.shipments.filter(row=>row.bookingStatus==='APPROVED'&&canAccessShipment(req.user,row)).map(supplierSafeShipment)});}));
-  app.get('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>res.json(await load(req))));
+  app.get('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{const {shipment,records}=await load(req);res.json({shipment,records});}));
   app.put('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem'),asyncRoute(async(req,res)=>{
-    const {shipment}=await load(req);const input=req.body.records;
+    const {shipment,sapData}=await load(req);const input=req.body.records;
     if(!Array.isArray(input)||input.length!==shipment.items.length||new Set(input.map(row=>row.itemId)).size!==input.length) fail('Complete one clearance entry for each material');
     const sanitized={};
     for(const row of input) {
@@ -61,7 +69,25 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
       if(row.disposition && !['RELEASE','HOLD','REJECT'].includes(row.disposition)) fail('Choose release, hold or reject');
       for(const key of ['helperCount','palletCount','actualReceived']) if(row[key]!==''&&row[key]!=null&&(!Number.isFinite(Number(row[key]))||Number(row[key])<0)) fail('Use nonnegative quantities');
     }
-    await store.update(state=>{const row=state.shipments.find(row=>row.id===shipment.id);row.clearance=sanitized;row.clearanceUpdatedBy=req.user.name;row.clearanceUpdatedAt=new Date().toISOString();});res.json({ok:true});
+    let sapUpdated=false;
+    if(!sap.jsonTrial) {
+      try {
+        const missing=shipment.items.filter(item=>!chooseSapRow(shipment,item,sapData));
+        if(missing.length) await sap.sync(missing.map(item=>({
+          key:`${shipment.id}:${item.id}`,shipmentId:shipment.id,supplier:shipment.supplier,
+          values:{supplierName:shipment.supplier,plateNumber:shipment.truckPlate,driverName:shipment.driverName,gateIn:when(shipment.gateInAt),gateOut:when(shipment.gateOutAt),destination:item.deliverySite||'',deliveryDate:when(shipment.gateInAt)||`${shipment.scheduledDate} ${shipment.scheduledTime}`,item:item.materialCode,description:item.materialName||'',drNumber:shipment.drNumber||item.dnNumber||'',quantity:item.quantity,uom:item.uom,poNumber:shipment.poNumber||item.poNumber||''},
+        })));
+        const current=await sap.forClearance(shipment);
+        const updates=shipment.items.map(item=>{
+          const source=chooseSapRow(shipment,item,current);const manual=sanitized[item.id];
+          if(!source)return null;
+          return {key:source.key,revision:source.revision,values:{inventoryController:manual.inventoryController,receivingController:manual.receivingController,helperCount:manual.helperCount,truckType:manual.truckType,actualReceived:manual.actualReceived,palletCount:manual.palletCount,warehouseRemarks:manual.remarks,qaStart:manual.qaStart,qaEnd:manual.qaEnd,qaDisposition:manual.disposition}};
+        }).filter(Boolean);
+        if(updates.length) await sap.save(updates,req.user.name,'warehouse');
+        sapUpdated=true;
+      } catch {}
+    }
+    await store.update(state=>{const row=state.shipments.find(row=>row.id===shipment.id);row.clearance=sanitized;row.clearanceUpdatedBy=req.user.name;row.clearanceUpdatedAt=new Date().toISOString();});res.json({ok:true,sapUpdated});
   }));
   app.get('/api/shipments/:id/clearance.pdf',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{
     const {shipment,records}=await load(req);res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`attachment; filename="inbound-clearance-${shipment.shipmentNumber}.pdf"`);const document=makeClearancePdf(shipment,records);document.pipe(res);document.end();

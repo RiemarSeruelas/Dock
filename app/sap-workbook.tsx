@@ -78,6 +78,7 @@ export function SapPage({ token }: { token: string }) {
   const [canFormat, setCanFormat] = useState(false);
   const [dirty, setDirty] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState<"cells" | "row" | "column">("cells");
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
     const saved = savedLayout();
     return Array.isArray(saved.hidden) ? saved.hidden : [];
@@ -135,6 +136,7 @@ export function SapPage({ token }: { token: string }) {
     setRows(restored);
     setDirty(snapshot.dirty);
     setSelected(new Set());
+    setSelectionMode("cells");
   };
   const undo = () => {
     const previous = undoRef.current.pop();
@@ -218,6 +220,7 @@ export function SapPage({ token }: { token: string }) {
     return result;
   };
   const selectCell = (rowIndex: number, columnIndex: number, event: ReactMouseEvent) => {
+    setSelectionMode("cells");
     const id = cellId(visibleRows[rowIndex].key, visibleColumns[columnIndex][0]);
     if (event.shiftKey && anchorRef.current) {
       const next = new Set<string>();
@@ -238,8 +241,8 @@ export function SapPage({ token }: { token: string }) {
     }
     anchorRef.current = { row: rowIndex, column: columnIndex };
   };
-  const selectRow = (row: SheetRow) => setSelected(new Set(visibleColumns.map(([key]) => cellId(row.key, key))));
-  const selectColumn = (column: string) => setSelected(new Set(visibleRows.map((row) => cellId(row.key, column))));
+  const selectRow = (row: SheetRow) => { setSelectionMode("row"); setSelected(new Set(visibleColumns.map(([key]) => cellId(row.key, key)))); };
+  const selectColumn = (column: string) => { setSelectionMode("column"); setSelected(new Set(visibleRows.map((row) => cellId(row.key, column)))); };
 
   const updateCells = (
     operation: (value: string | number, format: CellFormat, row: SheetRow, column: string) => { value?: string | number; format?: CellFormat } | void,
@@ -405,7 +408,10 @@ export function SapPage({ token }: { token: string }) {
     }
   };
 
-  const firstCell = selectedCells()[0];
+  const currentSelection = selectedCells();
+  const firstCell = currentSelection[0];
+  const selectedRowKeys = selectionMode === "column" ? new Set<string>() : new Set(currentSelection.map(cell => cell.row.key));
+  const selectedColumnKeys = selectionMode === "row" ? new Set<string>() : new Set(currentSelection.map(cell => cell.column[0]));
   const firstFormat = firstCell?.row.formats?.[firstCell.column[0]] || {};
   const activeColumn = firstCell?.column[0] || visibleColumns[0]?.[0] || "";
   const cellBorder = (format?: CellFormat): CSSProperties => format?.border && format.border !== "none" ? {
@@ -522,13 +528,19 @@ export function SapPage({ token }: { token: string }) {
     >
       <table className="sap-table sap-workbook">
         <colgroup><col style={{ width: 44 }}/>{visibleColumns.map(([key, , width]) => <col key={key} style={{ width: columnWidths[key] || width * 8 }}/>)}</colgroup>
-        <thead><tr><th className="sap-row-number">#</th>{visibleColumns.map(([key, label, , , section]) => <th key={key} className={"sap-section-" + (section || "sap")} onClick={() => selectColumn(key)}>{label}<small>{editable.includes(key) ? "Edit" : "View"}</small></th>)}</tr></thead>
-        <tbody>{visibleRows.map((row, rowIndex) => <tr key={row.key} className={(dirty.includes(row.key) ? "edited " : "") + (row.rowHidden ? "hidden-record" : "")} style={{ height: row.rowHeight || 34 }}>
-          <th className="sap-row-number" onClick={() => selectRow(row)}>{rowIndex + 1}</th>
+        <thead><tr><th className="sap-row-number">#</th>{visibleColumns.map(([key, label, , , section]) => <th key={key} className={`sap-section-${section || "sap"} ${selectedColumnKeys.has(key) ? "selected-axis" : ""}`} onClick={() => selectColumn(key)}>{label}<small>{editable.includes(key) ? "Edit" : "View"}</small></th>)}</tr></thead>
+        <tbody>{visibleRows.map((row, rowIndex) => <tr key={row.key} className={(dirty.includes(row.key) ? "edited " : "") + (row.rowHidden ? "hidden-record " : "") + (selectedRowKeys.has(row.key) ? "selected-axis-row" : "")} style={{ height: row.rowHeight || 34 }}>
+          <th className={`sap-row-number ${selectedRowKeys.has(row.key) ? "selected-axis" : ""}`} onClick={() => selectRow(row)}>{rowIndex + 1}</th>
           {visibleColumns.map((column, columnIndex) => {
             const key = column[0], label = column[1], id = cellId(row.key, key), format = row.formats?.[key];
             const canEdit = available && !busy && editable.includes(key);
-            return <td key={key} style={{ ...cellBorder(format), verticalAlign: format?.vertical === "top" ? "top" : format?.vertical === "bottom" ? "bottom" : "middle" }} className={(selected.has(id) ? "selected " : "") + (!canEdit ? "readonly " : "") + (key === "batch" ? "sap-batch " : "") + (key === "matdoc" ? "sap-matdoc " : "") + (key === "actualReceived" ? "sap-actual" : "")}>
+            const selectionEdges = selected.has(id) ? [
+              rowIndex === 0 || !selected.has(cellId(visibleRows[rowIndex - 1].key, key)) ? "selection-top" : "",
+              rowIndex === visibleRows.length - 1 || !selected.has(cellId(visibleRows[rowIndex + 1].key, key)) ? "selection-bottom" : "",
+              columnIndex === 0 || !selected.has(cellId(row.key, visibleColumns[columnIndex - 1][0])) ? "selection-left" : "",
+              columnIndex === visibleColumns.length - 1 || !selected.has(cellId(row.key, visibleColumns[columnIndex + 1][0])) ? "selection-right" : "",
+            ].filter(Boolean).join(" ") : "";
+            return <td key={key} style={{ ...cellBorder(format), verticalAlign: format?.vertical === "top" ? "top" : format?.vertical === "bottom" ? "bottom" : "middle" }} className={(selected.has(id) ? `selected ${selectionEdges} ` : "") + (!canEdit ? "readonly " : "") + (key === "batch" ? "sap-batch " : "") + (key === "matdoc" ? "sap-matdoc " : "") + (key === "actualReceived" ? "sap-actual" : "")}>
               <input data-sap-cell={id} aria-label={label + " " + row.key} value={editingCell === id ? String(row.values[key] ?? "") : displayValue(row.values[key] ?? "", format)} readOnly={!canEdit} style={cellText(format)} onMouseDown={(event) => selectCell(rowIndex, columnIndex, event)} onFocus={() => { setEditingCell(id); if (canEdit) remember(); }} onBlur={() => setEditingCell("")} onChange={(event) => editValue(row.key, key, event.target.value)}/>
             </td>;
           })}

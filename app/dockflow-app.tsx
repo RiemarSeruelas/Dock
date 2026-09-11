@@ -70,7 +70,7 @@ const EMPTY_DATA: AppData = {
   audit: [],
   notifications: [],
   importBatches: [],
-  settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [] },
+  settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 30, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [] },
 };
 
 const NAV_ITEMS: { id: View; label: string; icon: Icon; roles?: Role[] }[] = [
@@ -158,6 +158,12 @@ const manilaDate = (value?: string | null) => {
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 };
+
+type ReceivingArea = Exclude<WorkArea, "ECOSYSTEM">;
+const shipmentArea = (shipment: Shipment): ReceivingArea => shipment.items.some(item => /savou?r/i.test(String(item.deliverySite || ""))) ? "SAVOURY" : "DRESSINGS";
+function AreaToggle({ value, onChange }: { value: ReceivingArea; onChange: (value: ReceivingArea) => void }) {
+  return <div className="area-toggle" aria-label="Receiving area"><button type="button" className={value === "DRESSINGS" ? "active" : ""} onClick={() => onChange("DRESSINGS")}>Dressings</button><button type="button" className={value === "SAVOURY" ? "active" : ""} onClick={() => onChange("SAVOURY")}>Savoury</button></div>;
+}
 
 const initials = (name: string) => name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 
@@ -266,22 +272,23 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
   );
 }
 
-function MetricCard({ label, value, helper, icon: MetricIcon, tone, trend }: { label: string; value: string | number; helper: string; icon: Icon; tone: string; trend?: string }) {
-  return <article className="metric-card"><div className={`metric-icon tone-${tone}`}><MetricIcon size={20} /></div><div><span>{label}</span><strong>{value}</strong><p>{helper}</p></div>{trend && <em>{trend}</em>}</article>;
+function MetricCard({ label, value, helper, icon: MetricIcon, tone, trend }: { label: string; value: string | number; helper?: string; icon: Icon; tone: string; trend?: string }) {
+  return <article className="metric-card"><div className={`metric-icon tone-${tone}`}><MetricIcon size={20} /></div><div><span>{label}</span><strong>{value}</strong>{helper && <p>{helper}</p>}</div>{trend && <em>{trend}</em>}</article>;
 }
 
-function OverviewPage({ data, user, onOpenShipment }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void }) {
+function OverviewPage({ data, user, area, onAreaChange, onOpenShipment }: { data: AppData; user: SessionUser; area: ReceivingArea; onAreaChange: (value: ReceivingArea) => void; onOpenShipment: (shipment: Shipment) => void }) {
   const today = localDate();
+  const areaShipments = data.shipments.filter(shipment => shipmentArea(shipment) === area);
   const happenedToday = (shipment: Shipment) => [shipment.gateInAt, shipment.unloadingAt, shipment.receivedAt, shipment.gateOutAt].some((value) => manilaDate(value) === today);
-  const todayShipments = data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && (shipment.scheduledDate === today || happenedToday(shipment)));
+  const todayShipments = areaShipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && (shipment.scheduledDate === today || happenedToday(shipment)));
   const activeSequence = todayShipments.filter((shipment) => shipment.status !== "GATE_OUT");
   const received = todayShipments.filter((shipment) => ["RECEIVED", "GATE_OUT"].includes(shipment.status)).length;
   const atSite = todayShipments.filter((shipment) => ["GATE_IN", "UNLOADING", "RECEIVED"].includes(shipment.status)).length;
   const late = todayShipments.filter((shipment) => shipment.scheduledDate === today && shipment.status === "BOOKED" && shipment.scheduledTime < new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Manila" })).length;
-  const docks = Array.from({ length: data.settings.dockCount }, (_, i) => `Dock ${i + 1}`);
-  const dockActiveShipments = data.shipments.filter((shipment) => ["GATE_IN", "UNLOADING", "RECEIVED"].includes(shipment.status) && shipment.dock);
-  const waitingAtGate = data.shipments.filter((shipment) => shipment.status === "GATE_IN" && !shipment.dock);
-  const nextAction = data.shipments.find((shipment) => {
+  const docks = ["Dock 1 - PM", "Dock 2 - PM", "Dock 3 - RM"];
+  const dockActiveShipments = areaShipments.filter((shipment) => ["GATE_IN", "UNLOADING", "RECEIVED"].includes(shipment.status) && shipment.dock);
+  const waitingAtGate = areaShipments.filter((shipment) => shipment.status === "GATE_IN" && !shipment.dock);
+  const nextAction = areaShipments.find((shipment) => {
     if (user.role === "supplier") return ["BOOKED", "IN_TRANSIT"].includes(shipment.status);
     if (user.role === "security") return ["IN_TRANSIT", "RECEIVED"].includes(shipment.status);
     if (user.role === "warehouse") return ["GATE_IN", "UNLOADING"].includes(shipment.status);
@@ -293,14 +300,14 @@ function OverviewPage({ data, user, onOpenShipment }: { data: AppData; user: Ses
   return <div className="page-stack overview-page">
     <section className="hero-row">
       <div><span className="eyebrow">{formatDate(today)} · Live operations</span><h1>Good day, {user.name.split(" ")[0]}.</h1><p>Here’s what is moving through receiving right now.</p></div>
-      <div className="hero-actions"><button className="button secondary overview-refresh" onClick={() => window.location.reload()} aria-label="Refresh overview"><RefreshCw size={16} /><span>Refresh</span></button></div>
+      <div className="hero-actions"><AreaToggle value={area} onChange={onAreaChange}/><button className="button secondary overview-refresh" onClick={() => window.location.reload()} aria-label="Refresh overview"><RefreshCw size={16} /><span>Refresh</span></button></div>
     </section>
     {nextAction && <section className="action-banner"><div className="action-banner-icon"><Gauge size={23} /></div><div><span>Your next action</span><strong>{nextAction.shipmentNumber} · {nextAction.supplier}</strong><p>{user.role === "driver" ? "Update the trip milestone when you are ready." : user.role === "security" ? "Validate the booking and direct the truck." : "Receive pallets and close the delivery."}</p></div><button className="button light" onClick={() => onOpenShipment(nextAction)}>Open shipment <ArrowRight size={16} /></button></section>}
     <section className="metrics-grid">
-      <MetricCard label="Today’s arrivals" value={todayShipments.length} helper={`${todayShipments.filter(s => s.status === "IN_TRANSIT").length} currently in transit`} icon={Truck} tone="blue" trend="Live" />
-      <MetricCard label="On site" value={atSite} helper={`${docks.filter(dock => dockActiveShipments.some(s => s.dock === dock)).length} docks occupied`} icon={MapPin} tone="orange" />
-      <MetricCard label="Received" value={`${received}/${todayShipments.length}`} helper={`${todayShipments.length ? Math.round(received / todayShipments.length * 100) : 0}% completion`} icon={PackageCheck} tone="green" />
-      <MetricCard label="Attention needed" value={late} helper="Late or waiting deliveries" icon={AlertTriangle} tone="red" />
+      <MetricCard label="Today’s arrivals" value={todayShipments.length} icon={Truck} tone="blue" trend="Live" />
+      <MetricCard label="On site" value={atSite} icon={MapPin} tone="orange" />
+      <MetricCard label="Received" value={`${received}/${todayShipments.length}`} icon={PackageCheck} tone="green" />
+      <MetricCard label="Late Deliveries" value={late} icon={AlertTriangle} tone="red" />
     </section>
     <section className="dashboard-grid">
       <article className="panel dock-panel">
@@ -309,8 +316,8 @@ function OverviewPage({ data, user, onOpenShipment }: { data: AppData; user: Ses
           {docks.map((dock) => {
             const active = dockActiveShipments.find((shipment) => shipment.dock === dock);
             return <div className={`dock-lane ${active ? "occupied" : "available"}`} key={dock}>
-              <div className="dock-name"><span>{dock} · {user.role === "ecosystem" ? "Ecosystem" : dock === "Dock 1" ? "Dressings" : "Savoury"}</span><em>{active ? "Occupied" : "Available"}</em></div>
-              <div className="dock-vehicle-visual"><span className="dock-lane-line" />{active ? <img className="parked-truck" src="/images/parked-truck.jpg" alt="Truck occupying the dock" /> : <span className="empty-lane"><CheckCircle2 size={28} /><b>Ready for arrival</b></span>}<i>{active ? active.status === "UNLOADING" ? "In use · unloading" : "Truck arrived" : "No vehicle"}</i></div>
+              <div className="dock-name"><span>{dock}</span><em>{active ? "Occupied" : "Available"}</em></div>
+              <div className="dock-vehicle-visual"><span className="dock-lane-line" />{active ? <img className="parked-truck" src="/images/parked-truck.jpg" alt="Truck occupying the dock" /> : <span className="empty-lane"><CheckCircle2 size={34} /><b>I’m free and open</b><small>Ready for the next arrival</small></span>}<i>{active ? active.status === "UNLOADING" ? "In use · unloading" : "Truck arrived" : "Open dock"}</i></div>
               {active ? <button className="dock-shipment" onClick={() => onOpenShipment(active)}><div><strong>{active.truckPlate}</strong><span>{active.supplier}</span><small>{active.palletsScanned}/{active.palletsTotal} pallets</small></div><ChevronDown size={18} /></button> : <div className="dock-empty"><CheckCircle2 size={20} /><span>Lane ready for the next truck</span></div>}
               {active && <div className="progress-track"><span style={{ width: `${Math.max(12, active.palletsTotal ? active.palletsScanned / active.palletsTotal * 100 : 12)}%` }} /></div>}
             </div>;
@@ -446,13 +453,16 @@ function BarcodeScanner({ stageLabel, onRead }: { stageLabel: string; onRead: (v
   return <div className="scanner-box">{camera ? <div className="camera-frame"><video ref={videoRef} playsInline muted /><span><ScanLine size={22} /> Point at shipment QR</span><button onClick={() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); }}>Cancel</button></div> : <><div className="scan-graphic"><span /><QrCode size={58} /><i /></div><h3>Scan for {stageLabel}</h3><div className="scanner-actions"><input ref={photoRef} className="scan-photo-input" type="file" accept="image/*" capture="environment" aria-label="Take or choose a QR photo" onChange={(event) => void scanPhoto(event.target.files?.[0])} /><button className="button primary" onClick={() => photoRef.current?.click()} disabled={reading}>{reading ? <Loader2 className="spin" size={17} /> : <ImageUp size={17} />} Take QR photo</button>{secureCamera && <button className="button secondary" onClick={startCamera} disabled={reading}><ScanLine size={17} /> Live camera</button>}</div>{!secureCamera && <small className="scanner-note">HTTP trial mode: take a QR photo, use a hardware scanner, or enter the shipment number.</small>}{unsupported && <small className="scanner-note">Live camera was unavailable. QR photo scanning still works over HTTP.</small>}{photoError && <small className="scanner-note error">{photoError}</small>}<div className="manual-entry"><input ref={manualRef} aria-label="Scanned QR value or shipment number" autoComplete="off" placeholder="Scan QR or enter SHP-YYYYMMDD-001" value={manual} onChange={(event) => setManual(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void submitScan(manual); } }} /><button disabled={!manual.trim() || reading} onClick={() => void submitScan(manual)} aria-label={`Record ${stageLabel} scan`}>{reading ? <Loader2 className="spin" size={17} /> : <ArrowRight size={17} />}</button></div></>}</div>;
 }
 
-function OperationsPage({ data, user, onScanStage, onOpenShipment }: { data: AppData; user: SessionUser; onScanStage: (scanValue: string, stage: ScanStage, receipt?: ReceiptInput) => Promise<Shipment>; onOpenShipment: (shipment: Shipment) => void }) {
+function OperationsPage({ data, user, onScanStage, onGateReject, onOpenShipment }: { data: AppData; user: SessionUser; onScanStage: (scanValue: string, stage: ScanStage, receipt?: ReceiptInput, options?: { gateDecision?: "ACCEPT" }) => Promise<Shipment>; onGateReject: (shipment: Shipment, reasonCode: string, otherReason?: string) => Promise<Shipment>; onOpenShipment: (shipment: Shipment) => void }) {
   const availableStages = (Object.keys(SCAN_STATIONS) as ScanStage[]).filter((item) => SCAN_STATIONS[item].roles.includes(user.role));
   const [stage, setStage] = useState<ScanStage>(availableStages[0] || "LOOKUP");
   const [selected, setSelected] = useState<Shipment | null>(null);
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [receiptShipment, setReceiptShipment] = useState<Shipment | null>(null);
   const [scanRecorded, setScanRecorded] = useState(false);
+  const [gateReason, setGateReason] = useState("");
+  const [gateOtherReason, setGateOtherReason] = useState("");
+  const [gateBusy, setGateBusy] = useState(false);
   const approvedShipments = data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED");
   const visibleShipments = user.role === "ecosystem" && stage !== "LOOKUP" ? approvedShipments.filter(shipment => (Number(shipment.destinationEcosystemId) === Number(user.supplierId) || (!shipment.destinationEcosystemId && shipment.items.some(item=>item.deliverySite?.toUpperCase().includes("ECOSYSTEM"))))) : user.role === "supplier" ? approvedShipments.filter(shipment => Number(shipment.supplierId) === Number(user.supplierId)) : approvedShipments;
   const stageStatuses: Record<ScanStage, ShipmentStatus[]> = { LOOKUP: ["BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT"], TRIP: ["BOOKED"], GATE: ["BOOKED", "IN_TRANSIT", "RECEIVED"], UNLOADING: ["GATE_IN"], RECEIVED: ["UNLOADING"] };
@@ -461,32 +471,35 @@ function OperationsPage({ data, user, onScanStage, onOpenShipment }: { data: App
     setFeedback(null);
     try {
       if (stage === "RECEIVED") { const shipment = await onScanStage(value, "LOOKUP"); setReceiptShipment(shipment); return; }
-      const shipment = await onScanStage(value, stage);
+      const shipment = await onScanStage(value, stage === "GATE" ? "LOOKUP" : stage);
       setSelected(shipment);
-      setScanRecorded(stage !== "LOOKUP");
-      setFeedback({ tone: "success", text: stage === "LOOKUP" ? "Delivery details loaded." : `${shipment.shipmentNumber} recorded at ${SCAN_STATIONS[stage].label}.` });
+      setScanRecorded(stage !== "LOOKUP" && stage !== "GATE");
+      setGateReason(""); setGateOtherReason("");
+      setFeedback({ tone: "success", text: stage === "GATE" ? "Booking loaded. Review the credentials, then choose Accept or Reject." : stage === "LOOKUP" ? "Delivery details loaded." : `${shipment.shipmentNumber} recorded at ${SCAN_STATIONS[stage].label}.` });
     } catch (reason) {
       setFeedback({ tone: "error", text: reason instanceof Error ? reason.message : "The QR scan could not be recorded." });
       throw reason;
     }
   };
   const next = selected && STATUS_META[selected.status].step;
+  const gateIsExit = stage === "GATE" && selected?.status === "RECEIVED";
 
   const activeStation = SCAN_STATIONS[stage];
   return <div className="page-stack">
     <section className="hero-row"><div><span className="eyebrow">Role workspace · {accountRoleLabel(user)}</span><h1>{user.role === "supplier" ? "View delivery QR" : "QR receiving stations"}</h1>{user.role === "supplier" && <p>Scan a delivery QR to view its details.</p>}</div><div className="operation-live"><span className="live-dot" /> Scanner online</div></section>
     {receiptShipment && <ReceiptModal shipment={receiptShipment} onClose={() => setReceiptShipment(null)} onSubmit={async receipt => { const shipment = await onScanStage(receiptShipment.shipmentNumber, "RECEIVED", receipt); setSelected(shipment); setScanRecorded(true); setFeedback({ tone: "success", text: shipment.receipt?.otif ? "Received · OTIF. Ready for Gate out." : "Received · Not OTIF. Ready for Gate out." }); }} />}
-    {availableStages.length > 0 && <section className="scan-stations">{availableStages.map((item) => { const station = SCAN_STATIONS[item]; const StationIcon = station.icon; return <button className={stage === item ? "active" : ""} key={item} onClick={() => { setStage(item); setFeedback(null); setSelected(null); setScanRecorded(false); }}><span><StationIcon size={19} /></span><span><b>{station.label}</b><small>{station.helper}</small></span></button>; })}</section>}
+    {availableStages.length > 0 && <section className="scan-stations">{availableStages.map((item) => { const station = SCAN_STATIONS[item]; const StationIcon = station.icon; return <button className={stage === item ? "active" : ""} key={item} onClick={() => { setStage(item); setFeedback(null); setSelected(null); setScanRecorded(false); setGateReason(""); setGateOtherReason(""); }}><span><StationIcon size={19} /></span><span><b>{station.label}</b><small>{station.helper}</small></span></button>; })}</section>}
     {availableStages.length > 0 && <><section className="operations-grid">
       <article className="panel scan-panel"><BarcodeScanner stageLabel={activeStation.label} onRead={recordScan} />{feedback && <div className={`scan-feedback ${feedback.tone}`}>{feedback.tone === "success" ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}{feedback.text}</div>}</article>
       <article className="panel verification-panel">
         {!selected ? <EmptyState icon={QrCode} title={`Ready for the ${activeStation.label} scan`} body="Scan the printed booking QR. The entry status updates as soon as the code is accepted." /> : <>
-          <div className="verification-head"><div><span className="eyebrow">Latest scan recorded</span><h2>{selected.shipmentNumber}</h2></div><StatusPill status={selected.status} receipt={selected.receipt} /></div>
+          <div className="verification-head"><div><span className="eyebrow">{stage === "GATE" && !scanRecorded ? "Scanned entry · awaiting decision" : "Latest scan recorded"}</span><h2>{selected.shipmentNumber}</h2></div><StatusPill status={selected.status} receipt={selected.receipt} /></div>
           <div className="identity-strip"><div className="truck-tile large"><Truck size={26} /></div><div><strong>{selected.truckPlate}</strong><span>{selected.supplier}</span></div><button className="text-button" onClick={() => onOpenShipment(selected)}>View all details</button></div>
           <dl className="verification-data"><div><dt>Driver</dt><dd>{selected.driverName}</dd></div><div><dt>Phone</dt><dd>{selected.driverPhone}</dd></div><div><dt>Entrance time</dt><dd>{selected.scheduledTime}</dd></div><div><dt>Gate in</dt><dd>{formatTime(selected.gateInAt)}</dd></div></dl>
           <div className="flow-progress">{["Booking", "Trip", "Gate in", "Unload", "Received", "Gate out"].map((label, index) => <div className={next && next >= index + 1 ? "done" : ""} key={label}><span>{next && next > index + 1 ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div>
+          {stage === "GATE" && !scanRecorded && !gateIsExit && <div className="gate-review"><label>Reason if rejected<select value={gateReason} onChange={event => setGateReason(event.target.value)}><option value="">Choose only when rejecting</option><option value="CREDENTIALS_MISMATCH">Driver or vehicle credentials do not match</option><option value="TOO_EARLY">Earlier than the 15-minute entry allowance</option><option value="MISSING_DOCUMENTS">Required documents are missing</option><option value="VEHICLE_MISMATCH">Truck or plate number mismatch</option><option value="SAFETY_CONCERN">Vehicle or delivery safety concern</option><option value="OTHER">Other</option></select></label>{gateReason === "OTHER" && <label>Other reason<input value={gateOtherReason} onChange={event => setGateOtherReason(event.target.value)} placeholder="Describe why entry was rejected"/></label>}<div><button type="button" className="button danger" disabled={gateBusy || !gateReason || (gateReason === "OTHER" && !gateOtherReason.trim())} onClick={() => void (async () => { setGateBusy(true); try { const shipment = await onGateReject(selected, gateReason, gateOtherReason); setSelected(shipment); setFeedback({ tone: "success", text: "Gate entry rejected. The supplier was notified." }); } catch (reason) { setFeedback({ tone: "error", text: reason instanceof Error ? reason.message : "Gate review failed." }); } finally { setGateBusy(false); } })()}><X size={16}/> Reject entry</button><button type="button" className="button primary" disabled={gateBusy} onClick={() => void (async () => { setGateBusy(true); try { const shipment = await onScanStage(selected.shipmentNumber, "GATE", undefined, { gateDecision: "ACCEPT" }); setSelected(shipment); setScanRecorded(true); setFeedback({ tone: "success", text: `${shipment.shipmentNumber} accepted and Gate In recorded.` }); } catch (reason) { setFeedback({ tone: "error", text: reason instanceof Error ? reason.message : "Gate In could not be recorded." }); } finally { setGateBusy(false); } })()}><Check size={16}/> Accept & record Gate In</button></div></div>}
           <div className="operation-actions">
-            {scanRecorded ? <div className="scan-recorded-note"><CheckCircle2 size={18} /><span><b>{activeStation.label} recorded</b><small>Use the next station when the truck moves forward.</small></span></div> : <><div className="scan-recorded-note waiting"><QrCode size={18} /><span><b>Ready to record</b><small>Scan the QR or confirm this selected delivery.</small></span></div>{stage !== "LOOKUP" && <button type="button" className="button primary" onClick={() => void recordScan(selected.shipmentNumber)}>Confirm {activeStation.label}</button>}</>}
+            {scanRecorded ? <div className="scan-recorded-note"><CheckCircle2 size={18} /><span><b>{activeStation.label} recorded</b><small>Use the next station when the truck moves forward.</small></span></div> : gateIsExit ? <><div className="scan-recorded-note waiting"><Truck size={18} /><span><b>Ready for Gate Out</b><small>Confirm that the received truck is leaving the facility.</small></span></div><button type="button" className="button primary" disabled={gateBusy} onClick={() => void (async () => { setGateBusy(true); try { const shipment = await onScanStage(selected.shipmentNumber, "GATE"); setSelected(shipment); setScanRecorded(true); setFeedback({ tone: "success", text: `${shipment.shipmentNumber} Gate Out recorded.` }); } catch (reason) { setFeedback({ tone: "error", text: reason instanceof Error ? reason.message : "Gate Out could not be recorded." }); } finally { setGateBusy(false); } })()}><Check size={16}/> Confirm Gate Out</button></> : stage === "GATE" ? <div className="scan-recorded-note waiting"><ShieldCheck size={18} /><span><b>Security decision required</b><small>Confirm the booking details before allowing entry.</small></span></div> : <><div className="scan-recorded-note waiting"><QrCode size={18} /><span><b>Ready to record</b><small>Scan the QR or confirm this selected delivery.</small></span></div>{stage !== "LOOKUP" && <button type="button" className="button primary" onClick={() => void recordScan(selected.shipmentNumber)}>Confirm {activeStation.label}</button>}</>}
           </div>
         </>}
       </article>
@@ -610,8 +623,16 @@ function ProtectedQrImage({ shipment, token }: { shipment: Shipment; token: stri
   return source ? <img src={source} alt={`QR code for ${shipment.shipmentNumber}`} /> : <span className="qr-loading" aria-label="Loading QR code"><Loader2 className="spin" size={24} /></span>;
 }
 
-function ShipmentModal({ shipment, token, user, onClose, onDownloadPdf }: { shipment: Shipment; token: string; user: SessionUser; onClose: () => void; onDownloadPdf: (shipment: Shipment) => Promise<void> | void }) {
+function SupplierDetailsEditor({ shipment, onClose, onSubmit }: { shipment: Shipment; onClose: () => void; onSubmit: (shipment: Shipment, details: Record<string, string>) => Promise<void> }) {
+  const [details, setDetails] = useState({ truckPlate: shipment.truckPlate || "", driverName: shipment.driverName || "", driverPhone: shipment.driverPhone || "", helper1Name: shipment.helper1Name || "", helper2Name: shipment.helper2Name || "", poNumber: shipment.poNumber || "", drNumber: shipment.drNumber || "" });
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const field = (key: keyof typeof details) => ({ value: details[key], onChange: (event: React.ChangeEvent<HTMLInputElement>) => setDetails(current => ({ ...current, [key]: event.target.value })) });
+  return <Modal title="Correct delivery details" subtitle="Delivery date and time cannot be changed by the supplier" onClose={onClose}><form className="receiving-form supplier-detail-editor" onSubmit={async event => { event.preventDefault(); setBusy(true); setError(""); try { await onSubmit(shipment, details); onClose(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Details could not be saved."); } finally { setBusy(false); } }}><div className="form-grid"><label>Plate number<input {...field("truckPlate")} placeholder="AAA-1111" required/></label><label>Driver name<input {...field("driverName")} required/></label><label>Driver phone<input {...field("driverPhone")} placeholder="09171234567" required/></label><label>Helper 1<input {...field("helper1Name")}/></label><label>Helper 2<input {...field("helper2Name")}/></label><label>PO number(s)<input {...field("poNumber")} placeholder="Separate multiple POs with commas"/></label><label>DR number(s)<input {...field("drNumber")} placeholder="Separate multiple DRs with commas"/></label></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="confirmation-footer"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={busy}>{busy ? <Loader2 className="spin" size={17}/> : <Check size={17}/>} Save corrections</button></div></form></Modal>;
+}
+
+function ShipmentModal({ shipment, token, user, onClose, onDownloadPdf, onUpdateSupplierDetails }: { shipment: Shipment; token: string; user: SessionUser; onClose: () => void; onDownloadPdf: (shipment: Shipment) => Promise<void> | void; onUpdateSupplierDetails: (shipment: Shipment, details: Record<string, string>) => Promise<void> }) {
   const [clearanceOpen, setClearanceOpen] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const duration = (start?: string | null, end?: string | null) => { if (!start) return "Not started"; const seconds = Math.max(0, Math.floor(((end ? Date.parse(end) : now ?? Date.parse(start)) - Date.parse(start)) / 1000)); const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60); return `${hours ? `${hours}h ` : ""}${minutes}m ${seconds % 60}s${end ? "" : " · live"}`; };
@@ -625,6 +646,7 @@ function ShipmentModal({ shipment, token, user, onClose, onDownloadPdf }: { ship
   const deliverySite = shipment.items.find((item) => item.deliverySite)?.deliverySite || "Site not supplied";
   const waitingForCompany = shipment.bookingStatus === "PENDING_COMPANY";
   if (clearanceOpen) return <ClearanceModal shipment={shipment} token={token} onClose={() => setClearanceOpen(false)}/>;
+  if (editingDetails) return <SupplierDetailsEditor shipment={shipment} onClose={() => setEditingDetails(false)} onSubmit={onUpdateSupplierDetails}/>;
   return <Modal className="booking-receipt-modal" title={shipment.shipmentNumber} subtitle={`${shipment.bookingReceipt} · ${shipment.supplier}`} onClose={onClose} wide>
     <div className="shipment-detail">
       <div className="receipt-head"><div><span className="brand-mark"><Route size={20} /></span><span><b>DockFlow</b><small>Booking receipt</small></span></div><span className="receipt-head-status">{shipment.isFollowUp && <em className="follow-up-chip">Follow up</em>}<StatusPill status={shipment.status} receipt={shipment.receipt} /></span></div>
@@ -637,7 +659,7 @@ function ShipmentModal({ shipment, token, user, onClose, onDownloadPdf }: { ship
       {shipment.replacementForId && <div className="follow-up-origin"><History size={16}/><span><small>Follow up delivery</small><b>Created from delivery #{shipment.replacementForId}</b></span></div>}
       <section className="process-tracker"><div className="panel-head"><div><span className="eyebrow">Scan timestamps</span><h3>Process tracker · Manila time</h3></div></div><div className="process-stage-row">{stages.map((stage, index) => <div className={stage.at ? "complete" : ""} key={stage.label}><i>{stage.at ? <Check size={13} /> : index + 1}</i><b>{stage.label}</b><small>{stage.at ? formatDateTime(stage.at) : stage.label === "Trip" ? shipment.gateInAt ? "Skipped" : "Optional" : "Waiting"}</small>{stage.scan && <em className="scan-actor">Scanned by {stage.scan.actor}</em>}</div>)}</div><div className="process-duration-grid"><span><small>Trip → Gate in</small><b>{shipment.tripAt ? duration(shipment.tripAt, shipment.gateInAt) : shipment.gateInAt ? "Skipped" : "Not started"}</b></span><span><small>Gate in → Unloading</small><b>{duration(shipment.gateInAt, shipment.unloadingAt)}</b></span><span><small>Unloading → Received</small><b>{duration(shipment.unloadingAt, shipment.receivedAt)}</b></span><span><small>Received → Gate out</small><b>{duration(shipment.receivedAt, shipment.gateOutAt)}</b></span><span><small>Total site time</small><b>{duration(shipment.gateInAt, shipment.gateOutAt)}</b></span></div></section>
       <div className="table-wrap detail-items"><table><thead><tr><th>Material code</th><th>Amount / weight</th><th>UOM</th></tr></thead><tbody>{shipment.items.map((item) => <tr key={item.id}><td><b>{item.materialCode}</b></td><td>{item.quantity.toLocaleString()}</td><td>{item.uom}</td></tr>)}</tbody></table></div>
-      <div className="shipment-actions">{shipment.bookingStatus === "APPROVED" && ["admin", "warehouse", "ecosystem"].includes(user.role) && <button className="button secondary" onClick={() => setClearanceOpen(true)}><Download size={17}/> Inbound clearance</button>}{shipment.bookingStatus === "APPROVED" && <button className="button secondary" onClick={() => void onDownloadPdf(shipment)}><Download size={17} /> Download booking PDF</button>}<button className="button primary" onClick={onClose}>Done</button></div>
+      <div className="shipment-actions">{["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && !["UNLOADING", "RECEIVED", "GATE_OUT"].includes(shipment.status) && <button className="button secondary" onClick={() => setEditingDetails(true)}>Edit delivery details</button>}{shipment.bookingStatus === "APPROVED" && ["admin", "warehouse", "ecosystem"].includes(user.role) && <button className="button secondary" onClick={() => setClearanceOpen(true)}><Download size={17}/> Inbound clearance</button>}{shipment.bookingStatus === "APPROVED" && <button className="button secondary" onClick={() => void onDownloadPdf(shipment)}><Download size={17} /> Download booking PDF</button>}<button className="button primary" onClick={onClose}>Done</button></div>
     </div>
   </Modal>;
 }
@@ -655,6 +677,7 @@ export default function DockFlowApp() {
   const [token, setToken] = useState("");
   const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [view, setView] = useState<View>("overview");
+  const [receivingArea, setReceivingArea] = useState<ReceivingArea>("DRESSINGS");
   const [dark, setDark] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -715,6 +738,7 @@ export default function DockFlowApp() {
 
   const handleLogin = (nextUser: SessionUser, nextToken: string) => {
     setUser(nextUser); setToken(nextToken); setView(ROLE_VIEWS[nextUser.role][0]);
+    if (nextUser.workArea === "SAVOURY" || nextUser.workArea === "DRESSINGS") setReceivingArea(nextUser.workArea);
     localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token: nextToken }));
   };
   const activateUser = (nextUser: SessionUser) => {
@@ -734,12 +758,31 @@ export default function DockFlowApp() {
     }
   };
 
-  const scanShipmentStage = async (scanValue: string, stage: ScanStage, receipt?: ReceiptInput) => {
+  const scanShipmentStage = async (scanValue: string, stage: ScanStage, receipt?: ReceiptInput, options?: { gateDecision?: "ACCEPT" }) => {
     if (stage === "LOOKUP") { const result = await apiRequest<{ shipment: Shipment }>(token, `/api/shipments/lookup?code=${encodeURIComponent(scanValue)}`, "GET"); return result.shipment; }
-    const result = await apiRequest<{ shipment: Shipment; message: string }>(token, "/api/shipments/scan-stage", "POST", { scanValue, stage, receipt });
+    const result = await apiRequest<{ shipment: Shipment; message: string }>(token, "/api/shipments/scan-stage", "POST", { scanValue, stage, receipt, ...options });
     await refresh();
     notify(result.message);
     return result.shipment;
+  };
+  const rejectGateEntry = async (shipment: Shipment, reasonCode: string, otherReason?: string) => {
+    const result = await apiRequest<{ shipment: Shipment; message: string }>(token, `/api/shipments/${shipment.id}/gate-review`, "PATCH", { reasonCode, otherReason });
+    await refresh(); notify(result.message); return result.shipment;
+  };
+  const updateSchedule = async (shipment: Shipment, change: { scheduledDate: string; scheduledTime: string; scheduledEndTime: string; items: { id: number; quantity: number }[] }) => {
+    await apiRequest(token, `/api/shipments/${shipment.id}/schedule`, "PATCH", change);
+    await refresh();
+    notify("Schedule and quantities updated across DockFlow.");
+  };
+  const updateSupplierDetails = async (shipment: Shipment, details: Record<string, string>) => {
+    const result = await apiRequest<{ shipment: Shipment; message: string }>(token, `/api/shipments/${shipment.id}/supplier-details`, "PATCH", details);
+    setSelectedShipment(result.shipment); await refresh(); notify(result.message);
+  };
+  const downloadSds = async (area: ReceivingArea) => {
+    const response = await authenticatedFetch(`/api/schedule/export.xlsx?area=${area}`, {}, token);
+    if (!response.ok) throw new Error("The updated SDS workbook could not be created");
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `dockflow-updated-sds-${area.toLowerCase()}.xlsx`; anchor.click(); URL.revokeObjectURL(url);
   };
   const imported = async (result: ImportResult) => {
     await refresh();
@@ -836,11 +879,11 @@ export default function DockFlowApp() {
     <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""} ${mobileNav ? "open" : ""}`}><div className="sidebar-top"><div className="brand-lockup brand-light"><span className="brand-mark"><Route size={22} /></span><span><b>DockFlow</b></span></div><button className="sidebar-collapse" onClick={() => setSidebarCollapsed((current) => !current)} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <ChevronsRight size={20} /> : <ChevronsLeft size={20} />}</button><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={20} /></button></div><nav>{visibleNav.map(item => { const NavIcon = item.icon; return <button className={view === item.id ? "active" : ""} title={sidebarCollapsed ? item.label : undefined} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><span><NavIcon size={19} /></span><div><b>{item.label}</b></div></button>; })}</nav><div className="sidebar-user"><span className="user-avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{accountRoleLabel(user)}</small></div><button onClick={logout} title="Sign out"><LogOut size={17} /></button></div></aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><LiveClock className="topbar-clock" /><span className="role-badge"><RoleIcon size={15} /> {accountRoleLabel(user)}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><NotificationCenter notifications={data.notifications} onOpen={openNotification} onDismiss={(notification) => void markNotificationRead(notification)} /><span className="user-mini profile-only" aria-label={`${user.name} profile`} title={user.name}><span>{initials(user.name)}</span></span></div></header>
-      <div className="page-content">{view === "sap" && <SapPage token={token} />}{view === "clearance" && <ClearancePage token={token} user={user} />}{view === "ecosystem" && <EcosystemPage token={token} data={data} user={user} refresh={refresh} />}{view === "overview" && <OverviewPage data={receivingData} user={user} onOpenShipment={openShipment} />}{view === "monitoring" && <MonitoringPage data={receivingData} theme={dark ? "dark" : "light"} onOpenShipment={openShipment} />}{view === "schedule" && <FlexibleSchedulePage data={schedulingData} user={user} onOpenShipment={openShipment} onImportSds={() => setExcelImport(true)} onReviewAlternative={setCompanyDecisionShipment} />}{view === "entries" && <>{user.role === "supplier" && !user.emailVerifiedAt && <section className="verification-reminder"><ShieldCheck size={22} /><div><b>Verify your account email</b><span>This reminder stays here until your email is verified.</span></div><button className="button primary compact" onClick={() => setSelfVerificationOpen(true)}>Verify now</button></section>}<EntriesPage data={outgoingData} onOpenShipment={openShipment} /></>}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onOpenShipment={openShipment} />}{view === "history" && <HistoryPage data={data} user={user} onOpenShipment={openShipment} />}{view === "reports" && <ReportsPage data={data} user={user} token={token} onOpenShipment={openShipment} />}{view === "admin" && <AdminPage data={data} token={token} currentUser={user} onAddUser={addUser} onDeleteUser={deleteUser} onUnlockSiteAddress={unlockSiteAddress} onSaveSiteAddress={saveSiteAddress} onCalculateSupplierEta={calculateSupplierEta} />}</div>
+      <div className="page-content">{view === "sap" && <SapPage token={token} />}{view === "clearance" && <ClearancePage token={token} user={user} />}{view === "ecosystem" && <EcosystemPage token={token} data={data} user={user} refresh={refresh} />}{view === "overview" && <OverviewPage data={receivingData} user={user} area={receivingArea} onAreaChange={setReceivingArea} onOpenShipment={openShipment} />}{view === "monitoring" && <MonitoringPage data={receivingData} theme={dark ? "dark" : "light"} area={receivingArea} onAreaChange={setReceivingArea} onOpenShipment={openShipment} />}{view === "schedule" && <FlexibleSchedulePage data={schedulingData} user={user} area={receivingArea} onAreaChange={setReceivingArea} onOpenShipment={openShipment} onImportSds={() => setExcelImport(true)} onReviewAlternative={setCompanyDecisionShipment} onUpdateSchedule={updateSchedule} onDownloadSds={downloadSds} />}{view === "entries" && <>{user.role === "supplier" && !user.emailVerifiedAt && <section className="verification-reminder"><ShieldCheck size={22} /><div><b>Verify your account email</b><span>This reminder stays here until your email is verified.</span></div><button className="button primary compact" onClick={() => setSelfVerificationOpen(true)}>Verify now</button></section>}<EntriesPage data={outgoingData} onOpenShipment={openShipment} /></>}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onGateReject={rejectGateEntry} onOpenShipment={openShipment} />}{view === "history" && <HistoryPage data={data} user={user} onOpenShipment={openShipment} />}{view === "reports" && <ReportsPage data={data} user={user} token={token} onOpenShipment={openShipment} />}{view === "admin" && <AdminPage data={data} token={token} currentUser={user} onAddUser={addUser} onDeleteUser={deleteUser} onUnlockSiteAddress={unlockSiteAddress} onSaveSiteAddress={saveSiteAddress} onCalculateSupplierEta={calculateSupplierEta} />}</div>
     </main>
     {loading && <div className="loading-line" />}{toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
     {supplierResponseShipment && <SupplierSdsModal shipment={supplierResponseShipment} onClose={() => setSupplierResponseShipment(null)} onSubmit={respondToSds} />}
     {companyDecisionShipment && <CompanyDecisionModal shipment={companyDecisionShipment} onClose={() => setCompanyDecisionShipment(null)} onSubmit={decideAlternative} />}
-    {selectedShipment && <ShipmentModal shipment={selectedShipment} token={token} user={user} onClose={() => setSelectedShipment(null)} onDownloadPdf={downloadBookingPdf} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}{selfVerificationOpen && <VerifyAccountEmailModal account={user} onClose={() => setSelfVerificationOpen(false)} onSaveEmail={saveAccountEmail} onSendCode={sendEmailCode} onVerify={verifyEmail} />}
+    {selectedShipment && <ShipmentModal shipment={selectedShipment} token={token} user={user} onClose={() => setSelectedShipment(null)} onDownloadPdf={downloadBookingPdf} onUpdateSupplierDetails={updateSupplierDetails} />}{excelImport && <ExcelImportModal token={token} onClose={() => setExcelImport(false)} onImported={imported} />}{selfVerificationOpen && <VerifyAccountEmailModal account={user} onClose={() => setSelfVerificationOpen(false)} onSaveEmail={saveAccountEmail} onSendCode={sendEmailCode} onVerify={verifyEmail} />}
   </div>;
 }

@@ -1,113 +1,65 @@
-# DockFlow SAP Historical Excel Import
+# DockFlow SAP / Vehicle-log Excel Import
 
-This package imports the uploaded SAP receiving workbook directly into the PostgreSQL table configured by:
-
-```dotenv
-POSTGRES_SCHEMA=Analysis
-POSTGRES_SESSION_LOGS_TABLE=SAPAnalysis
-```
-
-It does not change `data/trial-data.json`. DockFlow deliveries, schedules, accounts, reports and other trial features remain JSON-based.
-
-## What was found in Book2.xlsx
-
-- Worksheet: `Delivery Record_SAP Analyst`
-- 17 actual records (rows 3–19), not 12,000 records
-- Row 1 contains the headers and row 2 contains instructions
-- The workbook has 14 visible data columns
-- `UOM` and `ACTUAL RECEIVED` are not present, so they import as blank
-- Delivery Date and Description are formulas; the importer uses their saved/cached Excel results
-- DR numbers, batches and supplier lots are preserved as text where available
-
-Use the complete 12,000-row workbook with the same importer when it is available.
-
-## Install
-
-Copy `server/import-sap-excel.mjs` into the same location in the DockFlow project. Keep the existing `.env` containing the PostgreSQL connection values.
-
-The importer is included automatically in the API Docker image because the Dockerfile copies the complete `server` folder.
-
-Rebuild the API image:
+Use the separate `DockFlow-SAP-Importer` folder for large historical workbooks. Keep `import_sap_excel.py` and `Book2.xlsx` together, put your PostgreSQL connection values in the script's SETTINGS section, install `requirements.txt`, and run:
 
 ```powershell
-docker compose build api
+py -m pip install -r requirements.txt
+py import_sap_excel.py
 ```
 
-Place the Excel file in the DockFlow project folder.
+Review the detected sheet names and row count, then type exactly `IMPORT` to write. The script connects to the same database as DockFlow and targets:
 
-## Step 1 — Safe dry run
-
-Run this from PowerShell in the DockFlow project folder:
-
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --dry-run
+```text
+DockFlow database → Analysis schema → SAPAnalysis table
 ```
 
-The dry run reads and validates the workbook but does not connect to or change PostgreSQL.
+## Large-file safety
 
-If the full workbook has several sheets, all sheets with recognizable SAP headers are imported. To select one sheet:
+The importer does not send 27,000 rows simultaneously. It uses one connection and commits sequential batches of 250 rows. A 27,000-row workbook therefore uses 108 transactions, with one active transaction at a time and a short pause between them. The console bar separately reports Sent and database-verified Recorded rows.
 
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --dry-run "--sheet=Delivery Record_SAP Analyst"
-```
+If interrupted, the current 250-row batch rolls back and prior batches remain committed. Run the same file again with the same `IMPORT_BATCH_ID`: deterministic `record_key` values update existing records rather than duplicating them.
 
-## Step 2 — Import into PostgreSQL
+## Supported layouts
 
-After checking the dry-run row count, run:
+Material/SAP columns include Delivery Date, Encoded By, Item/Material Code, Description, DR Number, Quantity, UOM, Actual Received, PO Number, Batch, Breakdown, Mfg/Exp Date, MATDOC, Supplier Lot, Remarks, and the unified DockFlow operational fields.
 
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --commit
-```
+Vehicle-log columns map as follows:
 
-The script:
+| Excel heading | PostgreSQL column |
+|---|---|
+| Title | `title` |
+| Company | `company` |
+| Plate No | `plate_no` |
+| Driver Name | `driver_name` |
+| Helper 1 Name | `helper_1_name` |
+| Helper 2 Name | `helper_2_name` |
+| Date and Time IN | `date_time_in` |
+| Time In | `time_in` |
+| Date and Time OUT | `date_time_out` |
+| Time Out | `time_out` |
+| Hours Stay | `hours_stay` |
+| SortPriority | `sort_priority` |
 
-- Creates the configured schema/table if they do not exist
-- Checks that an existing table has all DockFlow-required columns
-- Imports in batches of 500 rows inside one transaction
-- Generates numeric `shipment_id` and `record_key` values compatible with DockFlow
-- Upserts deterministically, so rerunning the same workbook does not duplicate its rows
-- Rolls back the entire import if any database operation fails
+The schema, table, and missing supported columns are created automatically when the configured PostgreSQL user has permission. Vehicle-log rows have `record_key` values beginning with `vehicle-log:` and a null `shipment_id`; this is intentional because they are visits, not DockFlow shipment records.
 
-The default supplier metadata is `Historical Import`. To use a different internal label:
+Multiple batches under one DR are separate database rows. The DR and shipment ID repeat while the record key, batch, quantity, dates, MATDOC, and supplier lot can differ.
 
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --commit "--supplier=Historical SAP Data"
-```
-
-The workbook filename is the default stable batch identity. When importing a corrected copy under another filename, reuse the original identity to update the same records:
-
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Corrected.xlsx:/tmp/Corrected.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Corrected.xlsx --commit "--batch=Book2"
-```
-
-## Step 3 — Verify in pgAdmin
+## Verify in pgAdmin
 
 ```sql
 SELECT COUNT(*) AS total_rows
 FROM "Analysis"."SAPAnalysis";
 
 SELECT
-    id,
-    delivery_date,
-    encoded_by,
-    item,
-    description,
-    dr_number,
-    quantity,
-    po_number,
-    batch,
-    matdoc,
-    supplier_lot,
-    remarks
+  id, record_key, shipment_id,
+  item, dr_number, batch,
+  title, company, plate_no, driver_name,
+  helper_1_name, helper_2_name,
+  date_time_in, time_in, date_time_out, time_out,
+  hours_stay, sort_priority
 FROM "Analysis"."SAPAnalysis"
 ORDER BY id DESC
-LIMIT 25;
+LIMIT 50;
 ```
 
-## Important
-
-- Keep the same `--batch` name when rerunning or correcting one dataset.
-- Do not change `SAP_STORAGE` to `json`; SAP Analysis must remain `postgres`.
-- Do not load all 12,000 rows in the current SAP browser table. It still needs search and server-side pagination for a dataset that large.
-- Back up the database before importing the full historical dataset.
-
+Keep DockFlow configured with `SAP_STORAGE=postgres`, the same database/schema/table values, and an allowed client CIDR. SAP Analysis loads 50 rows per request and fetches more through pagination; it does not download the entire table into the browser at once.

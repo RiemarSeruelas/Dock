@@ -28,10 +28,6 @@ export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus 
   };
   return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values: { ...defaults, ...saved?.values }, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
 })), ...(state.sapManualRows || []).map(row=>{const saved=state.sapRows?.[row.key];return saved?{...row,...saved,values:{...row.values,...saved.values}}:row;})];
-const uniqueSapRows = rows => {
-  const seen = new Set();
-  return rows.filter(row => { const signature=JSON.stringify(sapColumns.map(([key])=>row.values?.[key]??'')); if(seen.has(signature))return false;seen.add(signature);return true; });
-};
 export function registerExtensions({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database }) {
   registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database });
   const sap = createSapRepository();
@@ -59,7 +55,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
       const defaults = sapRows(await store.read());
       if(keys) { if(sap.jsonTrial) return res.json({rows:defaults.filter(row=>keys.includes(row.key)),columns,...access,hasMore:false,available:true}); return res.json({rows:await sap.byKeys(keys),columns,...access,hasMore:false,available:true}); }
       if (sap.jsonTrial) {
-        const term=search.toLowerCase();const unique=uniqueSapRows(defaults);const filtered=term?unique.filter(row=>Object.values(row.values).some(value=>String(value).toLowerCase().includes(term))):unique;const sorted=sort==='asc'?[...filtered].reverse():filtered;
+        const term=search.toLowerCase();const filtered=term?defaults.filter(row=>Object.values(row.values).some(value=>String(value).toLowerCase().includes(term))):defaults;const sorted=sort==='asc'?[...filtered].reverse():filtered;
         return res.json({ rows: sorted.slice(offset,offset+limit), columns, ...access, hasMore: sorted.length>offset+limit, available:true });
       }
       await sap.sync(defaults); res.json({ ...await sap.page(offset,limit,search,sort), columns, ...access, available:true });

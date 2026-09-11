@@ -1567,6 +1567,41 @@ input[type=checkbox],input[type=radio] { width:16px; height:16px; min-height:16p
 }
 @media(prefers-reduced-motion:reduce) { .receiving-dialog,.activation-card,.login-floating-brand,.login-story .story-copy,.login-story > .journey-strip,.login-card { animation:none; } }
 
+/* Receiving-area, gate review, and worksheet selection updates */
+.area-toggle { display:inline-flex; align-items:center; overflow:hidden; padding:3px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); }
+.area-toggle button { min-height:32px; padding:0 14px; border:0; border-radius:7px; color:var(--muted); background:transparent; font-size:10px; font-weight:800; cursor:pointer; }
+.area-toggle button.active { color:#fff; background:var(--blue-600); box-shadow:0 4px 12px rgba(36,107,253,.2); }
+.dock-lanes { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.dock-lane.available { border:1px solid rgba(22,131,107,.35); background:linear-gradient(180deg,rgba(22,131,107,.07),var(--surface-2)); }
+.dock-lane.available .dock-vehicle-visual { border:1px solid rgba(22,131,107,.22); }
+.dock-vehicle-visual .empty-lane { position:relative; z-index:2; gap:7px; padding:20px; color:#116e5b; text-align:center; }
+.dock-vehicle-visual .empty-lane b { font-size:18px; letter-spacing:-.02em; }
+.dock-vehicle-visual .empty-lane small { color:var(--muted); font-size:10px; }
+.schedule-area-footer { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:12px 16px; border-top:1px solid var(--line); }
+.schedule-area-footer > span { color:var(--muted); font-size:10px; font-weight:700; }
+.schedule-edit-form { gap:17px; }
+.schedule-edit-times { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.schedule-edit-times label,.schedule-edit-items label,.supplier-detail-editor label,.gate-review label { display:grid; gap:5px; color:var(--muted); font-size:9px; font-weight:750; text-transform:uppercase; letter-spacing:.04em; }
+.schedule-edit-items { display:grid; gap:8px; }
+.schedule-edit-items h3 { font-size:13px; }
+.schedule-edit-items label { grid-template-columns:minmax(0,1fr) 140px; align-items:center; padding:9px 11px; border:1px solid var(--line); border-radius:9px; background:var(--surface-2); }
+.schedule-edit-items label > span { display:grid; gap:2px; color:var(--ink); text-transform:none; }
+.schedule-edit-items input { margin:0; }
+.gate-review { display:grid; gap:10px; margin-top:14px; padding:14px; border:1px solid rgba(36,107,253,.2); border-radius:11px; background:rgba(36,107,253,.045); }
+.gate-review > div { display:flex; justify-content:flex-end; gap:9px; }
+.gate-review select,.gate-review input { min-height:39px; margin:0; color:var(--ink); background:var(--surface); }
+.sap-workbook thead .sap-section-log { background:#754b23; }
+.sap-workbook thead th.selected-axis,.sap-workbook .sap-row-number.selected-axis { color:#fff; background:#0e7d6d!important; box-shadow:inset 0 -3px #69e1c7; }
+.sap-workbook td.selected::after { inset:0; border:0; background:rgba(8,125,107,.075); box-shadow:none; }
+.sap-workbook td.selected.selection-top::after { border-top:2px solid #087d6b; }
+.sap-workbook td.selected.selection-bottom::after { border-bottom:2px solid #087d6b; }
+.sap-workbook td.selected.selection-left::after { border-left:2px solid #087d6b; }
+.sap-workbook td.selected.selection-right::after { border-right:2px solid #087d6b; }
+.sap-workbook td.selected input:focus { outline:0; background:transparent; }
+[data-theme=dark] .sap-workbook td.selected::after { background:rgba(61,209,181,.1); }
+@media(max-width:1180px) { .dock-lanes { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:720px) { .dock-lanes,.schedule-edit-times { grid-template-columns:1fr; }.area-toggle { width:100%; }.area-toggle button { flex:1; }.schedule-area-footer { align-items:stretch; flex-direction:column; }.gate-review > div { flex-direction:column-reverse; }.gate-review .button { width:100%; } }
+
 /* September 9 workflow polish */
 .status-pill.status-partial { gap:5px; border:1px solid rgba(181,71,8,.22); color:#b54708; background:#fff4e8; }
 [data-theme="dark"] .status-pill.status-partial { color:#ffbd7a; background:rgba(181,71,8,.18); }

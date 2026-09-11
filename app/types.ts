@@ -44,6 +44,7 @@ export interface ShipmentItem {
   poNumber: string;
   materialCode: string;
   materialName: string;
+  materialType?: string;
   quantity: number;
   uom: string;
   palletCount: number;
@@ -89,6 +90,7 @@ export interface ShipmentScanRecord {
 export interface QuantityAllocation { itemId: number; materialCode?: string; uom?: string; quantity: number; date: string; time: string; cannotDeliver?: boolean; reason?: string }
 export interface ReceiptInput { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; items: { itemId: number; acceptedQuantity: number; reason?: string; date?: string; time?: string }[] }
 export interface Shipment {
+  receivingArea?: "DRESSINGS" | "SAVOURY" | "ECOSYSTEM";
   helper1Name?: string;
   helper2Name?: string;
   poNumber?: string;
@@ -102,6 +104,10 @@ export interface Shipment {
   proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[];itemQuantities?:{itemId:number;quantity:number}[]}[];
   changeReason?: string;
   receipt?: { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; inFull: boolean; onTime: boolean | null; otif: boolean | null; items: { itemId: number; materialCode: string; uom: string; acceptedQuantity: number; remainingQuantity: number; date?: string; time?: string; reason?: string }[] };
+  gateDecision?: "ACCEPTED" | "REJECTED" | null;
+  gateDecisionAt?: string | null;
+  gateDecisionBy?: string | null;
+  gateRejectionReason?: string | null;
   id: number;
   shipmentNumber: string;
   bookingReceipt: string;

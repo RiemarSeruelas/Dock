@@ -1,0 +1,12 @@
+For the SAP Analysis:
+If I scroll, I want to auto load more, not click load 50 more.
+
+For the Dock Control:
+Ugly AF cuh, remove the Green thing surrounding it, abnoxious looking ahh. 
+
+For the Delivery Schedule:
+Umm, where's the feature wherein you can change the schedule? Like changing the delivery for each ticket (ticket is the entry), then notifying the supplier whenever it changes.
+
+Put the Dressings/Savoury Filter at the top while putting the Import SDS and Updated SDS at the bottom of the Delivery Scheduling including the delivery change (like the company is rescheduling instead of putting the SDS again and again)
+
+Then keep the Approved Deliveries, Rescheduling, Day/Week Filter, and Calendar filter there.

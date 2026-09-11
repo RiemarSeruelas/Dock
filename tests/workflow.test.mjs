@@ -358,7 +358,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(approvedAlternative.scheduledTime, "08:00");
   assert.ok(supplierAfterCompanyApprove.result.notifications.some((notification) => notification.shipmentId === approvalProposal.id && notification.type === "SUCCESS"));
 
-  const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage, ...(stage === "RECEIVED" ? { receipt: { outcome: "FULL", items: first.items.map(item => ({ itemId: item.id, acceptedQuantity: item.quantity })) } } : {}) } });
+  const scan = (token, stage) => call("/api/shipments/scan-stage", { token, method: "POST", body: { scanValue: first.shipmentNumber, stage, ...(stage === "GATE" ? { gateDecision: "ACCEPT" } : {}), ...(stage === "RECEIVED" ? { receipt: { outcome: "FULL", items: first.items.map(item => ({ itemId: item.id, acceptedQuantity: item.quantity })) } } : {}) } });
   const tripScan = await scan(supplier.token, "TRIP");
   assert.equal(tripScan.response.status, 200);
   assert.equal(tripScan.result.shipment.status, "IN_TRANSIT");
@@ -370,7 +370,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(gateInScan.result.shipment.estimatedTravelMinutes, null);
   const unloadingScan = await scan(warehouse.token, "UNLOADING");
   assert.equal(unloadingScan.result.shipment.status, "UNLOADING");
-  assert.match(unloadingScan.result.shipment.dock, /^Dock [12]$/);
+  assert.match(unloadingScan.result.shipment.dock, /^Dock [123] - (PM|RM)$/);
   assert.equal(unloadingScan.result.shipment.scanHistory.at(-1).actor, "Warehouse Dressings");
   const receivedScan = await scan(warehouse.token, "RECEIVED");
   assert.equal(receivedScan.result.shipment.status, "RECEIVED");
@@ -384,7 +384,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   // Inspection and lookup are scoped; repeated receipt scans cannot create duplicates.
   const second = approvedGroup.find(row => row.id !== first.id);
-  const secondScan = (stage, receipt) => call('/api/shipments/scan-stage', { token: admin.token, method: 'POST', body: { scanValue: second.shipmentNumber, stage, receipt } });
+  const secondScan = (stage, receipt) => call('/api/shipments/scan-stage', { token: admin.token, method: 'POST', body: { scanValue: second.shipmentNumber, stage, receipt, ...(stage === 'GATE' ? { gateDecision: 'ACCEPT' } : {}) } });
   assert.equal((await secondScan('RECEIVED')).response.status, 400);
   // Trip is optional: Security may scan Gate in while the delivery is still Booked.
   assert.equal((await secondScan('GATE')).response.status, 200);
@@ -449,7 +449,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: eco.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 403);
   assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: supplier.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 200);
   const inbound = (await call('/api/bootstrap', { token: eco.token })).result.shipments.find(s => s.id === inboundId);
-  const ecoScan = (token, stage, receipt) => call('/api/shipments/scan-stage', { token, method: 'POST', body: { scanValue: inbound.shipmentNumber, stage, receipt } });
+  const ecoScan = (token, stage, receipt) => call('/api/shipments/scan-stage', { token, method: 'POST', body: { scanValue: inbound.shipmentNumber, stage, receipt, ...(stage === 'GATE' ? { gateDecision: 'ACCEPT' } : {}) } });
   assert.equal((await ecoScan(supplier.token, 'TRIP')).response.status, 200);
   assert.equal((await ecoScan(security.token, 'GATE')).response.status, 200);
   assert.equal((await ecoScan(eco.token, 'UNLOADING')).response.status, 200);

@@ -3,12 +3,18 @@ import { supplierHue } from "./company-colors";
 import { Dialog } from "./receiving-ui";
 import { SupplierConfirmation } from "./receiving-ui";
 
-import { AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, FileSpreadsheet, History, Loader2, Maximize2, Minimize2, Search, Truck, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, Download, FileSpreadsheet, History, Loader2, Maximize2, Minimize2, Search, Truck, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { localDate } from "./date-utils";
 import { LiveClock } from "./live-clock";
 import type { AppData, SessionUser, Shipment, ShipmentStatus } from "./types";
+
+type ReceivingArea = "DRESSINGS" | "SAVOURY";
+const shipmentArea = (shipment: Shipment): ReceivingArea => shipment.items.some(item => /savou?r/i.test(String(item.deliverySite || ""))) ? "SAVOURY" : "DRESSINGS";
+function AreaToggle({ value, onChange }: { value: ReceivingArea; onChange: (value: ReceivingArea) => void }) {
+  return <div className="area-toggle" aria-label="Receiving area"><button type="button" className={value === "DRESSINGS" ? "active" : ""} onClick={() => onChange("DRESSINGS")}>Dressings</button><button type="button" className={value === "SAVOURY" ? "active" : ""} onClick={() => onChange("SAVOURY")}>Savoury</button></div>;
+}
 
 const STATUS_META: Record<ShipmentStatus, { label: string; color: string }> = {
   PROPOSED: { label: "Supplier approval", color: "purple" }, BOOKED: { label: "Booked", color: "slate" }, IN_TRANSIT: { label: "In transit", color: "blue" }, GATE_IN: { label: "Gate in", color: "amber" },
@@ -206,29 +212,59 @@ function SdsWorkflowPanel({ data, onOpenShipment, onReviewAlternative }: { data:
   return <div className="sds-actions"><button className="button secondary reschedule-trigger" onClick={()=>setOpen(true)}><CalendarDays size={17}/> Rescheduling <span className={companyReview.length?"review-count pending":"review-count"}>{companyReview.length}</span></button>{unlinked.length>0&&<details className="unlinked-accounts"><summary>{unlinked.length} schedules need a supplier account</summary>{unlinked.map(row=><button key={row.id} onClick={()=>onOpenShipment(row)}>{row.supplier}</button>)}</details>}{open&&<Dialog title={`Rescheduling · ${companyReview.length} requests`} close={()=>setOpen(false)}><div className="reschedule-popup"><label className="search-box"><Search size={17}/><input placeholder="Search supplier or shipment" value={query} onChange={event=>setQuery(event.target.value)}/></label><div className="reschedule-list">{companyReview.filter(row=>`${row.supplier} ${row.shipmentNumber}`.toLowerCase().includes(query.toLowerCase())).map(row=><button key={row.id} onClick={()=>{setOpen(false);onReviewAlternative(row);}}><span className="supplier-dot" style={{background:`hsl(${colorFor(row)} 65% 48%)`}}/><span><b>{row.supplier}</b><small>{row.shipmentNumber} · {row.items.length} codes</small></span><span><small>{row.scheduledDate} · {row.scheduledTime}</small><b>{row.alternativeDate||row.scheduledDate} · {row.alternativeTime||row.scheduledTime}</b></span><ArrowRight size={17}/></button>)}{!companyReview.length&&<p>No rescheduling requests waiting.</p>}</div></div></Dialog>}</div>;
 }
 
-export function FlexibleSchedulePage({ data, user, onOpenShipment, onImportSds, onReviewAlternative }: { data: AppData; user: SessionUser; onOpenShipment: (shipment: Shipment) => void; onImportSds: () => void; onReviewAlternative: (shipment: Shipment) => void }) {
+function ScheduleEditModal({ shipment, onClose, onSubmit }: { shipment: Shipment; onClose: () => void; onSubmit: (shipment: Shipment, change: { scheduledDate: string; scheduledTime: string; scheduledEndTime: string; items: { id: number; quantity: number }[] }) => Promise<void> }) {
+  const minutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
+  const clock = (value: number) => `${String(Math.floor(value / 60) % 24).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  const [date, setDate] = useState(shipment.scheduledDate), [time, setTime] = useState(shipment.scheduledTime), [endTime, setEndTime] = useState(shipment.scheduledEndTime || clock(minutes(shipment.scheduledTime) + 60));
+  const [items, setItems] = useState(shipment.items.map(item => ({ id: item.id, code: item.materialCode, uom: item.uom, quantity: String(item.quantity) })));
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const quantities = items.map(item => ({ id: item.id, quantity: Number(item.quantity) }));
+    if (!date || !time || !endTime || minutes(endTime) <= minutes(time)) { setError("Choose an end time later than the entrance time."); return; }
+    if (quantities.some(item => !Number.isFinite(item.quantity) || item.quantity < 0)) { setError("Use a quantity of zero or greater for every material."); return; }
+    setBusy(true); setError("");
+    try { await onSubmit(shipment, { scheduledDate: date, scheduledTime: time, scheduledEndTime: endTime, items: quantities }); onClose(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "The schedule could not be updated."); }
+    finally { setBusy(false); }
+  };
+  return <Dialog title="Update delivery schedule" close={onClose}><form className="receiving-form schedule-edit-form" onSubmit={save}>
+    <div className="confirmation-context"><b>{shipment.supplier}</b><span>{shipment.shipmentNumber}</span></div>
+    <div className="schedule-edit-times"><label>Delivery date<input type="date" value={date} onChange={event => setDate(event.target.value)} required/></label><label>Entrance time<input type="time" value={time} onChange={event => setTime(event.target.value)} required/></label><label>End time<input type="time" value={endTime} onChange={event => setEndTime(event.target.value)} required/></label></div>
+    <div className="schedule-edit-items"><h3>Material quantities</h3>{items.map((item, index) => <label key={item.id}><span><b>{item.code}</b><small>{item.uom}</small></span><input type="number" min="0" step="any" value={item.quantity} onChange={event => setItems(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: event.target.value } : row))}/></label>)}</div>
+    {error && <p className="form-error" role="alert">{error}</p>}<div className="confirmation-footer"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={busy}>{busy ? <Loader2 className="spin" size={17}/> : <Check size={17}/>} Save updates</button></div>
+  </form></Dialog>;
+}
+
+export function FlexibleSchedulePage({ data, user, area, onAreaChange, onOpenShipment, onImportSds, onReviewAlternative, onUpdateSchedule, onDownloadSds }: { data: AppData; user: SessionUser; area: ReceivingArea; onAreaChange: (value: ReceivingArea) => void; onOpenShipment: (shipment: Shipment) => void; onImportSds: () => void; onReviewAlternative: (shipment: Shipment) => void; onUpdateSchedule: (shipment: Shipment, change: { scheduledDate: string; scheduledTime: string; scheduledEndTime: string; items: { id: number; quantity: number }[] }) => Promise<void>; onDownloadSds: (area: ReceivingArea) => Promise<void> }) {
   const [date, setDate] = useState(data.settings.availableDates.find((item) => item >= localDate()) || localDate());
   const [mode, setMode] = useState<"day" | "week">("week");
+  const [editing, setEditing] = useState<Shipment | null>(null);
   const canImport = ["admin", "planner", "production"].includes(user.role);
+  const canManage = ["admin", "planner"].includes(user.role);
   const canReviewCompany = ["admin", "planner", "production"].includes(user.role);
+  const areaData = useMemo(() => ({ ...data, shipments: data.shipments.filter(shipment => shipmentArea(shipment) === area) }), [data, area]);
+  const openSchedule = (shipment: Shipment) => canManage && !["GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"].includes(shipment.status) ? setEditing(shipment) : onOpenShipment(shipment);
   const move = (direction: number) => setDate(addDays(date, direction * (mode === "day" ? 1 : 7)));
   const visibleDates = mode === "day" ? [date] : Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(date), index));
-  const bookingCount = data.shipments.filter((shipment) => visibleDates.includes(shipment.scheduledDate) && shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED").length;
+  const bookingCount = areaData.shipments.filter((shipment) => visibleDates.includes(shipment.scheduledDate) && shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED").length;
   const period = mode === "day" ? formatDate(date) : `${formatDate(startOfWeek(date), true)} – ${formatDate(addDays(startOfWeek(date), 6), true)}`;
-  const pendingSupplierBookings = ["supplier", "ecosystem"].includes(user.role) ? data.shipments.filter((shipment) => shipment.bookingStatus === "PENDING_SUPPLIER").sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)) : [];
+  const pendingSupplierBookings = ["supplier", "ecosystem"].includes(user.role) ? areaData.shipments.filter((shipment) => shipment.bookingStatus === "PENDING_SUPPLIER").sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)) : [];
   return <div className="page-stack">
+    {editing && <ScheduleEditModal shipment={editing} onClose={() => setEditing(null)} onSubmit={onUpdateSchedule}/>} 
     <section className="hero-row"><div><span className="eyebrow">Scheduling center</span><h1>Delivery schedule</h1></div></section>
     {pendingSupplierBookings.length > 0 && <section className="panel supplier-booking-queue"><div className="panel-head"><div><span className="eyebrow">Action required</span><h2>Deliveries waiting for your confirmation</h2></div><span className="count-chip">{pendingSupplierBookings.length} pending</span></div><div className="supplier-booking-list">{pendingSupplierBookings.map((shipment) => <button type="button" key={shipment.id} onClick={() => onOpenShipment(shipment)}><span className="booking-date"><b>{formatDate(shipment.scheduledDate, true)}</b><small>{shipment.scheduledTime}</small></span><span className="booking-materials"><small>Material code{shipment.items.length === 1 ? "" : "s"}</small><b>{shipment.items.map((item) => item.materialCode).join(", ")}</b></span><strong>Review & confirm <ArrowRight size={16} /></strong></button>)}</div></section>}
     <section className="panel schedule-board overlap-schedule schedule-section-panel unified">
-      <div className="panel-head schedule-board-head"><div><span className="eyebrow">{period}</span><h2>Booked delivery schedule</h2></div><div className="schedule-view-controls schedule-command-bar"><span className="approved-delivery-count"><i/><b>{bookingCount}</b> Approved Deliveries</span>{canReviewCompany&&<SdsWorkflowPanel data={data} onOpenShipment={onOpenShipment} onReviewAlternative={onReviewAlternative}/>}<div className="view-toggle"><button className={mode === "day" ? "active" : ""} onClick={() => setMode("day")}>Day</button><button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>Week</button></div><div className="date-stepper"><button type="button" onClick={() => move(-1)} aria-label={`Previous ${mode}`}><ArrowLeft size={17} /></button><CustomDatePicker value={date} onChange={setDate} label="Schedule date" /><button type="button" onClick={() => move(1)} aria-label={`Next ${mode}`}><ArrowRight size={17} /></button></div>{canImport&&<button className="button primary import-sds-button" onClick={onImportSds}><FileSpreadsheet size={17}/> Import SDS</button>}</div></div>
-      <div className="supplier-legend">{Array.from(new Map(data.shipments.filter(row=>visibleDates.includes(row.scheduledDate)).map(row=>[row.supplierId||row.supplier,row])).values()).map(row=><span key={row.supplierId||row.supplier}><i style={{background:`hsl(${colorFor(row)} 65% 48%)`}}/>{row.supplier}</span>)}</div>
-      {mode === "day" && <div className="schedule-day-details">{data.shipments.filter(row=>row.scheduledDate===date && row.bookingStatus!=="REJECTED").sort((a,b)=>a.scheduledTime.localeCompare(b.scheduledTime)).map(row=><button key={row.id} style={{borderLeftColor:`hsl(${colorFor(row)} 65% 48%)`}} onClick={()=>onOpenShipment(row)}><b>{row.scheduledTime}</b><span><strong>{row.supplier}</strong><small>{row.items.map(item=>`${item.materialCode} · ${item.quantity} ${item.uom}`).join(" / ")}</small></span><span>{row.truckPlate||"Waiting for Confirmation"}<small>{row.shipmentNumber}</small></span></button>)}</div>}
-      <div className="schedule-timeline-viewport"><ScheduleTimeline shipments={data.shipments} anchorDate={date} mode={mode} showPending={["admin", "planner", "supplier", "ecosystem"].includes(user.role)} onOpenShipment={onOpenShipment} /></div>
+      <div className="panel-head schedule-board-head"><div><span className="eyebrow">{period}</span><h2>Booked delivery schedule</h2></div><div className="schedule-view-controls schedule-command-bar"><span className="approved-delivery-count"><i/><b>{bookingCount}</b> Approved Deliveries</span>{canReviewCompany&&<SdsWorkflowPanel data={areaData} onOpenShipment={onOpenShipment} onReviewAlternative={onReviewAlternative}/>}<div className="view-toggle"><button className={mode === "day" ? "active" : ""} onClick={() => setMode("day")}>Day</button><button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>Week</button></div><div className="date-stepper"><button type="button" onClick={() => move(-1)} aria-label={`Previous ${mode}`}><ArrowLeft size={17} /></button><CustomDatePicker value={date} onChange={setDate} label="Schedule date" /><button type="button" onClick={() => move(1)} aria-label={`Next ${mode}`}><ArrowRight size={17} /></button></div>{canImport&&<button className="button secondary" onClick={() => void onDownloadSds(area)}><Download size={17}/> Updated SDS</button>}{canImport&&<button className="button primary import-sds-button" onClick={onImportSds}><FileSpreadsheet size={17}/> Import SDS</button>}</div></div>
+      <div className="supplier-legend">{Array.from(new Map(areaData.shipments.filter(row=>visibleDates.includes(row.scheduledDate)).map(row=>[row.supplierId||row.supplier,row])).values()).map(row=><span key={row.supplierId||row.supplier}><i style={{background:`hsl(${colorFor(row)} 65% 48%)`}}/>{row.supplier}</span>)}</div>
+      {mode === "day" && <div className="schedule-day-details">{areaData.shipments.filter(row=>row.scheduledDate===date && row.bookingStatus!=="REJECTED").sort((a,b)=>a.scheduledTime.localeCompare(b.scheduledTime)).map(row=><button key={row.id} style={{borderLeftColor:`hsl(${colorFor(row)} 65% 48%)`}} onClick={()=>openSchedule(row)}><b>{row.scheduledTime}</b><span><strong>{row.supplier}</strong><small>{row.items.map(item=>`${item.materialCode} · ${item.quantity} ${item.uom}`).join(" / ")}</small></span><span>{row.truckPlate||"Waiting for Confirmation"}<small>{row.shipmentNumber}</small></span></button>)}</div>}
+      <div className="schedule-timeline-viewport"><ScheduleTimeline shipments={areaData.shipments} anchorDate={date} mode={mode} showPending={["admin", "planner", "supplier", "ecosystem"].includes(user.role)} onOpenShipment={openSchedule} /></div>
+      <div className="schedule-area-footer"><span>Showing receiving area</span><AreaToggle value={area} onChange={onAreaChange}/></div>
     </section>
   </div>;
 }
 
-export function MonitoringPage({ data, theme, onOpenShipment }: { data: AppData; theme: "light" | "dark"; onOpenShipment: (shipment: Shipment) => void }) {
+export function MonitoringPage({ data, theme, area, onAreaChange, onOpenShipment }: { data: AppData; theme: "light" | "dark"; area: ReceivingArea; onAreaChange: (value: ReceivingArea) => void; onOpenShipment: (shipment: Shipment) => void }) {
   const [dateFilter, setDateFilter] = useState(false), [rangeStart, setRangeStart] = useState(localDate()), [rangeEnd, setRangeEnd] = useState(localDate()), [query, setQuery] = useState(""), [status, setStatus] = useState<ShipmentStatus | "ALL">("ALL"), [fullscreen, setFullscreen] = useState(false);
   const fullscreenRef = useRef<HTMLDivElement>(null);
   useEffect(() => { const changed = () => { if (!document.fullscreenElement) setFullscreen(false); }; document.addEventListener("fullscreenchange", changed); return () => document.removeEventListener("fullscreenchange", changed); }, []);
@@ -240,10 +276,10 @@ export function MonitoringPage({ data, theme, onOpenShipment }: { data: AppData;
     setFullscreen(false);
     onOpenShipment(shipment);
   };
-  const active = useMemo(() => data.shipments.filter((shipment) => shipment.bookingStatus === "APPROVED" && !["GATE_OUT", "REJECTED"].includes(shipment.status)), [data.shipments]);
+  const active = useMemo(() => data.shipments.filter((shipment) => shipmentArea(shipment) === area && shipment.bookingStatus === "APPROVED" && !["GATE_OUT", "REJECTED"].includes(shipment.status)), [data.shipments, area]);
   const rows = useMemo(() => active.filter((shipment) => !dateFilter || (shipment.scheduledDate >= rangeStart && shipment.scheduledDate <= rangeEnd)).filter((shipment) => status === "ALL" || shipment.status === status).filter((shipment) => `${shipment.shipmentNumber} ${shipment.bookingReceipt} ${shipment.supplier} ${shipment.truckPlate} ${shipment.driverName} ${shipment.driverPhone} ${shipment.items.map((item) => item.materialCode).join(" ")}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => { if (!dateFilter) { const group = (value: string) => value === localDate() ? 0 : value > localDate() ? 1 : 2; const difference = group(a.scheduledDate) - group(b.scheduledDate); if (difference) return difference; } const dateDifference = a.scheduledDate.localeCompare(b.scheduledDate); if (dateDifference) return dateDifference; const rankDifference = processRank[b.status] - processRank[a.status]; return rankDifference || a.scheduledTime.localeCompare(b.scheduledTime); }), [active, dateFilter, rangeStart, rangeEnd, status, query]);
   return <div ref={fullscreenRef} className={`page-stack monitoring-page tv-${theme} ${fullscreen ? "tv-mode" : ""}`}>
-    {!fullscreen && <section className="hero-row"><div><span className="eyebrow">Truck movement board</span><h1>Delivery monitoring</h1></div><div className="hero-actions"><span className="operation-live"><span className="live-dot" /><span>Live status</span></span><button className="icon-button fullscreen-trigger" onClick={enterFullscreen} aria-label="Open fullscreen monitoring" title="Fullscreen"><Maximize2 size={19} /></button></div></section>}
+    {!fullscreen && <section className="hero-row"><div><span className="eyebrow">Truck movement board</span><h1>Delivery monitoring</h1></div><div className="hero-actions"><AreaToggle value={area} onChange={onAreaChange}/><span className="operation-live"><span className="live-dot" /><span>Live status</span></span><button className="icon-button fullscreen-trigger" onClick={enterFullscreen} aria-label="Open fullscreen monitoring" title="Fullscreen"><Maximize2 size={19} /></button></div></section>}
     {fullscreen && <header className="monitor-tv-header">
       <div className="monitor-tv-brand"><span className="eyebrow">Live receiving board</span><h1>{data.settings.siteName}</h1><span className="monitor-tv-live"><i className="live-dot" />{rows.length} active deliver{rows.length === 1 ? "y" : "ies"}</span></div>
       <LiveClock className="monitor-tv-clock" showZone={false} showDate />

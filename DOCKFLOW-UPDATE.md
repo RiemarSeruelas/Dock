@@ -14,10 +14,10 @@ The npm web commands now use `server/web.js`. Use these commands rather than inv
 
 ## Screens and accounts
 
-- Overview uses the supplied truck image in larger receiving lanes, only when occupied. Dressings uses Dock 1; Savoury uses Dock 2. Ecosystem has separate receiving docks.
+- Overview, Monitoring and Schedule share a Dressings/Savoury filter. Each area has its own independent **Dock 1 - PM**, **Dock 2 - PM** and **Dock 3 - RM** view. Empty docks stand out as **I'm free and open**; occupied docks use the supplied truck image.
 - The split-screen login uses `public/images/dockflow-background.jpg` as its real facility/truck background and `public/uploads/dockflow-logo.png` as its logo. A missing logo falls back cleanly to the DockFlow route mark.
 - Administration places the protected Receiving site popup beside Add account. Account colors match schedule colors, and unverified accounts use a compact disclosure. Warehouse is one global role and has no work-area assignment; only Planner/Production accounts select Dressings or Savoury.
-- Schedule keeps Approved Deliveries, Rescheduling, Day/Week, the date selector, and Import SDS together in that order inside the calendar header. Day view includes supplier, codes, quantities, truck and time.
+- Schedule keeps Approved Deliveries, Rescheduling, Day/Week, the date selector, and Import SDS together in that order inside the calendar header. Planner/Production and Administrator can click an unlocked delivery to edit its date, start/end time, and material quantities. The change immediately updates the shared operational data. **Download updated SDS** exports the filtered, current schedule.
 - The notification bell sits beside the theme button. Planner is labelled **Planner/Production**.
 - New accounts receive their verification email once, on their first successful sign-in, when SMTP is configured. Account creation itself does not send the code. Activation asks for the code and a new password twice, then enters the application without a second sign-in. Existing accounts retain their current activation state. Existing Quality Inspection accounts migrate to Warehouse; new Quality Inspection accounts cannot be created.
 - The report month filter remains; the large monthly OTIF scorecard is removed. Report tables and Excel downloads respect the month.
@@ -32,7 +32,9 @@ Truck details are not requested with an alternative. After submission, the reque
 
 ## Receiving and clearance
 
-The scan sequence is Booking → optional Trip → Gate in → Unloading → Received → Gate out. Supplier/driver may record Trip, but Security can record Gate in directly from Booked. Security handles the ULI gate, and Warehouse handles unloading/receiving. Each station supports QR scanning and a direct confirmation button after selecting a delivery. Ecosystem can record its own incoming gate and receiving stages.
+The scan sequence is Booking → optional Trip → Gate in → Unloading → Received → Gate out. At Gate in, Security first scans and reviews the booking, then explicitly accepts or rejects it. Entry may begin 15 minutes before the scheduled time. Rejection requires a categorized reason (or written Other reason), leaves the booking available for correction, and notifies the supplier. A received truck gets a separate **Confirm Gate Out** action. Supplier/driver may record Trip, while Warehouse handles unloading/receiving. Ecosystem can record its own incoming gate and receiving stages.
+
+Before unloading begins, the supplier can correct the plate, driver, phone, helper names, and comma-separated PO/DR values. Delivery date and time remain planner-controlled.
 
 At Received choose **OTIF — all items accepted** or **Not OTIF — record the issue**. Gate-in time, including the configured grace period, remains the source of timeliness: selecting full receipt cannot turn a late delivery into OTIF. Not OTIF records the reason and rejected/short quantity for each material. Choosing Other requires a written explanation. Every outstanding quantity requires a Follow up date and time. Finishing receiving emails the supplier and creates a linked, visibly labelled **Follow up** proposal for that schedule. The original truck can then proceed to Gate out.
 
@@ -84,9 +86,9 @@ The API creates schema `"Analysis"` and table `"SAPAnalysis"` on the first autho
 
 SAP Analysis and Administrator can add worksheet rows, edit SAP fields and cell formatting. Every SAP/Administrator add or edit automatically records the actor as `F. Lastname` in Encoded by. Planner/Production can view the register and edit Destination. Warehouse can view the register and edit receiving and clearance fields. Supplier booking inputs remain in Scheduling, and suppliers do not receive access to the internal historical register. The API enforces these permissions even if someone manipulates the browser.
 
-The register searches PostgreSQL server-side, loads 50 rows at a time, and loads more only when requested. It supports newest-first/oldest-first sorting and collapses rows whose displayed values are literally identical while preserving different batches or other differing fields. It refreshes only the newest page every 10 seconds while the tab is visible and preserves unsaved edits. The rest of DockFlow refreshes its JSON-backed operational snapshot every 30 seconds. Outside the allowed network, or when the database is unavailable, SAP displays no data.
+The register searches PostgreSQL server-side, loads 50 rows at a time, and loads more only when requested. It supports newest-first/oldest-first sorting and returns every database row, including repeated or mostly blank vehicle-log rows. It refreshes only the newest page every 10 seconds while the tab is visible and preserves unsaved edits. The rest of DockFlow refreshes its JSON-backed operational snapshot every 30 seconds. Outside the allowed network, or when the database is unavailable, SAP displays no data.
 
-The worksheet supports multi-cell, whole-row, and whole-column selection; fill, undo, redo, delete contents, font, emphasis, color, fill, alignment, wrap, indent, borders, row height, column width, and hide/show controls. Copy, cut, paste, copy formatting, and paste formatting remain available through standard keyboard shortcuts even though their toolbar buttons were removed. Cell formatting, row height, and hidden-row state are stored in PostgreSQL. Hidden columns and column widths are browser layout preferences. Record cells are deliberately not mergeable because each database row must retain its own field boundaries.
+The worksheet supports multi-cell, whole-row, and whole-column selection with one continuous outer selection border and the appropriate axis header highlighted; fill, undo, redo, delete contents, font, emphasis, color, fill, alignment, wrap, indent, borders, row height, column width, and hide/show controls. Copy, cut, paste, copy formatting, and paste formatting remain available through standard keyboard shortcuts even though their toolbar buttons were removed. Cell formatting, row height, and hidden-row state are stored in PostgreSQL. Hidden columns and column widths are browser layout preferences. Record cells are deliberately not mergeable because each database row must retain its own field boundaries.
 
 Rows imported by the standalone Python importer appear immediately; their blank SAP fields are editable according to the signed-in role. New application rows appear after Gate in. Existing SAP edits are preserved when application rows synchronize. Saves use optimistic revision checks; stale application saves return a conflict. Direct SQL writers must increment `revision` on each update to participate in conflict detection. No user deletion or application resync deletes SAP records.
 
@@ -111,6 +113,8 @@ Rows imported by the standalone Python importer appear immediately; their blank 
 
 The unified register also adds supplier, plate, driver, Gate in/out, destination, gatepass, inventory and receiving controller, helper count, truck type, pallet count, warehouse remarks, unloading timestamps, QA timestamps, and QA disposition. Existing importer rows keep blank values for fields that were not present in the workbook.
 
+Vehicle-log workbooks are also supported. Their mappings are: Title → `title`, Company → `company`, Plate No → `plate_no`, Driver Name → `driver_name`, Helper 1/2 Name → `helper_1_name`/`helper_2_name`, Date and Time IN/OUT → `date_time_in`/`date_time_out`, Time In/Out → `time_in`/`time_out`, Hours Stay → `hours_stay`, and SortPriority → `sort_priority`. These rows use a `vehicle-log:` record key and may have a null `shipment_id`; they are still displayed and editable in SAP Analysis.
+
 Cell columns are TEXT to preserve leading zeros and source formatting. Internal metadata is `id`, `record_key`, `shipment_id`, `supplier`, `revision`, `verified`, and `updated_at`. `record_key` is `shipmentId:itemId`. Excel exports the same 16 visible columns, navy headers, green Batch cells and red MATDOC; the source-hint row is removed. Configure visible columns in the compact disclosure. Save before downloading.
 
 For this unified update, the Excel download keeps the original 16 columns first and appends the added unified columns. Cell formatting metadata is stored in `cell_formats`; row sizing and visibility use `row_height` and `row_hidden`. Imported historical keys remain unchanged, while app-created keys use `shipmentId:itemId`.
@@ -119,7 +123,7 @@ For this unified update, the Excel download keeps the original 16 columns first 
 
 ## Verification and limits
 
-- All 21 automated checks pass, covering workflow, Excel time zones, import/work-area rules, split quantities, receiving/Follow ups, activation, SAP permissions/conflicts/pagination/manual rows/network spoofing, Ecosystem email formatting and single-page clearance. Production build and lint also pass.
+- Automated checks cover workflow, Excel time zones, import/work-area rules, split quantities, receiving/Follow ups, activation, SAP permissions/conflicts/pagination/manual rows/network spoofing, Ecosystem email formatting and single-page clearance. See the handoff message for the final test/build result for this package.
 - The requested new Received-to-SAP/OTIF integration is deliberately deferred; this package retains the existing receiving behavior.
 - The clearance PDF generation and single-page count were checked automatically; live printer output was not tested in this environment.
 - Live PostgreSQL credentials/network were not supplied. Connection to your database, live SMTP delivery and Docker image execution remain unverified.
