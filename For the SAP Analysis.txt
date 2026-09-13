@@ -1,21 +1,44 @@
-For the SAP Analysis:
-If I scroll, I want to auto load more, not click load 50 more.
+For Admins:
+If Im using an admin for both, I can see all right? If Im admin in one area, like sample, dressing. I wont be able to see the "Both areas
+Site-wide administrators, Security, and Ecosystem
+0
+No matching accounts in this section.
 
-For the Dock Control:
-Ugly AF cuh, remove the Green thing surrounding it, abnoxious looking ahh. 
+" or "Savoury
+Accounts locked to Savoury deliveries
+0
+No matching accounts in this section." since it is locked in a specific account, only see their areas.
 
-For the Delivery Schedule:
-Umm, where's the feature wherein you can change the schedule? Like changing the delivery for each ticket (ticket is the entry), then notifying the supplier whenever it changes.
+Same for the Ecosystem, if Im using a dressing account, in ecosystem, I would be able to send it to Dressings only, so it's locked to Dressings.
 
-Put the Dressings/Savoury Filter at the top while putting the Import SDS and Updated SDS at the bottom of the Delivery Scheduling including the delivery change (like the company is rescheduling instead of putting the SDS again and again)
+Also, can you separate the accounts per role, especially the supplier, put them at the top so we can see them all.
 
-Then keep the Approved Deliveries, Rescheduling, Day/Week Filter, and Calendar filter there.
+For the ecosystem:
+Is it possible to put Material code, and the Description, then the UOM, but when the data is sent, it will only send the data for the Material Code, so the Ecosystem will only receive the Material code, and in their app, it will already have the description ready, you get me?
 
-For the admin:
-Can we put 3 sections for the Admin? Admin for Both, Admin for Dressings, Admin for Savoury. We generally wanna see all as admin right? But if there's multiple people using dressings and savoury at the same time, and they have their own focus, then it's gonna be a pain. So just make an admin for both that sees everything, then admin for dressings and admin for savoury. 
-This generally means its separated mkay? So if I have an account made by Dressings, then the delivery is only for dressings, all accounts are for dressings, except for security wherein it doesnt matter if dressings or savoury, they can see it all.
-So this means one thing as well, the toggle for savoury is dressing is removed. They can only see for their specific place. Except security again, they can see it all ahha.
+For the importing sds:
+This account can only import dressings schedules, can you change this text to This account can only import dressings and ecosystem schedules
+
+For the Updated SDS:
+I downloaded it, but it still put the initial sds and the updated sds, if I updated it, make it so it's updated, it wont have the previous entry got it? And remove the Needs review: description supplied with trial placeholders, make it empty they will put something there manually haha.
+
+For the ETA: 
+We'll configure the location right? Make it so it takes into consideration the speed of 30km/hr - 40km/hr so that when it calculates, it's more accurate. Unless u have a better idea on how ETA is calculated without subscription.
+
+For the log in:
+The eye to see the password is gone, it doesnt appear anymore. Make it appear when im on the password area, if i click something else, thats when it vanishes.
+One secure portal for every on-prem application.
+Launch all your applications from a single place
+Links stay correct even when the server IP changes
+Replace this with the feature of the app itself.
+
+For the schedules:
+Whenever a sds is imported, make it so the time is around 2 hours per ticket. Just so it doesnt appear as 1 hour, unless we change it manually in the app itself.
+
+For whenever you remove an account:
+Put a password error if it's wrong, right now it doesnt do anything if it's wrong.
+
+For when making an account:
+Example, if it's a dressing account making an account for dressings, then the Access Area isnt a drop down, it's a lock in Dressings, and remove the word only for all, like it'll say Both, Savoury, and Dressings
 
 
-For the SAP Analysis:
-Remove the Hide rows, show rows in the options, it doesnt do anyuthing haha. Remove fill selected, clear delete contents, the 1000? what even is that. 

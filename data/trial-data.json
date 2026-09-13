@@ -13,7 +13,8 @@
     "deliveryCodeSequence": 0,
     "flexibleScheduling": true,
     "availableDates": [
-      "2026-09-11"
+      "2026-09-11",
+      "2026-09-14"
     ],
     "availableSlots": [
       {
@@ -21,6 +22,20 @@
         "date": "2026-09-11",
         "startTime": "16:00",
         "endTime": "17:00",
+        "label": "Imported delivery window"
+      },
+      {
+        "id": 2,
+        "date": "2026-09-14",
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "label": "Imported delivery window"
+      },
+      {
+        "id": 3,
+        "date": "2026-09-14",
+        "startTime": "10:00",
+        "endTime": "11:00",
         "label": "Imported delivery window"
       }
     ],
@@ -33,12 +48,12 @@
       "id": 1,
       "name": "System Administrator",
       "username": "admin",
-      "passwordHash": "$2b$10$uFwcpI/pfNgadOmDaWemXum9IrigM6UD8vNNAvijyd9J.Ux2zMA4u",
+      "passwordHash": "$2b$10$kfM/MMbtbcZz9nn9tlNz7eWHGxn9fSL5XFO1YAb2Kme4A4ic.zzuy",
       "role": "admin",
       "supplierId": null,
       "workArea": null,
       "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": "2026-09-13T06:22:14.511Z",
+      "emailVerifiedAt": "2026-09-13T07:21:34.616Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
@@ -62,7 +77,7 @@
       "onboardingRequired": false,
       "role": "warehouse",
       "supplierId": null,
-      "workArea": null,
+      "workArea": "DRESSINGS",
       "monthlyPerformanceEnabled": false,
       "monthlyPerformanceDay": 1,
       "monthlyPerformanceTime": "09:00",
@@ -83,7 +98,7 @@
       "onboardingRequired": true,
       "role": "sap",
       "supplierId": null,
-      "workArea": null
+      "workArea": "DRESSINGS"
     },
     {
       "id": 5,
@@ -100,7 +115,7 @@
       "onboardingRequired": true,
       "role": "warehouse",
       "supplierId": null,
-      "workArea": null,
+      "workArea": "DRESSINGS",
       "monthlyPerformanceEnabled": false,
       "monthlyPerformanceDay": 1,
       "monthlyPerformanceTime": "09:00"
@@ -123,26 +138,6 @@
       "workArea": null
     },
     {
-      "id": 7,
-      "name": "Ajinomoto",
-      "username": "ajinomoto",
-      "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0,
-      "verificationCodeSentAt": null,
-      "passwordHash": "$2b$10$GRGNX8XBPjgbuza6ngKS/uI56D0O6kGESSTXaDp7kNjAu5iKtvCB2",
-      "mustChangePassword": true,
-      "onboardingRequired": true,
-      "role": "supplier",
-      "supplierId": 1,
-      "workArea": null,
-      "monthlyPerformanceEnabled": false,
-      "monthlyPerformanceDay": 1,
-      "monthlyPerformanceTime": "09:00"
-    },
-    {
       "id": 8,
       "name": "Production",
       "username": "production",
@@ -162,6 +157,41 @@
       "monthlyPerformanceEnabled": false,
       "monthlyPerformanceDay": 1,
       "monthlyPerformanceTime": "09:00"
+    },
+    {
+      "id": 9,
+      "name": "Dressings Admin",
+      "username": "dadmin",
+      "email": "riemsjr534@gmail.com",
+      "emailVerifiedAt": "2026-09-13T07:26:52.181Z",
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": "2026-09-13T07:26:42.242Z",
+      "passwordHash": "$2b$10$BWxcDb/5PyoaXd5OtxngLewPd9Wh2XmD4ol0GWAsW5E0dwZ5doV.y",
+      "mustChangePassword": false,
+      "onboardingRequired": false,
+      "role": "admin",
+      "supplierId": null,
+      "workArea": "DRESSINGS",
+      "passwordChangedAt": "2026-09-13T07:27:00.779Z"
+    },
+    {
+      "id": 10,
+      "name": "Ajinomoto",
+      "username": "ajinomoto",
+      "email": "riemsjr534@gmail.com",
+      "emailVerifiedAt": null,
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": null,
+      "passwordHash": "$2b$10$sPk8xX8hGRqRZAxFD.QzM.dBnyTQh2s.S/WLeOUWVSubgW9sTzMf6",
+      "mustChangePassword": true,
+      "onboardingRequired": true,
+      "role": "supplier",
+      "supplierId": 1,
+      "workArea": "DRESSINGS"
     }
   ],
   "suppliers": [
@@ -187,6 +217,12 @@
           "materialCode": "63917240",
           "uom": "KG",
           "defaultAmount": 61
+        },
+        {
+          "id": 4,
+          "materialCode": "62820904",
+          "uom": "KG",
+          "defaultAmount": 171
         }
       ],
       "originAddress": "",
@@ -225,6 +261,16 @@
     {
       "id": 3,
       "code": "63917240",
+      "name": "Material to review",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 0,
+      "storageZone": "To review"
+    },
+    {
+      "id": 4,
+      "code": "62820904",
       "name": "Material to review",
       "type": "RM",
       "uom": "KG",
@@ -447,10 +493,268 @@
       "gateDecisionAt": null,
       "gateDecisionBy": null,
       "gateRejectionReason": null
+    },
+    {
+      "id": 3,
+      "shipmentNumber": "SHP-20260914-003",
+      "bookingReceipt": "BKG-20260914-003",
+      "supplier": "Ajinomoto",
+      "supplierId": 1,
+      "deliveryCode": null,
+      "vendorCode": "SUP-001",
+      "scheduledDate": "2026-09-14",
+      "scheduledTime": "10:00",
+      "scheduledEndTime": "12:00",
+      "availabilitySlotId": null,
+      "expectedDurationMinutes": 120,
+      "timeSlot": "10:00 - 12:00",
+      "shift": "Flexible date",
+      "bookingStatus": "PENDING_SUPPLIER",
+      "status": "PROPOSED",
+      "truckPlate": "TO BE ASSIGNED",
+      "driverName": "To be assigned",
+      "driverPhone": "",
+      "materialWeightKg": 360,
+      "dock": null,
+      "arrivalTime": null,
+      "startedAt": null,
+      "completedAt": null,
+      "lastProcessAt": null,
+      "tripAt": null,
+      "gateInAt": null,
+      "unloadingAt": null,
+      "receivedAt": null,
+      "gateOutAt": null,
+      "rejectionReason": null,
+      "supplierResponse": null,
+      "supplierResponseReason": null,
+      "supplierRespondedAt": null,
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 3,
+      "importBatchId": 2,
+      "importSource": null,
+      "sdsImportIdentity": "e766b4a3f168cf5e1b2cee86537c6d3b88015f562bb6f04f88bbb4f448e8fa16",
+      "sdsImportFingerprint": null,
+      "confirmedTruckLoads": [],
+      "items": [
+        {
+          "id": 4,
+          "presetId": null,
+          "poNumber": "",
+          "materialCode": "65013575",
+          "materialName": "Material to review",
+          "materialType": "RM",
+          "quantity": 300,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Dressing",
+          "deliveryWeek": "37",
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Needs review: description supplied with trial placeholders",
+          "supplierApprovedAt": null,
+          "assignedTruckPlate": null
+        },
+        {
+          "id": 5,
+          "presetId": null,
+          "poNumber": "",
+          "materialCode": "63917239",
+          "materialName": "Material to review",
+          "materialType": "RM",
+          "quantity": 60,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Dressing",
+          "deliveryWeek": "37",
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Needs review: description supplied with trial placeholders",
+          "supplierApprovedAt": null,
+          "assignedTruckPlate": null
+        }
+      ],
+      "palletsScanned": 0,
+      "palletsTotal": 0,
+      "palletIds": []
+    },
+    {
+      "id": 4,
+      "shipmentNumber": "SHP-20260914-004",
+      "bookingReceipt": "BKG-20260914-004",
+      "supplier": "Ajinomoto",
+      "supplierId": 1,
+      "deliveryCode": null,
+      "vendorCode": "SUP-001",
+      "scheduledDate": "2026-09-14",
+      "scheduledTime": "10:00",
+      "scheduledEndTime": null,
+      "availabilitySlotId": 3,
+      "expectedDurationMinutes": null,
+      "timeSlot": "10:00",
+      "shift": "Flexible date",
+      "bookingStatus": "PENDING_SUPPLIER",
+      "status": "PROPOSED",
+      "truckPlate": "TO BE ASSIGNED",
+      "driverName": "To be assigned",
+      "driverPhone": "",
+      "materialWeightKg": 171,
+      "dock": null,
+      "arrivalTime": null,
+      "startedAt": null,
+      "completedAt": null,
+      "lastProcessAt": null,
+      "tripAt": null,
+      "gateInAt": null,
+      "unloadingAt": null,
+      "receivedAt": null,
+      "gateOutAt": null,
+      "rejectionReason": null,
+      "supplierResponse": null,
+      "supplierResponseReason": null,
+      "supplierRespondedAt": null,
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": null,
+      "finalDecisionAt": null,
+      "finalDecisionBy": null,
+      "sdsProposalId": 4,
+      "importBatchId": 2,
+      "importSource": null,
+      "sdsImportIdentity": "8fb6b1a831e3b40f8e42c84a7cc45faea2ace5161711b4fa590590e87796c1a3",
+      "sdsImportFingerprint": "a56263e748b91d1fdfdc62c3004f80511a10f672d8e9c28b1a015f679fbbf2da",
+      "confirmedTruckLoads": [],
+      "items": [
+        {
+          "id": 6,
+          "presetId": null,
+          "poNumber": "",
+          "materialCode": "62820904",
+          "materialName": "Material to review",
+          "materialType": "RM",
+          "quantity": 171,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Ecosystem",
+          "deliveryWeek": "37",
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Needs review: description supplied with trial placeholders",
+          "supplierApprovedAt": null,
+          "assignedTruckPlate": null
+        }
+      ],
+      "palletsScanned": 0,
+      "palletsTotal": 0,
+      "palletIds": []
     }
   ],
   "rdsRequests": [],
   "audit": [
+    {
+      "id": 26,
+      "at": "2026-09-13T07:49:09.818Z",
+      "actor": "Dressings Admin",
+      "action": "ACCOUNT_CREATED",
+      "detail": "Supplier account @ajinomoto created for dressings"
+    },
+    {
+      "id": 25,
+      "at": "2026-09-13T07:46:41.190Z",
+      "actor": "Dressings Admin",
+      "action": "ACCOUNT_DELETED",
+      "detail": "Account @ajinomoto was deleted; supplier and delivery records were retained"
+    },
+    {
+      "id": 24,
+      "at": "2026-09-13T07:39:55.401Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "Supplier account @ajinomoto created for dressings"
+    },
+    {
+      "id": 23,
+      "at": "2026-09-13T07:39:44.219Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_DELETED",
+      "detail": "Account @ajinomoto was deleted; supplier and delivery records were retained"
+    },
+    {
+      "id": 22,
+      "at": "2026-09-13T07:34:19.525Z",
+      "actor": "Dressings Admin",
+      "action": "BOOKING_RESCHEDULED",
+      "shipmentNumber": "SHP-20260914-003",
+      "detail": "SHP-20260914-003 moved from 2026-09-14 09:00 to 2026-09-14 10:00"
+    },
+    {
+      "id": 21,
+      "at": "2026-09-13T07:33:44.778Z",
+      "actor": "Dressings Admin",
+      "action": "SDS_IMPORT_COMPLETED",
+      "detail": "2 created, 0 updated, 0 unchanged after spreadsheet comparison"
+    },
+    {
+      "id": 20,
+      "at": "2026-09-13T07:33:44.778Z",
+      "actor": "Dressings Admin",
+      "action": "SDS_IMPORTED",
+      "shipmentNumber": "SHP-20260914-004",
+      "detail": "SHP-20260914-004 created and linked to Ajinomoto"
+    },
+    {
+      "id": 19,
+      "at": "2026-09-13T07:33:44.777Z",
+      "actor": "Dressings Admin",
+      "action": "SDS_IMPORTED",
+      "shipmentNumber": "SHP-20260914-003",
+      "detail": "SHP-20260914-003 created and linked to Ajinomoto"
+    },
+    {
+      "id": 18,
+      "at": "2026-09-13T07:27:00.779Z",
+      "actor": "Dressings Admin",
+      "action": "PASSWORD_CHANGED",
+      "detail": "Account password updated"
+    },
+    {
+      "id": 17,
+      "at": "2026-09-13T07:26:52.181Z",
+      "actor": "Dressings Admin",
+      "action": "EMAIL_VERIFIED",
+      "detail": "dadmin email verified"
+    },
+    {
+      "id": 16,
+      "at": "2026-09-13T07:26:27.172Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "admin account @dadmin created for dressings"
+    },
     {
       "id": 15,
       "at": "2026-09-11T07:47:38.041Z",
@@ -561,6 +865,45 @@
   ],
   "notifications": [
     {
+      "id": 5,
+      "userId": 7,
+      "type": "WARNING",
+      "title": "Delivery schedule updated",
+      "message": "SHP-20260914-003 is now 2026-09-14 at 10:00. Review the updated quantities and booking.",
+      "shipmentId": 3,
+      "shipmentNumber": "SHP-20260914-003",
+      "createdAt": "2026-09-13T07:34:19.525Z",
+      "readAt": null,
+      "requiresAction": false,
+      "resolvedAt": null
+    },
+    {
+      "id": 4,
+      "userId": 7,
+      "type": "INFO",
+      "title": "New delivery schedule",
+      "message": "2026-09-14 at 10:00. Review the material codes and confirm the truck details.",
+      "shipmentId": 4,
+      "shipmentNumber": "SHP-20260914-004",
+      "createdAt": "2026-09-13T07:33:44.778Z",
+      "readAt": null,
+      "requiresAction": true,
+      "resolvedAt": null
+    },
+    {
+      "id": 3,
+      "userId": 7,
+      "type": "INFO",
+      "title": "New delivery schedule",
+      "message": "2026-09-14 at 09:00. Review the material codes and confirm the truck details.",
+      "shipmentId": 3,
+      "shipmentNumber": "SHP-20260914-003",
+      "createdAt": "2026-09-13T07:33:44.778Z",
+      "readAt": null,
+      "requiresAction": true,
+      "resolvedAt": null
+    },
+    {
       "id": 2,
       "userId": 7,
       "type": "INFO",
@@ -589,6 +932,24 @@
   ],
   "importBatches": [
     {
+      "id": 2,
+      "fileName": "Copy of sds summary PMRM wk30(RM) triall2.csv",
+      "status": "IMPORTED",
+      "totalRows": 3,
+      "importedRows": 3,
+      "unchangedRows": 0,
+      "skippedRows": 0,
+      "deliveryCount": 2,
+      "createdProposals": 2,
+      "updatedProposals": 0,
+      "unchangedProposals": 0,
+      "createdAt": "2026-09-13T07:33:44.778Z",
+      "completedAt": "2026-09-13T07:33:44.778Z",
+      "notificationStatus": "NO_RECIPIENTS",
+      "notificationsSent": 0,
+      "notificationsFailed": 0
+    },
+    {
       "id": 1,
       "fileName": "Copy of sds summary PMRM wk30(RM) TRIALK.xlsx",
       "status": "IMPORTED",
@@ -609,6 +970,7 @@
   ],
   "monthlyKpiSent": {
     "2026-08:1:riemar53seruelas@gmail.com": "2026-09-11T07:37:45.273Z",
-    "2026-08:8:riemar53seruelas@gmail.com": "2026-09-11T07:45:36.526Z"
+    "2026-08:8:riemar53seruelas@gmail.com": "2026-09-11T07:45:36.526Z",
+    "2026-08:9:riemsjr534@gmail.com": "2026-09-13T07:27:37.537Z"
   }
 }
