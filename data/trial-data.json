@@ -33,12 +33,12 @@
       "id": 1,
       "name": "System Administrator",
       "username": "admin",
-      "passwordHash": "$2b$10$ABLEZAK3oUu0x4ovhUTExO9fvEtm5KZDXupZrXsUDklJKDKDXFK5C",
+      "passwordHash": "$2b$10$uFwcpI/pfNgadOmDaWemXum9IrigM6UD8vNNAvijyd9J.Ux2zMA4u",
       "role": "admin",
       "supplierId": null,
       "workArea": null,
       "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": "2026-09-11T07:37:32.602Z",
+      "emailVerifiedAt": "2026-09-13T06:22:14.511Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
@@ -158,7 +158,10 @@
       "role": "planner",
       "supplierId": null,
       "workArea": "DRESSINGS",
-      "passwordChangedAt": "2026-09-11T07:45:24.950Z"
+      "passwordChangedAt": "2026-09-11T07:45:24.950Z",
+      "monthlyPerformanceEnabled": false,
+      "monthlyPerformanceDay": 1,
+      "monthlyPerformanceTime": "09:00"
     }
   ],
   "suppliers": [
@@ -191,7 +194,11 @@
       "routeDistanceKm": null,
       "routeDurationMinutes": null,
       "routeCalculatedAt": null,
-      "routeProvider": null
+      "routeProvider": null,
+      "routeStaticDurationMinutes": null,
+      "routeTrafficDelayMinutes": null,
+      "routeTrafficAware": false,
+      "routeTrafficModel": "NONE"
     }
   ],
   "materials": [
@@ -326,7 +333,25 @@
       ],
       "palletsScanned": 0,
       "palletsTotal": 0,
-      "palletIds": []
+      "palletIds": [],
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 2,
@@ -403,7 +428,25 @@
       ],
       "palletsScanned": 0,
       "palletsTotal": 0,
-      "palletIds": []
+      "palletIds": [],
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     }
   ],
   "rdsRequests": [],
