@@ -1,113 +1,44 @@
-# DockFlow SAP Historical Excel Import
+# Clean SAPAnalysis reset
 
-This package imports the uploaded SAP receiving workbook directly into the PostgreSQL table configured by:
-
-```dotenv
-POSTGRES_SCHEMA=Analysis
-POSTGRES_SESSION_LOGS_TABLE=SAPAnalysis
-```
-
-It does not change `data/trial-data.json`. DockFlow deliveries, schedules, accounts, reports and other trial features remain JSON-based.
-
-## What was found in Book2.xlsx
-
-- Worksheet: `Delivery Record_SAP Analyst`
-- 17 actual records (rows 3–19), not 12,000 records
-- Row 1 contains the headers and row 2 contains instructions
-- The workbook has 14 visible data columns
-- `UOM` and `ACTUAL RECEIVED` are not present, so they import as blank
-- Delivery Date and Description are formulas; the importer uses their saved/cached Excel results
-- DR numbers, batches and supplier lots are preserved as text where available
-
-Use the complete 12,000-row workbook with the same importer when it is available.
-
-## Install
-
-Copy `server/import-sap-excel.mjs` into the same location in the DockFlow project. Keep the existing `.env` containing the PostgreSQL connection values.
-
-The importer is included automatically in the API Docker image because the Dockerfile copies the complete `server` folder.
-
-Rebuild the API image:
+The incorrect vehicle-log dataset is no longer part of DockFlow SAP Analysis. Use the separately supplied scripts in this order:
 
 ```powershell
-docker compose build api
+py -m pip install "psycopg[binary]"
+py 01_remove_old_sap_table.py
+py 02_create_clean_sap_table.py
 ```
 
-Place the Excel file in the DockFlow project folder.
+Both scripts use the same `POSTGRES_*` settings as DockFlow and require an exact typed confirmation. The first permanently deletes the old `Analysis.SAPAnalysis` table. The second refuses to overwrite an existing table and creates the clean schema only when the table is absent.
 
-## Step 1 — Safe dry run
-
-Run this from PowerShell in the DockFlow project folder:
+Install and rebuild this corrected DockFlow project before opening SAP Analysis:
 
 ```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --dry-run
+docker compose up -d --build --force-recreate
 ```
 
-The dry run reads and validates the workbook but does not connect to or change PostgreSQL.
+On the first authorized SAP page load, DockFlow synchronizes its Gate-In shipment/material records into the new table. Dressings and Savoury use the same SAP table; their area filters apply to operational Overview, Monitoring and Schedule screens rather than splitting SAP storage.
 
-If the full workbook has several sheets, all sheets with recognizable SAP headers are imported. To select one sheet:
+## SAP worksheet columns
 
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --dry-run "--sheet=Delivery Record_SAP Analyst"
-```
+The first 14 worksheet columns are:
 
-## Step 2 — Import into PostgreSQL
+1. Delivery Date/Time
+2. Encoded By
+3. Material Code
+4. Material Description
+5. DR Number
+6. DR Quantity
+7. PO Number
+8. SAP Batch
+9. Breakdown
+10. Manufacturing Date
+11. Expiration Date
+12. Material Document
+13. Supplier's Lot
+14. Remarks
 
-After checking the dry-run row count, run:
+PO remains a text field for manual cross-checking and may contain comma-separated values. It is not used as the delivery identity.
 
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --commit
-```
+After these columns, DockFlow appends its supplier/system values and the original role-controlled Warehouse values. SAP Analyst can edit destination, the SAP fields, and formatting. Warehouse can edit inventory/receiving controller, helper count, truck type, actual received, pallet count, warehouse remarks, QA timestamps, and QA disposition. Planner can edit destination. Administrator can edit SAP and Warehouse fields.
 
-The script:
-
-- Creates the configured schema/table if they do not exist
-- Checks that an existing table has all DockFlow-required columns
-- Imports in batches of 500 rows inside one transaction
-- Generates numeric `shipment_id` and `record_key` values compatible with DockFlow
-- Upserts deterministically, so rerunning the same workbook does not duplicate its rows
-- Rolls back the entire import if any database operation fails
-
-The default supplier metadata is `Historical Import`. To use a different internal label:
-
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Book2.xlsx:/tmp/Book2.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Book2.xlsx --commit "--supplier=Historical SAP Data"
-```
-
-The workbook filename is the default stable batch identity. When importing a corrected copy under another filename, reuse the original identity to update the same records:
-
-```powershell
-docker compose run --rm --no-deps -v "$($PWD.Path)\Corrected.xlsx:/tmp/Corrected.xlsx:ro" api node server/import-sap-excel.mjs /tmp/Corrected.xlsx --commit "--batch=Book2"
-```
-
-## Step 3 — Verify in pgAdmin
-
-```sql
-SELECT COUNT(*) AS total_rows
-FROM "Analysis"."SAPAnalysis";
-
-SELECT
-    id,
-    delivery_date,
-    encoded_by,
-    item,
-    description,
-    dr_number,
-    quantity,
-    po_number,
-    batch,
-    matdoc,
-    supplier_lot,
-    remarks
-FROM "Analysis"."SAPAnalysis"
-ORDER BY id DESC
-LIMIT 25;
-```
-
-## Important
-
-- Keep the same `--batch` name when rerunning or correcting one dataset.
-- Do not change `SAP_STORAGE` to `json`; SAP Analysis must remain `postgres`.
-- Do not load all 12,000 rows in the current SAP browser table. It still needs search and server-side pagination for a dataset that large.
-- Back up the database before importing the full historical dataset.
-
+The removed fields are `title`, `company`, `plate_no`, `helper_1_name`, `helper_2_name`, `date_time_in`, `time_in`, `date_time_out`, `time_out`, `hours_stay`, and `sort_priority`.

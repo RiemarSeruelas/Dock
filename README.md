@@ -57,7 +57,7 @@ An imported row is only a proposed schedule. It is not a booking, does not appea
 
 Accept the proposed time or propose an alternative date, time or quantity split. Split quantities must total the original amount for each material. Administrator or Planner/Production approval is required for alternatives; while waiting, the request is read-only and cannot be submitted again. Approval returns the new schedule for truck confirmation; rejection requires a reason. Both decisions email verified supplier recipients.
 
-Choose one or two trucks and assign every remaining material code once. Provide each truck's `AAA-1111` plate, driver, phone number (local Philippine numbers are accepted), PO and DR numbers; helper names are optional. Each fully confirmed truck receives a unique delivery code, QR, monitoring card and report entry.
+Choose one or two trucks and allocate every remaining material quantity. With two trucks, editing one truck's amount automatically balances the other so the total always matches the request. Provide each truck's `AAA-1111` plate, driver, phone prefix and ten mobile digits, PO and DR numbers; helper names are optional. Each fully confirmed truck receives a unique delivery code, QR, monitoring card and report entry.
 
 ## Monitoring and history
 
@@ -125,6 +125,10 @@ The sender address and App Password stay in `.env`; they are not saved in trial 
 
 If sending fails, DockFlow now identifies the safe cause: a trial placeholder recipient, rejected Gmail credentials, or an SMTP network/firewall problem. Leave `MAIL_FROM=` blank unless you are supplying a complete valid sender address.
 
-## Replacing the truck image
+## Login and truck images
 
-The shared top-view truck image is `public/uploads/truck.png`. Replace that file with another PNG using the same filename to update the dock, schedule, entry, and monitoring truck visuals.
+- Login background: `public/images/dockflow-background.jpg`
+- Dock truck: `public/images/parked-truck.jpg`
+- DockFlow logo: `public/uploads/dockflow-logo.png`
+
+Keep those exact names. The login background should be a wide facility/truck photograph; DockFlow applies the dark overlay in CSS. The dock truck is the top-view truck image shown only in occupied receiving lanes.

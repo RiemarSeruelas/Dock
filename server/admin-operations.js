@@ -79,7 +79,7 @@ export function registerAdminOperations({ app, auth, allow, asyncRoute, store, c
   app.post('/api/ecosystem/transfers', auth, allow('admin','planner','production'), asyncRoute(async (req,res) => {
     const result = await store.update(state => {
       const ecosystemId = Number(req.body.ecosystemId); const area = String(req.body.area || ''); const items = req.body.items;
-      if (!['DRESSINGS','SAVOURY'].includes(area) || (req.user.role === 'planner' && req.user.workArea !== area)) fail('Choose your receiving work area',403);
+      if (!['DRESSINGS','SAVOURY'].includes(area) || (['DRESSINGS','SAVOURY'].includes(req.user.workArea) && req.user.workArea !== area)) fail('Choose your receiving work area',403);
       if (!validDay(req.body.date) || !validClock(req.body.time)) fail('Choose a date and time');
       if (!Array.isArray(items) || !items.length || items.length > 100 || new Set(items.map(row=>row.id)).size !== items.length) fail('Select material codes once each');
       const owner = state.users.find(user=>user.role==='ecosystem'&&user.supplierId===ecosystemId); const supplier=state.suppliers.find(row=>row.id===ecosystemId);

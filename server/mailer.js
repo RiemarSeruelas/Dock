@@ -67,9 +67,17 @@ export const buildSupplierRescheduleEmail = ({ shipmentNumber, supplier, reason,
   };
 };
 
+export const buildEcosystemRequestEmail = ({ shipment }) => {
+  const destination = shipment.items?.[0]?.deliverySite || shipment.originWorkArea || 'Receiving site';
+  const items = shipment.items || [];
+  const itemLines = items.map(item=>`• ${item.materialCode}${item.materialName?` — ${item.materialName}`:''}: ${item.quantity} ${item.uom}`).join('\n') || 'No materials listed';
+  const itemRows = items.map(item=>`<tr><td style="padding:11px;border-bottom:1px solid #e5eaf1"><b>${escapeHtml(item.materialCode)}</b>${item.materialName?`<br><small style="color:#667085">${escapeHtml(item.materialName)}</small>`:''}</td><td style="padding:11px;border-bottom:1px solid #e5eaf1;text-align:right"><b>${escapeHtml(item.quantity)}</b> ${escapeHtml(item.uom)}</td></tr>`).join('') || '<tr><td colspan="2" style="padding:12px;color:#667085">No materials listed</td></tr>';
+  return {subject:`DockFlow delivery request – ${shipment.shipmentNumber}`,text:`DOCKFLOW · ECOSYSTEM DELIVERY REQUEST\n\nStatus: ACTION REQUIRED\nDelivery: ${shipment.shipmentNumber}\nRequested by: ${shipment.supplier || 'ULI'}\nDestination: ${destination}\nSchedule: ${shipment.scheduledDate} at ${shipment.scheduledTime} Manila\n\nMATERIALS\n${itemLines}\n\nSign in to DockFlow to confirm the truck and delivery details.`,html:`<div style="font-family:Arial,sans-serif;color:#14243b;max-width:680px"><div style="padding:20px 22px;border-radius:12px 12px 0 0;background:#123b72;color:#fff"><small style="letter-spacing:.12em">DOCKFLOW · ECOSYSTEM REQUEST</small><h1 style="margin:7px 0 0;font-size:22px">Delivery confirmation required</h1></div><div style="padding:20px 22px;border:1px solid #dce4ee;border-top:0;border-radius:0 0 12px 12px"><table style="width:100%;border-collapse:collapse;margin-bottom:18px"><tr><td style="padding:6px 0;color:#667085">Delivery</td><td style="padding:6px 0"><b>${escapeHtml(shipment.shipmentNumber)}</b></td></tr><tr><td style="padding:6px 0;color:#667085">Destination</td><td style="padding:6px 0"><b>${escapeHtml(destination)}</b></td></tr><tr><td style="padding:6px 0;color:#667085">Schedule</td><td style="padding:6px 0"><b>${escapeHtml(shipment.scheduledDate)} at ${escapeHtml(shipment.scheduledTime)} Manila</b></td></tr></table><h2 style="font-size:16px;margin:0 0 8px">Requested materials</h2><table style="width:100%;border-collapse:collapse;border:1px solid #e5eaf1"><thead><tr style="background:#f5f7fa"><th style="padding:9px;text-align:left">Material</th><th style="padding:9px;text-align:right">Quantity</th></tr></thead><tbody>${itemRows}</tbody></table><p style="margin:18px 0 0">Sign in to DockFlow to confirm the truck and delivery details.</p></div></div>`};
+};
+
 export const emailNotifications = {
   async sendEcosystemRequest({ sender, recipients, shipment }) {
-    return send({ sender, recipients, subject: `ULI delivery request – ${shipment.shipmentNumber}`, text: `ULI has requested delivery to ${shipment.items[0]?.deliverySite || 'site'} on ${shipment.scheduledDate} at ${shipment.scheduledTime} Manila.\n${shipment.items.map(item => `${item.materialCode}: ${item.quantity} ${item.uom}`).join('\n')}\nPlease sign in to confirm the truck and delivery details.` });
+    return send({ sender, recipients, ...buildEcosystemRequestEmail({shipment}) });
   },
   async sendDecision({ sender, recipients, shipmentNumber, supplier, decision, reason, scheduledDate, scheduledTime }) {
     const approved = decision === "APPROVED";

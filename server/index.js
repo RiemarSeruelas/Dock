@@ -102,7 +102,8 @@ const defaultAvailabilityForDates = (dates) => dates.flatMap((date, index) => [
 const slotContains = (slot, date, startTime, endTime = null) => slot?.date === date && startTime >= slot.startTime && startTime < slot.endTime && (!endTime || endTime <= slot.endTime);
 const matchingAvailability = (state, date, startTime, endTime) => (state.settings.availableSlots || []).find((slot) => slotContains(slot, date, startTime, endTime));
 const planningRoles = ["admin", "planner"];
-const WORK_AREAS = new Set(["DRESSINGS", "SAVOURY", "ECOSYSTEM"]);
+const AREA_SCOPED_ROLES = new Set(["admin", "planner", "production", "supplier", "driver", "warehouse", "sap"]);
+const AREA_REQUIRED_ROLES = new Set(["planner", "production", "supplier", "driver", "warehouse", "sap"]);
 const normalizeWorkArea = (value) => {
   const normalized = String(value || "").trim().toUpperCase();
   if (/ECOSYSTEM/.test(normalized)) return "ECOSYSTEM";
@@ -296,10 +297,14 @@ const SCAN_STAGES = {
 const dockStatuses = new Set(["GATE_IN", "UNLOADING", "RECEIVED"]);
 const assignAvailableDock = (state, shipment) => {
   if (shipment.dock) return shipment.dock;
-  const occupied = new Set(state.shipments.filter((row) => row.id !== shipment.id && (row.destinationEcosystemId || (shipmentWorkArea(row) === "ECOSYSTEM" ? "ECOSYSTEM" : null)) === (shipment.destinationEcosystemId || (shipmentWorkArea(shipment) === "ECOSYSTEM" ? "ECOSYSTEM" : null)) && dockStatuses.has(row.status) && row.dock).map((row) => row.dock));
-  const dockCount = Math.max(1, Number(state.settings.dockCount || 2));
-  const area = shipmentWorkArea(shipment);
-  const candidates = area === "DRESSINGS" ? ["Dock 1"] : area === "SAVOURY" ? ["Dock 2"] : Array.from({ length: dockCount }, (_, index) => `Dock ${index + 1}`);
+  const receivingArea = shipmentWorkArea(shipment);
+  const occupied = new Set(state.shipments.filter((row) => row.id !== shipment.id && shipmentWorkArea(row) === receivingArea && (receivingArea !== "ECOSYSTEM" || Number(row.destinationEcosystemId) === Number(shipment.destinationEcosystemId)) && dockStatuses.has(row.status) && row.dock).map((row) => row.dock));
+  const materialTypes = new Set((shipment.items || []).map(item => String(item.materialType || "").trim().toUpperCase()).filter(value => value === "PM" || value === "RM"));
+  const candidates = materialTypes.size === 1 && materialTypes.has("RM")
+    ? ["Dock 3 - RM"]
+    : materialTypes.size === 1 && materialTypes.has("PM")
+      ? ["Dock 1 - PM", "Dock 2 - PM"]
+      : ["Dock 1 - PM", "Dock 2 - PM", "Dock 3 - RM"];
   const available = candidates.find(dock => !occupied.has(dock));
   if (available) shipment.dock = available;
   return available || null;
@@ -350,14 +355,17 @@ const supplierForClient = (supplier, includeAddress = false) => {
 const companyScopedRoles = new Set(["supplier", "driver"]);
 const canAccessShipment = (user, shipment) => {
   if (user.role === "ecosystem") return Number(user.supplierId) === Number(shipment.supplierId) || Number(user.supplierId) === Number(shipment.destinationEcosystemId) || (!shipment.destinationEcosystemId && shipmentWorkArea(shipment) === "ECOSYSTEM");
-  if (companyScopedRoles.has(user.role)) return Number(user.supplierId) === Number(shipment.supplierId);
-  if (["planner", "warehouse"].includes(user.role) && normalizeWorkArea(user.workArea)) {
-    const area = shipmentWorkArea(shipment);
-    return area === normalizeWorkArea(user.workArea) || (user.role === "planner" && area === "ECOSYSTEM") || (user.role === "planner" && Boolean(shipment.destinationEcosystemId) && shipment.originWorkArea === normalizeWorkArea(user.workArea));
-  }
-  return true;
+  if (companyScopedRoles.has(user.role) && Number(user.supplierId) !== Number(shipment.supplierId)) return false;
+  if (companyScopedRoles.has(user.role) && shipmentWorkArea(shipment) === "ECOSYSTEM") return true;
+  const scope = AREA_SCOPED_ROLES.has(user.role) ? normalizeWorkArea(user.workArea) : null;
+  if (!scope) return true;
+  const area = shipmentWorkArea(shipment);
+  if (area === scope) return true;
+  if (Boolean(shipment.destinationEcosystemId) && normalizeWorkArea(shipment.originWorkArea) === scope) return true;
+  if (user.role === "planner" && area === "ECOSYSTEM") return true;
+  return false;
 };
-const supplierHasAccount = (state, supplierId) => state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplierId));
+const supplierHasAccount = (state, supplierId, area = null) => state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplierId) && (!area || area === "ECOSYSTEM" || !normalizeWorkArea(user.workArea) || normalizeWorkArea(user.workArea) === area));
 const supplierSafeShipment = (shipment) => ({
   ...shipment,
   dppNumber: undefined,
@@ -365,6 +373,9 @@ const supplierSafeShipment = (shipment) => ({
   items: (shipment.items || []).map((item) => ({
     id: item.id,
     materialCode: item.materialCode,
+    materialType: item.materialType || "",
+    poNumber: item.poNumber || "",
+    dnNumber: item.dnNumber || "",
     quantity: item.quantity,
     uom: item.uom,
     palletCount: item.palletCount,
@@ -414,7 +425,7 @@ async function createInitialState() {
   const adminEmail = String(process.env.SMTP_USER || "").trim().toLowerCase();
   return {
     version: 11,
-    settings: { flexibleScheduling: true, dockCount: 2, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
+    settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
     users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, workArea: null, email: adminEmail, emailVerifiedAt: adminEmail ? new Date().toISOString() : null }],
     suppliers: [],
     materials: [],
@@ -469,7 +480,11 @@ await store.update(async (state) => {
     if (user.username === "planner") user.role = "planner";
     user.role = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse", "ecosystem", "sap"].includes(user.role) ? user.role : "admin";
     if (user.role === "driver" && !user.supplierId) user.supplierId = state.suppliers[0]?.id || 1;
-    user.workArea = ["planner", "warehouse"].includes(user.role) ? normalizeWorkArea(user.workArea) : null;
+    if (user.role === "ecosystem") user.workArea = "ECOSYSTEM";
+    else if (user.role === "security") user.workArea = null;
+    else if (user.role === "admin") user.workArea = user === systemAdministrator ? null : normalizeWorkArea(user.workArea);
+    else if (AREA_REQUIRED_ROLES.has(user.role)) user.workArea = normalizeWorkArea(user.workArea) || "DRESSINGS";
+    else user.workArea = null;
     user.email = hiddenEmailRoles.has(user.role) ? (user.role === "admin" && user === systemAdministrator ? bootstrapAdminEmail : "") : String(user.email || "").trim().toLowerCase();
     user.emailVerifiedAt ||= null;
     user.emailVerificationHash ||= null;
@@ -480,7 +495,7 @@ await store.update(async (state) => {
     if (!user.passwordHash) user.passwordHash = await bcrypt.hash(`${user.username}123`, 10);
     delete user.password;
   }
-  state.settings.dockCount = 2;
+  state.settings.dockCount = 3;
   state.settings.flexibleScheduling = true;
   state.settings.graceMinutes = Number(state.settings.graceMinutes ?? 30);
   state.settings.deliveryCodeSequence = Number(state.settings.deliveryCodeSequence || Math.max(0, ...state.shipments.map((shipment) => Number(String(shipment.deliveryCode || "").split("-").at(-1)) || 0)));
@@ -597,6 +612,13 @@ await store.update(async (state) => {
     shipment.sdsImportIdentity ||= null;
     shipment.sdsImportFingerprint ||= null;
     shipment.scanHistory = Array.isArray(shipment.scanHistory) ? shipment.scanHistory : [];
+    shipment.gateDecision = ["ACCEPTED", "REJECTED"].includes(shipment.gateDecision) ? shipment.gateDecision : null;
+    shipment.gateDecisionAt ||= null;
+    shipment.gateDecisionBy ||= null;
+    shipment.gateRejectionReason ||= null;
+    if (shipment.dock === "Dock 1") shipment.dock = "Dock 1 - PM";
+    if (shipment.dock === "Dock 2") shipment.dock = "Dock 2 - PM";
+    if (shipment.dock === "Dock 3") shipment.dock = "Dock 3 - RM";
     if (shipment.gateInAt) clearShipmentEta(shipment);
     else if (shipment.tripAt && !shipment.estimatedArrivalAt) applyShipmentEta(state, shipment, shipment.tripAt);
     if (legacyStatus === "RECEIVED" && shipment.completedAt) shipment.status = "GATE_OUT";
@@ -607,7 +629,13 @@ await store.update(async (state) => {
   syncAvailableDates(state);
 });
 const activeAccountRoles = new Map((await store.read()).users.map((user) => [Number(user.id), user.role]));
-const initialDatabaseStatus = await database.initialize();
+let initialDatabaseStatus;
+try {
+  initialDatabaseStatus = await database.initialize();
+} catch (error) {
+  initialDatabaseStatus = { enabled: database.enabled, connected: false, schema: database.schema, storage: "memory", error: error.message };
+  console.warn(`[database] PostgreSQL is unavailable; DockFlow will continue with JSON and in-memory sessions: ${error.message}`);
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -702,7 +730,7 @@ const auth = async (request, response, next) => {
     const onboarding = account.onboardingRequired && (account.mustChangePassword || !account.emailVerifiedAt);
     if (onboarding && !request.path.startsWith("/api/auth/") && !new RegExp(`^/api/users/${account.id}/email(?:/|$)`).test(request.path) && request.path !== "/api/bootstrap") return response.status(403).json({ message: "Verify your email and change the initial password to activate your account" });
     request.user = payload;
-    if (payload.role === "sap" && !["/api/bootstrap", "/api/auth/logout", "/api/auth/change-password"].includes(request.path) && !new RegExp(`^/api/users/${payload.id}/email(?:/|$)`).test(request.path) && !request.path.startsWith("/api/sap/")) return response.status(403).json({ message: "SAP accounts can access the receiving register only" });
+    if (payload.role === "sap" && !["/api/bootstrap", "/api/auth/logout", "/api/auth/change-password"].includes(request.path) && !new RegExp(`^/api/users/${payload.id}/email(?:/|$)`).test(request.path) && !request.path.startsWith("/api/sap/") && !request.path.startsWith("/api/clearance") && !/^\/api\/shipments\/\d+\/clearance(?:\.pdf)?$/.test(request.path)) return response.status(403).json({ message: "SAP accounts can access SAP Analysis and Clearance only" });
     request.sessionId = payload.sid || payload.jti;
     next();
   } catch { response.status(401).json({ message: "Session expired" }); }
@@ -775,20 +803,24 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const shipmentNumbers = new Set(shipments.map((shipment) => shipment.shipmentNumber));
   const visibleSupplierIds = new Set(shipments.map((shipment) => Number(shipment.supplierId)).filter(Number.isFinite));
   const shipmentDates = [...new Set(shipments.map((shipment) => shipment.scheduledDate).filter(validDate))].sort();
-  const scopedSuppliers = _request.user.role === "ecosystem" ? state.suppliers.filter(supplier => visibleSupplierIds.has(Number(supplier.id)) || Number(supplier.id) === Number(_request.user.supplierId)) : companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : ["planner", "warehouse"].includes(_request.user.role) && normalizeWorkArea(_request.user.workArea) ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers;
-  const publicSettings = { ...state.settings, siteAddressConfigured: Boolean(state.settings.siteAddress && validCoordinates(state.settings.siteCoordinates)), availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 2 };
+  const requestArea = normalizeWorkArea(_request.user.workArea);
+  const scopedSuppliers = _request.user.role === "ecosystem" ? state.suppliers.filter(supplier => visibleSupplierIds.has(Number(supplier.id)) || Number(supplier.id) === Number(_request.user.supplierId)) : companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : requestArea ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers;
+  const scopedUsers = _request.user.role === "admin"
+    ? requestArea ? state.users.filter(user => normalizeWorkArea(user.workArea) === requestArea) : state.users
+    : [];
+  const publicSettings = { ...state.settings, siteAddressConfigured: Boolean(state.settings.siteAddress && validCoordinates(state.settings.siteCoordinates)), availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 3 };
   delete publicSettings.siteCoordinates;
   delete publicSettings.siteAddress;
   response.json({
     currentUser: publicUser(state.users.find(user => user.id === Number(_request.user.id))),
     shipments: shipments.map((shipment) => {
-      const linked = supplierHasAccount(state, shipment.supplierId);
+      const linked = supplierHasAccount(state, shipment.supplierId, shipmentWorkArea(shipment));
       return { ...supplierSafeShipment(shipment), supplierAccountLinked: linked };
     }).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
     rdsRequests: [],
     materials: [],
     suppliers: (_request.user.role === "sap" ? [] : scopedSuppliers).map((supplier) => supplierForClient(supplier, _request.user.role === "admin")),
-    users: _request.user.role === "admin" ? state.users.map(publicUser) : [],
+    users: scopedUsers.map(publicUser),
     audit: ["admin", "planner"].includes(_request.user.role) ? state.audit.filter((entry) => !entry.shipmentNumber || shipmentNumbers.has(entry.shipmentNumber)) : [],
     notifications: state.notifications.filter((notification) => Number(notification.userId) === Number(_request.user.id)).slice(0, 50).map((notification) => {
       const publicNotification = { ...notification };
@@ -826,6 +858,40 @@ app.post("/api/admin/database/trials", auth, allow("admin"), asyncRoute(async (r
 app.all("/api/rds", auth, (_request, response) => response.status(410).json({ message: "Manual delivery requests were replaced by the SDS supplier-confirmation workflow" }));
 app.post("/api/shipments", auth, (_request, response) => response.status(410).json({ message: "Deliveries are created from an imported SDS, not from a manual request" }));
 
+app.patch("/api/shipments/:id/supplier-details", auth, allow("supplier", "ecosystem"), asyncRoute(async (request, response) => {
+  const details = {
+    truckPlate: normalizePlate(request.body?.truckPlate),
+    driverName: String(request.body?.driverName || "").trim().slice(0, 100),
+    driverPhone: normalizePhone(request.body?.driverPhone),
+    helper1Name: String(request.body?.helper1Name || "").trim().slice(0, 100),
+    helper2Name: String(request.body?.helper2Name || "").trim().slice(0, 100),
+    poNumber: String(request.body?.poNumber || "").trim().slice(0, 300),
+    drNumber: String(request.body?.drNumber || "").trim().slice(0, 300),
+  };
+  if (!/^[A-Z]{3}-\d{4}$/.test(details.truckPlate)) return response.status(400).json({ message: "Plate numbers must use AAA-1111" });
+  if (!details.driverName) return response.status(400).json({ message: "Enter the driver name" });
+  if (!/^\+639\d{9}$/.test(details.driverPhone)) return response.status(400).json({ message: "Use a Philippine mobile number such as 09171234567" });
+  const result = await store.update((state) => {
+    const shipment = state.shipments.find(row => row.id === Number(request.params.id));
+    if (!shipment) return null;
+    if (Number(request.user.supplierId) !== Number(shipment.supplierId)) return { forbidden: true };
+    if (["UNLOADING", "RECEIVED", "GATE_OUT"].includes(shipment.status) || shipment.unloadingAt) return { locked: true };
+    Object.assign(shipment, details);
+    if (shipment.confirmedTruckLoads?.length === 1) Object.assign(shipment.confirmedTruckLoads[0], details);
+    shipment.gateDecision = null;
+    shipment.gateDecisionAt = null;
+    shipment.gateDecisionBy = null;
+    shipment.gateRejectionReason = null;
+    resolveShipmentNotifications(state, shipment, [request.user.id]);
+    addAudit(state, request.user, "SUPPLIER_DETAILS_UPDATED", `${shipment.shipmentNumber} truck and delivery details updated`, shipment.shipmentNumber);
+    return { shipment: supplierSafeShipment(shipment) };
+  });
+  if (!result) return response.status(404).json({ message: "Shipment not found" });
+  if (result.forbidden) return response.status(403).json({ message: "This delivery belongs to another supplier" });
+  if (result.locked) return response.status(409).json({ message: "Details are locked because unloading has started" });
+  response.json({ ...result, message: "Delivery details updated" });
+}));
+
 app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosystem"), asyncRoute(async (request, response) => {
   const decision = String(request.body?.decision || "").toUpperCase();
   const reason = String(request.body?.reason || "").trim();
@@ -844,7 +910,8 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
     helper2Name: String(truck?.helper2Name || "").trim().slice(0, 100),
     poNumber: String(truck?.poNumber || "").trim().slice(0, 100),
     drNumber: String(truck?.drNumber || "").trim().slice(0, 100),
-    itemIds: [...new Set((Array.isArray(truck?.itemIds) ? truck.itemIds : []).map(Number).filter(Number.isFinite))],
+    itemQuantities: (Array.isArray(truck?.itemQuantities) ? truck.itemQuantities : []).map((item) => ({ itemId: Number(item?.itemId), quantity: Number(item?.quantity) })).filter((item) => Number.isFinite(item.itemId) && Number.isFinite(item.quantity) && item.quantity > 0),
+    itemIds: [...new Set([...(Array.isArray(truck?.itemIds) ? truck.itemIds : []), ...(Array.isArray(truck?.itemQuantities) ? truck.itemQuantities.map((item) => item?.itemId) : [])].map(Number).filter(Number.isFinite))],
   }));
   if (decision === "ACCEPT") {
     const invalidIndex = normalizedTrucks.findIndex((truck) => !truck.truckPlate || !truck.driverName || truck.driverName === "To be assigned" || !truck.driverPhone || !truck.poNumber || !truck.drNumber || !truck.itemIds.length);
@@ -899,7 +966,9 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
     if (existingLoads.length + normalizedTrucks.length > 2) throw Object.assign(new Error("Use one or two trucks per schedule"), { status: 400 });
     const alreadyAssignedIds = new Set(existingLoads.flatMap((truck) => truck.itemIds).map(Number));
     const assignedIds = normalizedTrucks.flatMap((truck) => truck.itemIds);
-    if (new Set(assignedIds).size !== assignedIds.length || assignedIds.some((id) => !expectedIds.has(id) || alreadyAssignedIds.has(id))) return { invalidAssignment: true };
+    const assignedQuantities = (itemId) => normalizedTrucks.reduce((sum, truck) => sum + (truck.itemQuantities.length ? Number(truck.itemQuantities.find((item) => item.itemId === itemId)?.quantity || 0) : truck.itemIds.includes(itemId) ? Number(proposal.items.find((item) => Number(item.id) === itemId)?.quantity || 0) : 0), 0);
+    const incorrectQuantity = proposal.items.find((item) => assignedIds.includes(Number(item.id)) && !alreadyAssignedIds.has(Number(item.id)) && Math.abs(assignedQuantities(Number(item.id)) - Number(item.quantity)) > 0.000001);
+    if (assignedIds.some((id) => !expectedIds.has(id) || alreadyAssignedIds.has(id)) || incorrectQuantity) return { invalidAssignment: true, invalidMaterial: incorrectQuantity?.materialCode };
     if (normalizedTrucks.some((truck) => existingLoads.some((saved) => saved.truckPlate === truck.truckPlate))) return { duplicatePlate: true };
     const respondedAt = new Date().toISOString();
     const proposalId = proposal.id;
@@ -913,9 +982,11 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
     }
     const newLoads = normalizedTrucks.map((truck, index) => ({ id: existingLoads.length + index + 1, deliveryCode: issueDeliveryCode(state, proposal.scheduledDate), ...truck, confirmedAt: respondedAt }));
     proposal.confirmedTruckLoads = [...existingLoads, ...newLoads];
-    for (const load of newLoads) for (const item of proposal.items.filter((row) => load.itemIds.includes(Number(row.id)))) {
+    for (const item of proposal.items) {
+      const plates = newLoads.filter((load) => load.itemIds.includes(Number(item.id))).map((load) => load.truckPlate);
+      if (!plates.length) continue;
       item.supplierApprovedAt = respondedAt;
-      item.assignedTruckPlate = load.truckPlate;
+      item.assignedTruckPlate = plates.join(" / ");
     }
     proposal.loadConfirmedAt = respondedAt;
     const allLoads = proposal.confirmedTruckLoads;
@@ -929,7 +1000,10 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
     const deliveries = [];
     allLoads.forEach((load, index) => {
       const delivery = index === 0 ? proposal : { ...proposal, id: nextId(state.shipments), items: [], palletIds: [] };
-      delivery.items = baseItems.filter((item) => load.itemIds.includes(Number(item.id))).map((item) => ({ ...item }));
+      delivery.items = baseItems.flatMap((item) => {
+        const allocated = load.itemQuantities?.length ? Number(load.itemQuantities.find((value) => Number(value.itemId) === Number(item.id))?.quantity || 0) : load.itemIds.includes(Number(item.id)) ? Number(item.quantity) : 0;
+        return allocated > 0 ? [{ ...item, quantity: allocated, sourceAllocationItemId: item.id }] : [];
+      });
       delivery.shipmentNumber = nextCode("SHP", delivery.id, proposal.scheduledDate);
       delivery.bookingReceipt = nextCode("BKG", delivery.id, proposal.scheduledDate);
       delivery.deliveryCode = load.deliveryCode;
@@ -971,7 +1045,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
   if (!result) return response.status(404).json({ message: "SDS proposal not found" });
   if (result.forbidden) return response.status(403).json({ message: "This SDS proposal belongs to another supplier" });
   if (result.alreadyResponded) return response.status(409).json({ message: "This SDS proposal already has a supplier response" });
-  if (result.invalidAssignment) return response.status(400).json({ message: "Select unconfirmed material codes only; a material can belong to one truck" });
+  if (result.invalidAssignment) return response.status(400).json({ message: result.invalidMaterial ? `${result.invalidMaterial}: truck quantities must equal the requested amount` : "Select only unconfirmed material codes and keep each requested total unchanged" });
   if (result.duplicatePlate) return response.status(409).json({ message: "That truck plate is already confirmed for this SDS proposal" });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
   if (result.alternativeProposed && result.recipients) {
@@ -995,7 +1069,7 @@ app.patch("/api/shipments/:id/company-decision", auth, allow("admin", "planner")
     if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
     if (shipment.bookingStatus !== "PENDING_COMPANY" || shipment.supplierResponse !== "ALTERNATIVE_PROPOSED") return { alreadyDecided: true };
     const decidedAt = new Date().toISOString();
-    const supplierUsers = state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId));
+    const supplierUsers = state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && canAccessShipment(user, shipment));
     const companyUsers = state.users.filter((user) => ["admin", "planner"].includes(user.role) && canAccessShipment(user, shipment));
     resolveShipmentNotifications(state, shipment, companyUsers.map((user) => user.id));
 
@@ -1060,11 +1134,21 @@ app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRou
   const scheduledDate = String(request.body?.scheduledDate || "");
   const scheduledTime = String(request.body?.scheduledTime || "").slice(0, 5);
   const scheduledEndTime = String(request.body?.scheduledEndTime || "").slice(0, 5);
+  const itemChanges = Array.isArray(request.body?.items) ? request.body.items.map(item => ({ id: Number(item?.id), quantity: Number(item?.quantity) })) : [];
   if (!validDate(scheduledDate) || !validTime(scheduledTime) || !validTime(scheduledEndTime) || toMinutes(scheduledEndTime) <= toMinutes(scheduledTime)) return response.status(400).json({ message: "Choose a valid date and an end time later than the start time" });
+  if (itemChanges.some(item => !Number.isFinite(item.id) || !Number.isFinite(item.quantity) || item.quantity < 0)) return response.status(400).json({ message: "Every material quantity must be zero or greater" });
   const result = await store.update((state) => {
     const shipment = state.shipments.find((row) => row.id === Number(request.params.id));
     if (!shipment) return null;
-    if (shipment.status !== "BOOKED") return { locked: true };
+    if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
+    if (["GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"].includes(shipment.status)) return { locked: true };
+    const before = {
+      date: shipment.scheduledDate,
+      time: shipment.scheduledTime,
+      endTime: shipment.scheduledEndTime || "",
+      site: shipmentWorkArea(shipment) || "Not specified",
+      items: shipment.items.map(item => ({ materialCode: item.materialCode, quantity: Number(item.quantity || 0), uom: item.uom })),
+    };
     const previous = `${shipment.scheduledDate} ${shipment.scheduledTime}`;
     shipment.scheduledDate = scheduledDate;
     shipment.scheduledTime = scheduledTime;
@@ -1072,12 +1156,36 @@ app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRou
     shipment.expectedDurationMinutes = durationMinutes(scheduledTime, scheduledEndTime);
     shipment.timeSlot = scheduleLabel(scheduledTime, scheduledEndTime);
     shipment.availabilitySlotId = matchingAvailability(state, scheduledDate, scheduledTime, scheduledEndTime)?.id || null;
+    const requested = new Map(itemChanges.map(item => [item.id, item.quantity]));
+    for (const item of shipment.items) if (requested.has(Number(item.id))) item.quantity = requested.get(Number(item.id));
+    shipment.materialWeightKg = shipment.items.reduce((sum, item) => sum + (String(item.uom).toUpperCase() === "KG" ? Number(item.quantity || 0) : String(item.uom).toUpperCase() === "MT" ? Number(item.quantity || 0) * 1000 : 0), 0);
+    shipment.sdsImportFingerprint = null;
+    const supplierUsers = state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && canAccessShipment(user, shipment));
+    supplierUsers.forEach(user => addNotification(state, user, { type: "WARNING", title: "Delivery schedule updated", message: `${shipment.shipmentNumber} is now ${scheduledDate} at ${scheduledTime}. Review the updated quantities and booking.`, shipment }));
     addAudit(state, request.user, "BOOKING_RESCHEDULED", `${shipment.shipmentNumber} moved from ${previous} to ${scheduledDate} ${scheduledTime}`, shipment.shipmentNumber);
-    return { ok: true, shipment };
+    const after = {
+      date: shipment.scheduledDate,
+      time: shipment.scheduledTime,
+      endTime: shipment.scheduledEndTime || "",
+      site: shipmentWorkArea(shipment) || "Not specified",
+      items: shipment.items.map(item => ({ materialCode: item.materialCode, quantity: Number(item.quantity || 0), uom: item.uom })),
+    };
+    return {
+      ok: true,
+      shipment,
+      supplier: shipment.supplier,
+      recipients: supplierUsers.filter(user => user.emailVerifiedAt && user.email).map(user => user.email),
+      change: { kind: "RESCHEDULE", shipmentNumber: shipment.shipmentNumber, before, after },
+    };
   });
   if (!result) return response.status(404).json({ message: "Shipment not found" });
-  if (result.locked) return response.status(409).json({ message: "Only bookings that have not started their trip can be dragged to another time" });
-  response.json(result);
+  if (result.forbidden) return response.status(403).json({ message: "This delivery belongs to another receiving area" });
+  if (result.locked) return response.status(409).json({ message: "The schedule is locked after Gate In or unloading begins" });
+  let notification;
+  try { notification = await emailNotifications.sendSdsChanges({ sender: emailSender, recipients: result.recipients, supplier: result.supplier, changes: [result.change] }); }
+  catch (error) { notification = { status: "FAILED", sent: 0, failed: result.recipients.length }; console.error(`[email] Manual schedule-change notification failed: ${error.message}`); }
+  const { recipients: _recipients, change: _change, ...publicResult } = result; void _recipients; void _change;
+  response.json({ ...publicResult, notification });
 }));
 
 app.post("/api/availability", auth, allow(...planningRoles), asyncRoute(async (request, response) => {
@@ -1138,6 +1246,41 @@ app.delete("/api/availability/:id", auth, allow(...planningRoles), asyncRoute(as
   response.json(result);
 }));
 
+app.patch("/api/shipments/:id/gate-review", auth, allow("admin", "security", "ecosystem"), asyncRoute(async (request, response) => {
+  const reasonCode = String(request.body?.reasonCode || "").trim().toUpperCase();
+  const allowedReasons = new Set(["CREDENTIALS_MISMATCH", "TOO_EARLY", "MISSING_DOCUMENTS", "VEHICLE_MISMATCH", "SAFETY_CONCERN", "OTHER"]);
+  const otherReason = String(request.body?.otherReason || "").trim().slice(0, 300);
+  if (!allowedReasons.has(reasonCode)) return response.status(400).json({ message: "Choose a gate rejection reason" });
+  if (reasonCode === "OTHER" && !otherReason) return response.status(400).json({ message: "Describe the other gate rejection reason" });
+  const labels = {
+    CREDENTIALS_MISMATCH: "Driver or vehicle credentials do not match the booking",
+    TOO_EARLY: "Truck arrived earlier than the 15-minute entry allowance",
+    MISSING_DOCUMENTS: "Required delivery documents are missing or incomplete",
+    VEHICLE_MISMATCH: "Truck or plate number does not match the booking",
+    SAFETY_CONCERN: "Vehicle or delivery presents a safety concern",
+    OTHER: otherReason,
+  };
+  const result = await store.update((state) => {
+    const shipment = state.shipments.find(row => row.id === Number(request.params.id));
+    if (!shipment) return null;
+    if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
+    if (shipment.bookingStatus !== "APPROVED" || !["BOOKED", "IN_TRANSIT"].includes(shipment.status)) return { locked: true };
+    const reviewedAt = new Date().toISOString();
+    shipment.gateDecision = "REJECTED";
+    shipment.gateDecisionAt = reviewedAt;
+    shipment.gateDecisionBy = request.user.name;
+    shipment.gateRejectionReason = labels[reasonCode];
+    const supplierUsers = state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && canAccessShipment(user, shipment));
+    supplierUsers.forEach(user => addNotification(state, user, { type: "ERROR", title: "Gate entry needs correction", message: `${shipment.shipmentNumber}: ${shipment.gateRejectionReason}. Correct the booking details and present the QR again.`, shipment, requiresAction: true }));
+    addAudit(state, request.user, "GATE_ENTRY_REJECTED", `${shipment.shipmentNumber}: ${shipment.gateRejectionReason}`, shipment.shipmentNumber);
+    return { shipment: supplierSafeShipment(shipment) };
+  });
+  if (!result) return response.status(404).json({ message: "Shipment not found" });
+  if (result.forbidden) return response.status(403).json({ message: "This account cannot review that shipment" });
+  if (result.locked) return response.status(409).json({ message: "This delivery can no longer be rejected at the gate" });
+  response.json({ ...result, message: "Gate entry rejected. The supplier was notified." });
+}));
+
 app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response) => {
   const stage = String(request.body?.stage || "").toUpperCase();
   const configuration = SCAN_STAGES[stage];
@@ -1151,6 +1294,11 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     if (!canAccessShipment(request.user, shipment) || (request.user.role === "ecosystem" && Number(request.user.supplierId) !== Number(shipment.destinationEcosystemId) && (shipment.destinationEcosystemId || shipmentWorkArea(shipment) !== "ECOSYSTEM"))) return { forbidden: true };
     if (shipment.bookingStatus !== "APPROVED") return { approvalRequired: true };
     const targetStatus = stage === "GATE" ? (shipment.status === "RECEIVED" || shipment.status === "GATE_OUT" ? "GATE_OUT" : "GATE_IN") : configuration.status;
+    if (targetStatus === "GATE_IN" && String(request.body?.gateDecision || "").toUpperCase() !== "ACCEPT") return { gateDecisionRequired: true };
+    if (targetStatus === "GATE_IN") {
+      const scheduledAt = Date.parse(`${shipment.scheduledDate}T${shipment.scheduledTime}:00+08:00`);
+      if (Number.isFinite(scheduledAt) && Date.now() < scheduledAt - 15 * 60_000) return { tooEarly: true, earliestAt: new Date(scheduledAt - 15 * 60_000).toISOString() };
+    }
     const alreadyRecorded = shipment.status === targetStatus || (stage === "TRIP" && Boolean(shipment.tripAt)) || (stage === "RECEIVED" && Boolean(shipment.receivedAt)) || (stage === "UNLOADING" && Boolean(shipment.unloadingAt));
     if (alreadyRecorded) return { shipment: supplierSafeShipment(shipment), alreadyRecorded: true, stageLabel: configuration.label, receivedRecipients: [] };
     const receipt = stage === "RECEIVED" ? inspectReceipt(shipment, request.body.receipt, state.settings.graceMinutes) : null;
@@ -1161,13 +1309,13 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     const scannedAt = new Date().toISOString();
     shipment.lastProcessAt = scannedAt;
     if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; applyShipmentEta(state, shipment, shipment.tripAt); }
-    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; clearShipmentEta(shipment); }
+    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; shipment.gateDecision = "ACCEPTED"; shipment.gateDecisionAt = scannedAt; shipment.gateDecisionBy = request.user.name; shipment.gateRejectionReason = null; clearShipmentEta(shipment); resolveShipmentNotifications(state, shipment); }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
     if (stage === "RECEIVED") {
       shipment.receivedAt ||= scannedAt;
       shipment.receipt = { ...receipt, inspectedAt: scannedAt, inspectedBy: request.user.name, inspectorId: request.user.id };
       shipment.replacementIds = createReplacements(state, shipment, nextId, nextCode).map(row => row.id);
-      for (const user of state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId))) {
+      for (const user of state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && canAccessShipment(user, shipment))) {
         addNotification(state, user, { title: receipt.inFull ? "Delivery received" : "Received – Not in Full", message: receipt.items.filter(row => row.remainingQuantity).map(row => `${row.materialCode}: ${row.remainingQuantity} ${row.uom}, ${row.date} ${row.time}. ${row.reason}`).join("; ") || shipment.shipmentNumber, shipment });
         for (const id of shipment.replacementIds) addNotification(state, user, { title: "Follow up delivery created", message: "Review the outstanding quantities and confirm the Follow up delivery.", shipment: state.shipments.find(row => row.id === id), requiresAction: true });
       }
@@ -1180,13 +1328,15 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
       addAudit(state, request.user, `QR_${targetStatus}`, `${shipment.shipmentNumber} scanned at ${stageLabel}`, shipment.shipmentNumber);
     }
     const receivedRecipients = !alreadyRecorded && targetStatus === "RECEIVED"
-      ? state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && user.emailVerifiedAt && user.email).map((user) => user.email)
+      ? state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && canAccessShipment(user, shipment) && user.emailVerifiedAt && user.email).map((user) => user.email)
       : [];
     return { shipment: supplierSafeShipment(shipment), alreadyRecorded, stageLabel, receivedRecipients };
   });
   if (!result) return response.status(404).json({ message: "Shipment not found in this QR code" });
   if (result.approvalRequired) return response.status(409).json({ message: "This booking must be approved before it can be scanned" });
   if (result.forbidden) return response.status(403).json({ message: "This supplier account cannot access that shipment" });
+  if (result.gateDecisionRequired) return response.status(400).json({ message: "Review the scanned booking, then choose Accept or Reject" });
+  if (result.tooEarly) return response.status(409).json({ message: `Entry opens 15 minutes before the schedule. Earliest Gate In: ${new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: TIME_ZONE }).format(new Date(result.earliestAt))}` });
   if (result.wrongStage) return response.status(409).json({ message: `This delivery is currently ${String(result.currentStatus).replaceAll("_", " ").toLowerCase()}. Complete the earlier scan stage first.` });
   if (result.noDock) return response.status(409).json({ message: "The receiving dock for this work area is occupied. Complete Gate out before starting another unloading." });
   let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
@@ -1210,19 +1360,24 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   const state = await store.read();
   const fallbackDate = state.settings.availableDates[0] || localDate(1);
   const preview = await parseDeliveryWorkbook(request.file.buffer, request.file.originalname, { fallbackDate });
-  if (request.user.role === "planner" && normalizeWorkArea(request.user.workArea)) {
+  if (normalizeWorkArea(request.user.workArea) && normalizeWorkArea(request.user.workArea) !== "ECOSYSTEM") {
     const outsideArea = [...new Set(preview.rows.map((row) => normalizeWorkArea(row.site)).filter((area) => area && area !== "ECOSYSTEM" && area !== normalizeWorkArea(request.user.workArea)))];
-    if (outsideArea.length) return response.status(403).json({ message: `This Planner account can only import ${String(request.user.workArea).toLowerCase()} schedules` });
+    if (outsideArea.length) return response.status(403).json({ message: `This account can only import ${String(request.user.workArea).toLowerCase()} schedules` });
   }
-  const accountBySupplier = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplierHasAccount(state, supplier.id)]));
-  const missingSupplierAccounts = [...new Set(preview.rows.filter((row) => !accountBySupplier.get(row.supplier.trim().toLowerCase())).map((row) => row.supplier))].sort();
-  preview.rows = preview.rows.map((row) => ({ ...row, supplierAccountLinked: Boolean(accountBySupplier.get(row.supplier.trim().toLowerCase())) }));
+  const supplierByName = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplier]));
+  const accountLinked = (row) => {
+    const supplier = supplierByName.get(row.supplier.trim().toLowerCase());
+    return Boolean(supplier && supplierHasAccount(state, supplier.id, normalizeWorkArea(row.site)));
+  };
+  const missingSupplierAccounts = [...new Set(preview.rows.filter((row) => !accountLinked(row)).map((row) => row.supplier))].sort();
+  preview.rows = preview.rows.map((row) => ({ ...row, supplierAccountLinked: accountLinked(row) }));
   preview.missingSupplierAccounts = missingSupplierAccounts;
   preview.summary.missingSupplierAccounts = missingSupplierAccounts.length;
   const conflicts = [];
+  let unchangedProposals = 0, unchangedRows = 0;
   for (const rows of groupImportRows(preview.rows.filter((row) => row.status === "ready")).values()) {
     const fingerprint = importGroupFingerprint(rows);
-    if (state.shipments.some((shipment) => shipment.sdsImportFingerprint === fingerprint)) continue;
+    if (state.shipments.some((shipment) => shipment.sdsImportFingerprint === fingerprint)) { unchangedProposals += 1; unchangedRows += rows.length; continue; }
     const identity = importGroupIdentity(rows);
     const editableMatches = state.shipments.filter((shipment) => shipment.sdsImportIdentity === identity && shipment.bookingStatus === "PENDING_SUPPLIER" && !shipment.splitParentId && Number(shipment.sdsProposalId || shipment.id) === Number(shipment.id) && !(shipment.confirmedTruckLoads || []).length);
     if (editableMatches.length !== 1) continue;
@@ -1237,6 +1392,8 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   }
   preview.conflicts = conflicts;
   preview.summary.conflicts = conflicts.length;
+  preview.summary.unchangedProposals = unchangedProposals;
+  preview.summary.unchangedRows = unchangedRows;
   const previewToken = randomUUID();
   const expiresAt = Date.now() + 30 * 60 * 1000;
   for (const [key, cached] of importPreviews) if (cached.expiresAt < Date.now()) importPreviews.delete(key);
@@ -1285,7 +1442,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     const supplierByName = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplier]));
     const missingAccounts = [...new Set([...groups.values()].filter((rows) => {
       const supplier = supplierByName.get(rows[0].supplier.trim().toLowerCase());
-      return !supplier || !supplierHasAccount(state, supplier.id);
+      return !supplier || !supplierHasAccount(state, supplier.id, normalizeWorkArea(rows[0].site));
     }).map((rows) => rows[0].supplier))];
     if (missingAccounts.length) return { missingAccounts };
     const unresolvedConflicts = [];
@@ -1310,9 +1467,10 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       site: items.find((item) => item.deliverySite)?.deliverySite || "",
       items: items.map((item) => ({ materialCode: item.materialCode, quantity: Number(item.quantity || 0), uom: item.uom })),
     });
-    const addSupplierChange = (supplier, change) => {
-      if (!supplierChanges.has(supplier.id)) supplierChanges.set(supplier.id, { supplierId: supplier.id, supplier: supplier.name, changes: [] });
-      supplierChanges.get(supplier.id).changes.push(change);
+    const addSupplierChange = (supplier, area, change) => {
+      const key = `${supplier.id}:${normalizeWorkArea(area) || "UNSCOPED"}`;
+      if (!supplierChanges.has(key)) supplierChanges.set(key, { supplierId: supplier.id, supplier: supplier.name, area: normalizeWorkArea(area), changes: [] });
+      supplierChanges.get(key).changes.push(change);
     };
 
     const buildItems = (rows, previousItems = []) => {
@@ -1373,7 +1531,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
         existing.confirmedTruckLoads = [];
         updatedProposals += 1;
         importedRows += rows.length;
-        addSupplierChange(supplier, { kind: "RESCHEDULE", shipmentNumber: existing.shipmentNumber, before, after: emailDetails(existing) });
+        addSupplierChange(supplier, first.site, { kind: "RESCHEDULE", shipmentNumber: existing.shipmentNumber, before, after: emailDetails(existing) });
         addAudit(state, request.user, "SDS_UPDATED", `${existing.shipmentNumber} updated after spreadsheet comparison`, existing.shipmentNumber);
         continue;
       }
@@ -1394,7 +1552,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       state.shipments.push(proposal);
       createdProposals += 1;
       importedRows += rows.length;
-      addSupplierChange(supplier, { kind: "NEW", shipmentNumber, before: null, after: emailDetails(proposal) });
+      addSupplierChange(supplier, first.site, { kind: "NEW", shipmentNumber, before: null, after: emailDetails(proposal) });
       addAudit(state, request.user, "SDS_IMPORTED", `${shipmentNumber} created and linked to ${supplier.name}`, shipmentNumber);
     }
     syncAvailableDates(state);
@@ -1404,10 +1562,10 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     addAudit(state, request.user, "SDS_IMPORT_COMPLETED", `${createdProposals} created, ${updatedProposals} updated, ${unchangedProposals} unchanged after spreadsheet comparison`);
     const notifications = [...supplierChanges.values()].map((entry) => ({
       ...entry,
-      recipients: state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && user.emailVerifiedAt && Number(user.supplierId) === Number(entry.supplierId)).map((user) => user.email).filter(Boolean),
+      recipients: state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && user.emailVerifiedAt && Number(user.supplierId) === Number(entry.supplierId) && (!entry.area || entry.area === "ECOSYSTEM" || normalizeWorkArea(user.workArea) === entry.area)).map((user) => user.email).filter(Boolean),
     }));
     for (const entry of supplierChanges.values()) {
-      const supplierUsers = state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(entry.supplierId));
+      const supplierUsers = state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(entry.supplierId) && (!entry.area || entry.area === "ECOSYSTEM" || normalizeWorkArea(user.workArea) === entry.area));
       for (const change of entry.changes) {
         const shipment = state.shipments.find((row) => row.shipmentNumber === change.shipmentNumber);
         if (!shipment) continue;
@@ -1463,8 +1621,12 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
   const emailRequired = true;
   const email = emailRequired ? String(request.body?.email || "").trim().toLowerCase() : "";
   if (!String(request.body?.name || "").trim() || !String(request.body?.username || "").trim() || String(request.body?.password || "").length < 8 || !roles.includes(role) || (emailRequired && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return response.status(400).json({ message: `Name, username, valid role, and an 8-character password are required${emailRequired ? "; every new account requires a valid email" : ""}` });
-  const workArea = normalizeWorkArea(request.body?.workArea);
-  if (["planner", "warehouse"].includes(request.body?.role) && !WORK_AREAS.has(workArea)) return response.status(400).json({ message: "Planner and Warehouse accounts must be assigned to Dressings or Savoury" });
+  const actorArea = normalizeWorkArea(request.user.workArea);
+  const requestedArea = normalizeWorkArea(request.body?.workArea);
+  if (actorArea && ["security", "ecosystem"].includes(role)) return response.status(403).json({ message: "Only the Both-areas administrator can create site-wide Security or Ecosystem accounts" });
+  const workArea = role === "ecosystem" ? "ECOSYSTEM" : role === "security" ? null : actorArea || requestedArea || (AREA_REQUIRED_ROLES.has(role) ? "DRESSINGS" : null);
+  if (AREA_REQUIRED_ROLES.has(role) && !["DRESSINGS", "SAVOURY"].includes(workArea)) return response.status(400).json({ message: `${role} accounts must be assigned to Dressings or Savoury` });
+  if (role === "admin" && workArea && !["DRESSINGS", "SAVOURY"].includes(workArea)) return response.status(400).json({ message: "Administrator access must be Both areas, Dressings, or Savoury" });
   const passwordHash = await bcrypt.hash(String(request.body.password), 10);
   const result = await store.update((state) => {
     if (state.users.some((user) => user.username.toLowerCase() === request.body.username.toLowerCase())) return { duplicate: true };
@@ -1472,18 +1634,18 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
     if (["supplier", "ecosystem"].includes(request.body.role)) {
       const existing = state.suppliers.find((supplier) => supplier.id === Number(request.body.supplierId));
       const supplier = existing || ensureSupplier(state, request.body.supplierName || request.body.name);
-      if (state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplier.id))) return { supplierAlreadyLinked: true };
+      if (state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplier.id) && normalizeWorkArea(user.workArea) === workArea)) return { supplierAlreadyLinked: true };
       supplier.productPresets ||= [];
       supplierId = supplier.id;
     }
     const id = nextId(state.users);
-    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, emailVerifiedAt: null, emailVerificationHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0, verificationCodeSentAt: null, passwordHash, mustChangePassword: true, onboardingRequired: true, role: request.body.role, supplierId, workArea: ["planner", "warehouse"].includes(request.body.role) ? workArea : null });
+    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, emailVerifiedAt: null, emailVerificationHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0, verificationCodeSentAt: null, passwordHash, mustChangePassword: true, onboardingRequired: true, role, supplierId, workArea });
     addAudit(state, request.user, "ACCOUNT_CREATED", `${request.body.role === "supplier" ? "Supplier" : request.body.role} account @${String(request.body.username).trim().toLowerCase()} created${workArea ? ` for ${workArea.toLowerCase()}` : ""}`);
     return { id, supplierId, workArea };
   });
   if (result.duplicate) return response.status(409).json({ message: "That username already exists" });
-  if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active supplier account" });
-  activeAccountRoles.set(Number(result.id), request.body.role);
+  if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active account for this receiving area" });
+  activeAccountRoles.set(Number(result.id), role);
   response.status(201).json({...result,notification:{status:"DEFERRED"}});
 }));
 
@@ -1491,7 +1653,8 @@ app.patch("/api/admin/email-sender", auth, allow("admin"), (_request, response) 
   response.status(410).json({ message: "The notification sender is configured privately in the server .env file" });
 });
 
-const mayManageUserEmail = (request, target) => request.user.role === "admin" || Number(request.user.id) === Number(target.id);
+const adminCanManageAccount = (administrator, target) => administrator.role === "admin" && (!normalizeWorkArea(administrator.workArea) || normalizeWorkArea(administrator.workArea) === normalizeWorkArea(target.workArea));
+const mayManageUserEmail = (request, target) => adminCanManageAccount(request.user, target) || Number(request.user.id) === Number(target.id);
 const emailAccountRoles = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse", "ecosystem", "sap"];
 
 app.patch("/api/users/:id/email", auth, allow(...emailAccountRoles), asyncRoute(async (request, response) => {
@@ -1577,12 +1740,14 @@ app.delete("/api/users/:id", auth, allow("admin"), asyncRoute(async (request, re
     const index = draft.users.findIndex((user) => Number(user.id) === targetId);
     if (index < 0) return null;
     const target = draft.users[index];
+    if (!adminCanManageAccount(request.user, target)) return { forbidden: true };
     if (target.role === "admin" && draft.users.filter((user) => user.role === "admin").length <= 1) return { finalAdmin: true };
     draft.users.splice(index, 1);
     addAudit(draft, request.user, "ACCOUNT_DELETED", `Account @${target.username} was deleted; supplier and delivery records were retained`);
     return { ok: true, deletedUserId: target.id, retainedSupplierId: target.supplierId || null };
   });
   if (!result) return response.status(404).json({ message: "Account not found" });
+  if (result.forbidden) return response.status(403).json({ message: "This account belongs to another receiving area" });
   if (result.finalAdmin) return response.status(409).json({ message: "The final administrator account cannot be deleted" });
   activeAccountRoles.delete(targetId);
   await database.revokeUserRefreshTokens(targetId);
@@ -1695,7 +1860,7 @@ app.patch("/api/settings", auth, allow("admin"), asyncRoute(async (request, resp
     state.settings = {
       ...state.settings,
       flexibleScheduling: true,
-      dockCount: 2,
+      dockCount: 3,
       graceMinutes: Number(request.body?.graceMinutes ?? state.settings.graceMinutes),
       siteName: String(request.body?.siteName || state.settings.siteName),
       availableSlots,
@@ -1724,6 +1889,36 @@ app.post("/api/shipment-items/:id/documents", auth, allow("admin", "supplier"), 
   response.status(201).json(result);
 }));
 
+app.get("/api/schedule/export.xlsx", auth, allow("admin", "planner", "production"), asyncRoute(async (request, response) => {
+  const state = await store.read();
+  const requestedArea = normalizeWorkArea(request.query.area);
+  const rows = state.shipments
+    .filter(shipment => canAccessShipment(request.user, shipment) && shipment.status !== "REJECTED" && (!requestedArea || shipmentWorkArea(shipment) === requestedArea))
+    .sort((a, b) => `${a.scheduledDate}${a.scheduledTime}${a.supplier}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}${b.supplier}`));
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "DockFlow";
+  const sheet = workbook.addWorksheet("Updated SDS", { views: [{ state: "frozen", ySplit: 1 }] });
+  sheet.columns = [
+    ["week", "Week", 13], ["site", "Site", 15], ["materialType", "PM or RM", 12], ["supplier", "Supplier", 27],
+    ["materialCode", "Material Code", 18], ["materialName", "Description", 36], ["quantity", "Quantity", 15], ["uom", "UOM", 10],
+    ["poNumber", "PO Number", 24], ["deliveryDate", "Delivery Date", 16], ["deliveryTime", "Delivery Time", 14], ["endTime", "End Time", 14], ["remarks", "Remarks", 30],
+  ].map(([key, header, width]) => ({ key, header, width }));
+  for (const shipment of rows) for (const item of shipment.items || []) sheet.addRow({
+    week: item.deliveryWeek || "", site: item.deliverySite || shipmentWorkArea(shipment) || "", materialType: item.materialType || "",
+    supplier: shipment.supplier, materialCode: item.materialCode, materialName: item.materialName || "", quantity: Number(item.quantity || 0), uom: item.uom || "",
+    poNumber: item.poNumber || shipment.poNumber || "", deliveryDate: shipment.scheduledDate, deliveryTime: shipment.scheduledTime,
+    endTime: shipment.scheduledEndTime || "", remarks: item.remarks || "",
+  });
+  sheet.getRow(1).height = 30;
+  sheet.getRow(1).eachCell(cell => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1E38" } }; cell.alignment = { vertical: "middle", wrapText: true }; });
+  sheet.autoFilter = { from: "A1", to: `M${Math.max(1, sheet.rowCount)}` };
+  sheet.getColumn("quantity").numFmt = "#,##0.00";
+  response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  response.setHeader("Content-Disposition", `attachment; filename="dockflow-updated-sds-${String(requestedArea || "all").toLowerCase()}.xlsx"`);
+  await workbook.xlsx.write(response);
+  response.end();
+}));
+
 app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production", "warehouse", "supplier", "ecosystem", "driver"), asyncRoute(async (request, response) => {
   const state = await store.read();
   const requestedSupplierId = (companyScopedRoles.has(request.user.role) || request.user.role === "ecosystem") ? Number(request.user.supplierId) : Number(request.query.supplierId || 0);
@@ -1731,6 +1926,11 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return response.status(400).json({message:"Choose a valid month"});
   const shipments = state.shipments.filter((shipment) => canAccessShipment(request.user, shipment) && (!month || shipment.scheduledDate.startsWith(month)) && shipment.bookingStatus === "APPROVED" && shipment.status !== "REJECTED" && (!requestedSupplierId || Number(shipment.supplierId) === requestedSupplierId));
   const duration = (start, end) => start && end ? Math.max(0, Math.round((Date.parse(end) - Date.parse(start)) / 60000)) : null;
+  const gateParts = (value) => {
+    if (!value) return { date: "", time: "" };
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value)).map(part => [part.type, part.value]));
+    return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+  };
   const average = (values) => {
     const valid = values.filter((value) => Number.isFinite(value));
     return valid.length ? Math.round(valid.reduce((sum, value) => sum + value, 0) / valid.length) : 0;
@@ -1811,36 +2011,40 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   summary.autoFilter = { from: "A7", to: `F${Math.max(7, summary.rowCount)}` };
 
   const details = workbook.addWorksheet("Deliveries", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  details.columns = [18, 18, 26, 14, 12, 16, 20, 18, 18, 17, 16, 20, 20, 22, 22, 24, 16, 16].map((width) => ({ width }));
-  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "R", 4);
-  const detailHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)", "PO number", "DR number", "Helper 1", "Helper 2", "Receipt outcome", "On time", "OTIF"];
+  details.columns = [18, 18, 26, 16, 14, 16, 20, 18, 18, 17, 16, 20, 20, 22, 22, 24, 16].map((width) => ({ width }));
+  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "Q", 4);
+  const detailHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)", "PO number", "DR number", "Helper 1", "Helper 2", "Receipt outcome", "On time"];
   const detailHeader = details.getRow(4);
   detailHeaders.forEach((value, index) => { detailHeader.getCell(index + 1).value = value; });
   detailHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
   detailHeader.height = 28;
   shipments.sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)).forEach((shipment, index) => {
+    const entrance = gateParts(shipment.gateInAt);
     const output = details.addRow([
-      shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime,
-      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—", shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "", shipment.receipt ? shipment.receipt.inFull ? "Received" : "Received – Not in Full" : "Pending inspection", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No", shipment.receipt?.otif == null ? "Not evaluated" : shipment.receipt.otif ? "Yes" : "No",
+      shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time,
+      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—", shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "", shipment.receipt ? shipment.receipt.inFull ? "Received" : "Received – Not in Full" : "Pending inspection", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No",
     ]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 9, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "top", wrapText: true }; if (index % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(10).font = { name: "Aptos", size: 9, bold: true, color: { argb: ["GATE_OUT", "RECEIVED"].includes(shipment.status) ? "08766B" : blue } };
     output.height = 28;
   });
   details.getColumn(8).numFmt = "@";
-  details.autoFilter = { from: "A4", to: `R${Math.max(4, details.rowCount)}` };
+  details.autoFilter = { from: "A4", to: `Q${Math.max(4, details.rowCount)}` };
 
   const materials = workbook.addWorksheet("Material Codes", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  materials.columns = [18, 18, 25, 14, 12, 18, 22, 14, 12, 14].map((width) => ({ width }));
-  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "J", 4);
-  const materialHeaders = ["Booking", "Shipment", "Supplier", "Date", "Entrance", "Truck plate", "Material code", "Quantity", "UOM", "Site"];
+  materials.columns = [18, 18, 25, 16, 14, 18, 22, 14, 12, 14, 14, 19, 14].map((width) => ({ width }));
+  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "M", 4);
+  const materialHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Material code", "Total need", "UOM", "Site", "On Time", "Quantity Received", "OTIF %"];
   const materialHeader = materials.getRow(4);
   materialHeaders.forEach((value, index) => { materialHeader.getCell(index + 1).value = value; });
   materialHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
   materialHeader.height = 28;
   let materialIndex = 0;
   shipments.forEach((shipment) => shipment.items.forEach((item) => {
-    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, shipment.scheduledDate, shipment.scheduledTime, shipment.truckPlate, item.materialCode, Number(item.quantity || 0), item.uom || "—", item.deliverySite || "—"]);
+    const entrance = gateParts(shipment.gateInAt);
+    const received = Number(shipment.receipt?.items?.find(row => Number(row.itemId) === Number(item.id))?.acceptedQuantity || 0);
+    const need = Number(item.quantity || 0);
+    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time, shipment.truckPlate, item.materialCode, need, item.uom || "—", item.deliverySite || "—", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No", received, need > 0 ? received / need : 0]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; if (materialIndex % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(7).font = { name: "Aptos", size: 10, bold: true, color: { argb: blue } };
     output.height = 25;
@@ -1848,7 +2052,9 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   }));
   materials.getColumn(7).numFmt = "@";
   materials.getColumn(8).numFmt = "#,##0.00";
-  materials.autoFilter = { from: "A4", to: `J${Math.max(4, materials.rowCount)}` };
+  materials.getColumn(12).numFmt = "#,##0.00";
+  materials.getColumn(13).numFmt = "0.00%";
+  materials.autoFilter = { from: "A4", to: `M${Math.max(4, materials.rowCount)}` };
 
   const safeName = selectedSupplier.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "all-suppliers";
   response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

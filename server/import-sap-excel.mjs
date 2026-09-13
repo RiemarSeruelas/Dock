@@ -11,8 +11,6 @@ const SAP_COLUMNS = [
   ["description", "description", ["description", "material description"]],
   ["drNumber", "dr_number", ["dr no", "dr number", "delivery receipt", "delivery receipt number"]],
   ["quantity", "quantity", ["dr quantity", "quantity", "delivery quantity"]],
-  ["uom", "uom", ["uom", "unit of measure"]],
-  ["actualReceived", "actual_received", ["actual received", "received quantity"]],
   ["poNumber", "po_number", ["po number", "po no", "purchase order"]],
   ["batch", "batch", ["batch", "batch number"]],
   ["breakdown", "breakdown", ["breakdown"]],
@@ -166,7 +164,6 @@ const summarize = parsed => {
   console.log(`Supplier label: ${parsed.supplier}`);
   console.log(`Rows ready: ${parsed.rows.length.toLocaleString("en-US")}`);
   if (parsed.skippedSheets.length) console.log(`Skipped sheets without recognized SAP headers: ${parsed.skippedSheets.join(", ")}`);
-  console.log(`Missing UOM: ${missing.uom.toLocaleString("en-US")}; missing Actual Received: ${missing.actualReceived.toLocaleString("en-US")}`);
   console.log(`Missing Item: ${missing.item.toLocaleString("en-US")}; missing DR No: ${missing.drNumber.toLocaleString("en-US")}; missing Delivery Date: ${missing.deliveryDate.toLocaleString("en-US")}`);
   if (parsed.warnings.length) {
     console.log(`Warnings: ${parsed.warnings.length.toLocaleString("en-US")}`);
@@ -275,4 +272,3 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
     process.exitCode = 1;
   });
 }
-

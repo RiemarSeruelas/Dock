@@ -2,11 +2,13 @@ import { registerClearance } from "./clearance.js";
 import { createSapRepository, sapCanFormat, sapColumns, sapEditableColumns, sapNetworkAllowed } from "./sap-postgres.js";
 import { registerAdminOperations } from "./admin-operations.js";
 import ExcelJS from 'exceljs';
+import { randomUUID } from 'node:crypto';
 import { calculateKpi, fail } from './receiving.js';
+import { encodedByName } from './sap-postgres.js';
 
 const columns = sapColumns;
 const manila = date => date ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(date)) : '';
-export const sapRows = state => state.shipments.filter(s => s.bookingStatus === 'APPROVED' && s.gateInAt).flatMap(s => s.items.map(item => {
+export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus === 'APPROVED' && s.gateInAt).flatMap(s => s.items.map(item => {
   const key = `${s.id}:${item.id}`;
   const saved = state.sapRows?.[key];
   const clearance = s.clearance?.[item.id] || {};
@@ -15,7 +17,7 @@ export const sapRows = state => state.shipments.filter(s => s.bookingStatus === 
     supplierName: s.supplier || '', plateNumber: s.truckPlate || '', driverName: s.driverName || '',
     gateIn: manila(s.gateInAt), gateOut: manila(s.gateOutAt), destination: item.deliverySite || s.originWorkArea || '',
     deliveryDate: manila(s.gateInAt), encodedBy: '', item: item.materialCode, description: item.materialName || '',
-    drNumber: s.drNumber || item.dnNumber || '', gatepassNumber: '', quantity: item.quantity, uom: item.uom || '',
+    drNumber: s.drNumber || item.dnNumber || '', gatepassNumber: '', quantity: item.quantity,
     poNumber: s.poNumber || item.poNumber || '', batch: item.batchNumber || '', breakdown: '',
     mfgDate: item.productionDate || '', expDate: item.expiryDate || '', matdoc: '', supplierLot: '', remarks: '',
     inventoryController: clearance.inventoryController || '', receivingController: clearance.receivingController || '',
@@ -25,11 +27,11 @@ export const sapRows = state => state.shipments.filter(s => s.bookingStatus === 
     qaStart: clearance.qaStart || '', qaEnd: clearance.qaEnd || '', qaDisposition: clearance.disposition || '',
   };
   return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values: { ...defaults, ...saved?.values }, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
-}));
+})), ...(state.sapManualRows || []).map(row=>{const saved=state.sapRows?.[row.key];return saved?{...row,...saved,values:{...row.values,...saved.values}}:row;})];
 export function registerExtensions({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database }) {
   registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database });
   const sap = createSapRepository();
-  registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,sap});
+  registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,supplierSafeShipment,sap});
   app.get('/api/shipments/lookup', auth, asyncRoute(async (req, res) => {
     const state = await store.read();
     const raw = String(req.query.code || '').trim();
@@ -46,17 +48,30 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     const offset = Math.max(0, Math.min(1000000, Math.floor(Number(req.query.offset)||0)));
     const limit = Math.max(1, Math.min(100, Math.floor(Number(req.query.limit)||25)));
     const search = String(req.query.search || '').trim().slice(0,200);
+    const sort = String(req.query.sort || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
     const keys = req.query.keys ? String(req.query.keys).split(",") : null;
     if(keys && (keys.length>50 || keys.some(key=>!key || key.length>200 || /[\u0000-\u001f]/.test(key)))) fail("Refresh at most 50 valid rows");
     try {
       const defaults = sapRows(await store.read());
       if(keys) { if(sap.jsonTrial) return res.json({rows:defaults.filter(row=>keys.includes(row.key)),columns,...access,hasMore:false,available:true}); return res.json({rows:await sap.byKeys(keys),columns,...access,hasMore:false,available:true}); }
       if (sap.jsonTrial) {
-        const term=search.toLowerCase();const filtered=term?defaults.filter(row=>Object.values(row.values).some(value=>String(value).toLowerCase().includes(term))):defaults;
-        return res.json({ rows: filtered.slice(offset,offset+limit), columns, ...access, hasMore: filtered.length>offset+limit, available:true });
+        const term=search.toLowerCase();const filtered=term?defaults.filter(row=>Object.values(row.values).some(value=>String(value).toLowerCase().includes(term))):defaults;const sorted=sort==='asc'?[...filtered].reverse():filtered;
+        return res.json({ rows: sorted.slice(offset,offset+limit), columns, ...access, hasMore: sorted.length>offset+limit, available:true });
       }
-      await sap.sync(defaults); res.json({ ...await sap.page(offset,limit,search), columns, ...access, available:true });
+      await sap.sync(defaults); res.json({ ...await sap.page(offset,limit,search,sort), columns, ...access, available:true });
     } catch { res.json({ rows: [], columns, ...access, hasMore:false, available:false, message:'No data. The SAP database is unavailable on this network.' }); }
+  }));
+  app.post('/api/sap/rows', auth, allow('sap','admin'), asyncRoute(async (req,res) => {
+    if (!sapNetworkAllowed(req)) fail('Connect to the authorized SAP network',403);
+    const values = req.body?.values && typeof req.body.values === 'object' && !Array.isArray(req.body.values) ? req.body.values : {};
+    if (Object.keys(values).some(key=>!columns.some(column=>column[0]===key)) || Object.values(values).some(value=>!['string','number'].includes(typeof value)||String(value).length>2000)) fail('Invalid worksheet cells');
+    const encodedBy=encodedByName(req.user?.name);
+    let row;
+    if(sap.jsonTrial) {
+      row={key:`manual:${randomUUID()}`,revision:0,verified:false,values:Object.fromEntries(columns.map(([key])=>[key,key==='encodedBy'?encodedBy:(values[key]??'')])),formats:{},rowHeight:null,rowHidden:false};
+      await store.update(state=>{state.sapManualRows ||= [];state.sapManualRows.unshift(row);});
+    } else { try { row=await sap.add(values,req.user?.name); } catch { fail('SAP database could not add the worksheet row',503); } }
+    res.status(201).json({row});
   }));
   app.put('/api/sap/rows', auth, allow('sap','admin','planner','warehouse'), asyncRoute(async (req,res) => {
     if (!sapNetworkAllowed(req)) fail('Connect to the authorized SAP network',403);
@@ -75,7 +90,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
       const current=sapRows(state);
       for(const row of rows) if(current.find(item=>item.key===row.key)?.revision !== Number(row.revision)) fail('Worksheet changed. Reload before saving.',409);
       state.sapRows ||= {};
-      for(const row of rows) {const previous=state.sapRows[row.key]||{};state.sapRows[row.key]={...previous,values:{...previous.values,...row.values,...(['sap','admin'].includes(role)?{encodedBy:req.user?.name||'SAP Analyst'}:{})},formats:row.formats??previous.formats,rowHeight:row.rowHeight??previous.rowHeight,rowHidden:row.rowHidden??previous.rowHidden,revision:Number(row.revision)+1,verified:['sap','admin'].includes(role)?!!row.verified:!!previous.verified,updatedBy:req.user?.id,updatedAt:new Date().toISOString()};}
+      for(const row of rows) {const previous=state.sapRows[row.key]||{};state.sapRows[row.key]={...previous,values:{...previous.values,...row.values,...(['sap','admin'].includes(role)?{encodedBy:encodedByName(req.user?.name)}:{})},formats:row.formats??previous.formats,rowHeight:row.rowHeight??previous.rowHeight,rowHidden:row.rowHidden??previous.rowHidden,revision:Number(row.revision)+1,verified:['sap','admin'].includes(role)?!!row.verified:!!previous.verified,updatedBy:req.user?.id,updatedAt:new Date().toISOString()};}
     });
     else { try { await sap.save(rows,req.user?.name||'SAP Analyst',role); } catch(error) { if(error.status===409||error.status===403) throw error; fail('SAP database could not save the worksheet',503); } }
     res.json({saved:rows.map(row=>({key:row.key,revision:Number(row.revision)+1}))});
@@ -85,14 +100,14 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     let exportRows;
     try { const defaults=sapRows(await store.read()); if(sap.jsonTrial) exportRows=defaults; else {await sap.sync(defaults);exportRows=await sap.all();} } catch {fail('SAP database is unavailable',503);}
     const workbook = new ExcelJS.Workbook(); const sheet = workbook.addWorksheet('Receiving register', { views: [{ state: 'frozen', ySplit: 1, xSplit: 3 }] });
-    const legacyOrder=['deliveryDate','encodedBy','item','description','drNumber','quantity','uom','actualReceived','poNumber','batch','breakdown','mfgDate','expDate','matdoc','supplierLot','remarks'];
+    const legacyOrder=['deliveryDate','encodedBy','item','description','drNumber','quantity','poNumber','batch','breakdown','mfgDate','expDate','matdoc','supplierLot','remarks'];
     const exportColumns=[...legacyOrder.map(key=>columns.find(column=>column[0]===key)).filter(Boolean),...columns.filter(column=>!legacyOrder.includes(column[0]))];
     sheet.columns = exportColumns.map(([key, header, width]) => ({ key, header, width }));
     for (const data of exportRows) {const excelRow=sheet.addRow(data.values);if(data.rowHeight)excelRow.height=data.rowHeight;for(const [key,format] of Object.entries(data.formats||{})){const column=exportColumns.findIndex(([name])=>name===key)+1;if(!column)continue;const cell=excelRow.getCell(column);const hex=value=>String(value||'').replace('#','').toUpperCase();cell.font={...cell.font,name:format.fontFamily||'Calibri',size:Number(format.fontSize||11),bold:!!format.bold,italic:!!format.italic,underline:!!format.underline,strike:!!format.strike,color:format.color?{argb:`FF${hex(format.color)}`} : undefined};if(format.fill)cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:`FF${hex(format.fill)}`}};cell.alignment={horizontal:format.align||undefined,vertical:format.vertical||'middle',wrapText:!!format.wrap,indent:Number(format.indent||0)};}}
     sheet.getRow(1).height = 34;
     sheet.eachRow((row, number) => row.eachCell({ includeEmpty: true }, (cell, column) => {
-      cell.font = { name: 'Calibri', size: 11, bold: number === 1, color: { argb: number === 1 ? 'FFFFFFFF' : column === 14 ? 'FFB42318' : 'FF172B4D' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: number === 1 ? 'FF08285F' : column === 10 ? 'FF00C663' : number % 2 ? 'FFF1F5F9' : 'FFFFFFFF' } };
+      cell.font = { name: 'Calibri', size: 11, bold: number === 1, color: { argb: number === 1 ? 'FFFFFFFF' : column === 12 ? 'FFB42318' : 'FF172B4D' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: number === 1 ? 'FF08285F' : column === 8 ? 'FF00C663' : number % 2 ? 'FFF1F5F9' : 'FFFFFFFF' } };
       cell.alignment = { vertical: 'middle', wrapText: true };
       cell.border = { bottom: { style: 'hair', color: { argb: 'FFCBD5E1' } } };
     }));

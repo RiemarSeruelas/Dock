@@ -42,6 +42,17 @@ test("keeps arbitrary exact times and does not assign shift labels", () => {
   assert.equal(importHelpers.shiftForTime("23:41"), "Flexible date");
 });
 
+test("keeps Excel clock cells unchanged in the Manila time zone", () => {
+  const previous = process.env.TZ;
+  process.env.TZ = "Asia/Manila";
+  try {
+    assert.equal(importHelpers.toTime(new Date(Date.UTC(1899, 11, 30, 9, 0))), "09:00");
+    assert.equal(importHelpers.toTime(new Date(Date.UTC(1899, 11, 30, 21, 0))), "21:00");
+  } finally {
+    if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
+  }
+});
+
 test("accepts repeated-looking rows, different materials, different dates, and missing values", async () => {
   const workbook = new ExcelJS.Workbook();
   const rm = workbook.addWorksheet("RM");

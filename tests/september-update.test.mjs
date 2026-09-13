@@ -7,6 +7,7 @@ import { nextReportSend } from '../server/admin-operations.js';
 import { clearanceData, makeClearancePdf } from '../server/clearance.js';
 import { clientAddress } from '../server/client-network.js';
 import { registerExtensions } from '../server/extensions.js';
+import { buildEcosystemRequestEmail } from '../server/mailer.js';
 import express from 'express';
 
 const nextId = rows => Math.max(0,...rows.map(row=>row.id))+1;
@@ -43,8 +44,9 @@ test('SAP API pages 25 records, refreshes loaded rows and returns no data outsid
  const saved=Object.fromEntries(['SAP_STORAGE','SAP_ALLOWED_CIDRS','SAP_TRUSTED_PROXY_CIDRS'].map(key=>[key,process.env[key]]));
  process.env.SAP_STORAGE='json';process.env.SAP_ALLOWED_CIDRS='127.0.0.1/32';process.env.SAP_TRUSTED_PROXY_CIDRS='';
  const state={shipments:Array.from({length:60},(_,i)=>({...shipment(),id:i+1,bookingStatus:'APPROVED',items:[{id:i+1,materialCode:`MAT-${i}`,quantity:1,uom:'KG'}]}))};
- const app=express();
- registerExtensions({app,auth:(_req,_res,next)=>next(),allow:()=> (_req,_res,next)=>next(),asyncRoute:fn=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next),store:{read:async()=>state},emailSender:null});
+  const app=express();
+ const store={read:async()=>state,update:async(fn)=>fn(state)};
+ registerExtensions({app,auth:(req,_res,next)=>{req.user={id:1,name:'Jude Wong',role:'sap'};next();},allow:()=> (_req,_res,next)=>next(),asyncRoute:fn=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next),store,emailSender:null});
  const server=await new Promise(resolve=>{const server=app.listen(0,'127.0.0.1',()=>resolve(server));});
  const url=`http://127.0.0.1:${server.address().port}`;
  try {
@@ -55,6 +57,8 @@ test('SAP API pages 25 records, refreshes loaded rows and returns no data outsid
   state.sapRows={'30:30':{revision:1,values:{actualReceived:'0',matdoc:'00042'}}};
   const refresh=await (await fetch(`${url}/api/sap/rows?keys=30:30`)).json();
   assert.equal(refresh.rows[0].values.matdoc,'00042');assert.equal(refresh.rows[0].values.actualReceived,'0');
+  const added=await (await fetch(`${url}/api/sap/rows`,{method:'POST',headers:{'content-type':'application/json'},body:'{"values":{}}'})).json();
+  assert.equal(added.row.values.encodedBy,'J. Wong');assert.match(added.row.key,/^manual:/);
   process.env.SAP_ALLOWED_CIDRS='10.0.0.0/8';
   const denied=await (await fetch(`${url}/api/sap/rows`,{headers:{'x-forwarded-for':'10.0.0.2'}})).json();
   assert.equal(denied.available,false);assert.deepEqual(denied.rows,[]);
@@ -82,7 +86,11 @@ test('clearance retains leading zero codes and zero actual receipt; creates both
  const row=shipment();row.receipt={items:[{itemId:1,acceptedQuantity:0}]};
  const data=clearanceData(row,row.items[0],{batch:'000456'});
  assert.equal(data.actualReceived,0);assert.equal(data.code,'00123');assert.equal(data.batch,'000456');
- const doc=makeClearancePdf(row,[data]),chunks=[];
+ const doc=makeClearancePdf(row,[data,{...data,itemId:2,code:'B',description:'Second material',quantity:20}]),chunks=[];
  const completed=new Promise((resolve,reject)=>{doc.on('data',chunk=>chunks.push(chunk));doc.on('end',resolve);doc.on('error',reject);});doc.end();await completed;
- assert.equal(Buffer.concat(chunks).subarray(0,4).toString(),'%PDF');
+ const pdf=Buffer.concat(chunks);assert.equal(pdf.subarray(0,4).toString(),'%PDF');assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,1);
+});
+test('ecosystem request email includes a formatted material table',()=>{
+ const email=buildEcosystemRequestEmail({shipment:{...shipment(),shipmentNumber:'SHP-100',originWorkArea:'DRESSINGS'}});
+ assert.match(email.subject,/SHP-100/);assert.match(email.text,/00123: 300 KG/);assert.match(email.html,/Requested materials/);assert.match(email.html,/<table/);
 });

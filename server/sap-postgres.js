@@ -1,23 +1,16 @@
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
 import { clientAddress, inNetworks } from './client-network.js';
 import { fail } from './receiving.js';
 
 // key, worksheet heading, default width, PostgreSQL column, source section
 export const sapColumns = [
-  ['supplierName', 'SUPPLIER', 24, 'supplier_name', 'scheduling'],
-  ['plateNumber', 'PLATE NO.', 16, 'plate_number', 'scheduling'],
-  ['driverName', 'DRIVER NAME', 22, 'driver_name', 'scheduling'],
-  ['gateIn', 'GATE IN', 22, 'gate_in', 'system'],
-  ['gateOut', 'GATE OUT', 22, 'gate_out', 'system'],
-  ['destination', 'DESTINATION', 22, 'destination', 'shared'],
   ['deliveryDate', 'DELIVERY DATE/TIME', 23, 'delivery_date', 'system'],
   ['encodedBy', 'ENCODED BY', 20, 'encoded_by', 'sap'],
   ['item', 'MATERIAL CODE', 18, 'item', 'sap'],
   ['description', 'MATERIAL DESCRIPTION', 40, 'description', 'sap'],
   ['drNumber', 'DR NUMBER', 18, 'dr_number', 'sap'],
-  ['gatepassNumber', 'GATEPASS NUMBER', 20, 'gatepass_number', 'sap'],
   ['quantity', 'DR QUANTITY', 15, 'quantity', 'sap'],
-  ['uom', 'UOM', 10, 'uom', 'sap'],
   ['poNumber', 'PO NUMBER', 19, 'po_number', 'sap'],
   ['batch', 'SAP BATCH', 20, 'batch', 'sap'],
   ['breakdown', 'BREAKDOWN', 24, 'breakdown', 'sap'],
@@ -26,6 +19,13 @@ export const sapColumns = [
   ['matdoc', 'MATERIAL DOCUMENT', 22, 'matdoc', 'sap'],
   ['supplierLot', "SUPPLIER'S LOT", 22, 'supplier_lot', 'sap'],
   ['remarks', 'REMARKS', 32, 'remarks', 'sap'],
+  ['supplierName', 'SUPPLIER', 24, 'supplier_name', 'scheduling'],
+  ['plateNumber', 'PLATE NO.', 16, 'plate_number', 'scheduling'],
+  ['driverName', 'DRIVER NAME', 22, 'driver_name', 'scheduling'],
+  ['gateIn', 'GATE IN', 22, 'gate_in', 'system'],
+  ['gateOut', 'GATE OUT', 22, 'gate_out', 'system'],
+  ['destination', 'DESTINATION', 22, 'destination', 'shared'],
+  ['gatepassNumber', 'GATEPASS NUMBER', 20, 'gatepass_number', 'sap'],
   ['inventoryController', 'INVENTORY CONTROLLER', 24, 'inventory_controller', 'warehouse'],
   ['receivingController', 'RECEIVING CONTROLLER', 24, 'receiving_controller', 'warehouse'],
   ['helperCount', 'NO. OF HELPER', 16, 'helper_count', 'warehouse'],
@@ -40,7 +40,7 @@ export const sapColumns = [
   ['qaDisposition', 'QA DISPOSITION', 20, 'qa_disposition', 'warehouse'],
 ];
 
-const sapFields = ['destination', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'uom', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks'];
+const sapFields = ['destination', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks'];
 const warehouseFields = ['inventoryController', 'receivingController', 'helperCount', 'truckType', 'actualReceived', 'palletCount', 'warehouseRemarks', 'qaStart', 'qaEnd', 'qaDisposition'];
 const adminFields = [...new Set([...sapFields, ...warehouseFields])];
 
@@ -54,6 +54,12 @@ export function sapEditableColumns(role) {
 
 export function sapCanFormat(role) {
   return role === 'sap' || role === 'admin';
+}
+
+export function encodedByName(name) {
+  const parts = String(name || 'SAP Analyst').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts[0] || 'SAP Analyst';
+  return `${parts[0][0].toUpperCase()}. ${parts.at(-1)}`;
 }
 
 const identifier = value => {
@@ -142,7 +148,7 @@ export function createSapRepository() {
         ON CONFLICT (record_key) DO NOTHING`, [JSON.stringify(records)]);
       records.forEach(row => synced.add(row.record_key));
     },
-    async page(offset, limit, search = '') {
+    async page(offset, limit, search = '', sort = 'desc') {
       await initialize();
       const term = String(search || '').trim().slice(0, 200);
       const args = [limit + 1, offset];
@@ -152,7 +158,8 @@ export function createSapRepository() {
         const searchable = ['record_key', 'supplier', ...sapColumns.map(([, , , db]) => db)];
         where = `WHERE concat_ws(' ', ${searchable.map(identifier).join(',')}) ILIKE $3`;
       }
-      const result = await pool.query(`SELECT * FROM ${table} ${where} ORDER BY id DESC LIMIT $1 OFFSET $2`, args);
+      const direction = String(sort).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+      const result = await pool.query(`SELECT * FROM ${table} ${where} ORDER BY id ${direction} LIMIT $1 OFFSET $2`, args);
       return { rows: result.rows.slice(0, limit).map(decode), hasMore: result.rows.length > limit };
     },
     async byKeys(keys) {
@@ -166,6 +173,28 @@ export function createSapRepository() {
     async forShipment(id) {
       await initialize();
       return (await pool.query(`SELECT * FROM ${table} WHERE shipment_id=$1 ORDER BY id`, [id])).rows.map(decode);
+    },
+    async forClearance(shipment) {
+      await initialize();
+      const materialCodes = [...new Set((shipment.items || []).map(item => String(item.materialCode || '').trim()).filter(Boolean))];
+      const drNumbers = [...new Set([shipment.drNumber, ...(shipment.items || []).map(item => item.dnNumber)].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean))];
+      const poNumbers = [...new Set([shipment.poNumber, ...(shipment.items || []).map(item => item.poNumber)].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean))];
+      const result = await pool.query(`SELECT * FROM ${table}
+        WHERE shipment_id=$1
+          OR (${identifier('item')} <> '' AND ${identifier('item')}=ANY($2::text[]))
+          OR (${identifier('dr_number')} <> '' AND ${identifier('dr_number')}=ANY($3::text[]))
+          OR (${identifier('po_number')} <> '' AND ${identifier('po_number')}=ANY($4::text[]))
+        ORDER BY CASE WHEN shipment_id=$1 THEN 0 ELSE 1 END, id DESC LIMIT 250`, [shipment.id, materialCodes, drNumbers, poNumbers]);
+      return result.rows.map(decode);
+    },
+    async add(values, name) {
+      await initialize();
+      const key = `manual:${randomUUID()}`;
+      const record = Object.fromEntries(sapColumns.map(([field, , , db]) => [db, String(field === 'encodedBy' ? encodedByName(name) : values?.[field] ?? '')]));
+      const result = await pool.query(`INSERT INTO ${table} (record_key, supplier, ${sapColumns.map(([, , , db]) => identifier(db)).join(',')})
+        VALUES ($1, $2, ${sapColumns.map((_, index) => `$${index + 3}`).join(',')}) RETURNING *`,
+      [key, record.supplier_name || '', ...sapColumns.map(([, , , db]) => record[db])]);
+      return decode(result.rows[0]);
     },
     async save(rows, name, role) {
       await initialize();
@@ -183,7 +212,7 @@ export function createSapRepository() {
             assignments.push(`${identifier(db)}=$${args.length}`);
           }
           if ((role === 'sap' || role === 'admin') && assignments.length) {
-            args.push(name);
+            args.push(encodedByName(name));
             assignments.push(`${identifier('encoded_by')}=$${args.length}`);
           }
           if (formatAllowed && row.formats) {

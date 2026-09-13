@@ -1,0 +1,21 @@
+For the SAP Analysis:
+If I scroll, I want to auto load more, not click load 50 more.
+
+For the Dock Control:
+Ugly AF cuh, remove the Green thing surrounding it, abnoxious looking ahh. 
+
+For the Delivery Schedule:
+Umm, where's the feature wherein you can change the schedule? Like changing the delivery for each ticket (ticket is the entry), then notifying the supplier whenever it changes.
+
+Put the Dressings/Savoury Filter at the top while putting the Import SDS and Updated SDS at the bottom of the Delivery Scheduling including the delivery change (like the company is rescheduling instead of putting the SDS again and again)
+
+Then keep the Approved Deliveries, Rescheduling, Day/Week Filter, and Calendar filter there.
+
+For the admin:
+Can we put 3 sections for the Admin? Admin for Both, Admin for Dressings, Admin for Savoury. We generally wanna see all as admin right? But if there's multiple people using dressings and savoury at the same time, and they have their own focus, then it's gonna be a pain. So just make an admin for both that sees everything, then admin for dressings and admin for savoury. 
+This generally means its separated mkay? So if I have an account made by Dressings, then the delivery is only for dressings, all accounts are for dressings, except for security wherein it doesnt matter if dressings or savoury, they can see it all.
+So this means one thing as well, the toggle for savoury is dressing is removed. They can only see for their specific place. Except security again, they can see it all ahha.
+
+
+For the SAP Analysis:
+Remove the Hide rows, show rows in the options, it doesnt do anyuthing haha. Remove fill selected, clear delete contents, the 1000? what even is that. 
