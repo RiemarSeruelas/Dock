@@ -1,17 +1,2 @@
-For the schedule:
-Situation 2: It still happened, 2 trucks, both at 9:00am, both says 9:00am too, but the schedule put the other 9:00am to 11:00am. I tried checking Day/Week, the 2nd entry rlly is not on 9:00am
-But I checked the Supplier's acc, both 9:00am is there at 9:00am.
-Situation 5: I propose, accepted, and it said 10:00am, but in the calendar, it's possitioned in 12pm, this is from the admin's side. The supplier's side it's on the right time.
-
-
-For the reject:
-I notice that when I propose, then accept it, then the supplier put the details, it becomes 1 hour again, it should automatically put 2 hours.
-
-For the ETA:
-I already put the location, but it dsoesnt show. In the Monitoring, is it possible to put the ETA beside the "In Transit", on its left side.
-
-For the OTIF:
-Can we remove the received delivery and see if it's otif? instead, it'll all be in the SAP Analysis.
-
-For the clearance: 
-Right now it's very messy, can you add filters?
+For the filter:
+It looks so cramped that its on top of one another
