@@ -1,44 +1,17 @@
-For Admins:
-If Im using an admin for both, I can see all right? If Im admin in one area, like sample, dressing. I wont be able to see the "Both areas
-Site-wide administrators, Security, and Ecosystem
-0
-No matching accounts in this section.
+For confirm delivery:
+If it's one truck, it would be lock, I wont be able to see the change quantity, if it's 2 truck, thats when I can see the changable.
 
-" or "Savoury
-Accounts locked to Savoury deliveries
-0
-No matching accounts in this section." since it is locked in a specific account, only see their areas.
+For the Delivery Ticket:
 
-Same for the Ecosystem, if Im using a dressing account, in ecosystem, I would be able to send it to Dressings only, so it's locked to Dressings.
+Truck & driver
+VER-4535
+Broi · +639550950526
+Can you make this look bigger, I rlly cant see it haha.
 
-Also, can you separate the accounts per role, especially the supplier, put them at the top so we can see them all.
+And separate DR/PO
 
-For the ecosystem:
-Is it possible to put Material code, and the Description, then the UOM, but when the data is sent, it will only send the data for the Material Code, so the Ecosystem will only receive the Material code, and in their app, it will already have the description ready, you get me?
+For deleting an account:
+Remoive this Enter the password of the administrator account you are currently using.
 
-For the importing sds:
-This account can only import dressings schedules, can you change this text to This account can only import dressings and ecosystem schedules
-
-For the Updated SDS:
-I downloaded it, but it still put the initial sds and the updated sds, if I updated it, make it so it's updated, it wont have the previous entry got it? And remove the Needs review: description supplied with trial placeholders, make it empty they will put something there manually haha.
-
-For the ETA: 
-We'll configure the location right? Make it so it takes into consideration the speed of 30km/hr - 40km/hr so that when it calculates, it's more accurate. Unless u have a better idea on how ETA is calculated without subscription.
-
-For the log in:
-The eye to see the password is gone, it doesnt appear anymore. Make it appear when im on the password area, if i click something else, thats when it vanishes.
-One secure portal for every on-prem application.
-Launch all your applications from a single place
-Links stay correct even when the server IP changes
-Replace this with the feature of the app itself.
-
-For the schedules:
-Whenever a sds is imported, make it so the time is around 2 hours per ticket. Just so it doesnt appear as 1 hour, unless we change it manually in the app itself.
-
-For whenever you remove an account:
-Put a password error if it's wrong, right now it doesnt do anything if it's wrong.
-
-For when making an account:
-Example, if it's a dressing account making an account for dressings, then the Access Area isnt a drop down, it's a lock in Dressings, and remove the word only for all, like it'll say Both, Savoury, and Dressings
-
-
+For making an account:
+The password shower is gone
