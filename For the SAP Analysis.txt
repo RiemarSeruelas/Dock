@@ -21,3 +21,5 @@ If there's only 1 acc for that role, it stretches so far for the row that it loo
 
 For the schedule: 
 I tried scheduling 2 trucks, but it says both 17:00pm, but in the calendar it's aligned to 5:00pm-7pm, then the other is 7pm-9pm(this is for ecosystem). But in the Ajinomoto account, I have delivery in dressings and ecosystem, the dressings says 5:00pm-7:00pm, but the ecosystem has 7-9, then the other is 8-10??? Why is it all differnet?
+
+Also, for the trial and error, can you give me every single scenario that I can try. Like what if it's proposed alternative, what if it's different time. Every single scenario for the trial and error so I can see all possible bugs.
