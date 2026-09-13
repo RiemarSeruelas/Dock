@@ -83,6 +83,12 @@ const toTime = (value) => {
   return `${pad(hour)}:${pad(minute)}`;
 };
 
+const defaultEndTime = (startTime) => {
+  const [hour, minute] = String(startTime || "12:00").split(":").map(Number);
+  const endMinutes = Math.min(23 * 60 + 59, hour * 60 + minute + 120);
+  return `${pad(Math.floor(endMinutes / 60))}:${pad(endMinutes % 60)}`;
+};
+
 const toNumber = (value) => {
   const number = Number(String(value ?? "").replaceAll(",", "").trim());
   return Number.isFinite(number) ? number : null;
@@ -215,7 +221,7 @@ export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
 
       const parsedDate = toDate(rawDate, now);
       const parsedTime = toTime(rawTime);
-      const endTime = toTime(cellAt(worksheet, rowNumber, mapping.columns, "endTime"));
+      const suppliedEndTime = toTime(cellAt(worksheet, rowNumber, mapping.columns, "endTime"));
       const parsedQuantity = toNumber(rawQuantity);
       const rawUom = String(cellAt(worksheet, rowNumber, mapping.columns, "uom") || "").trim().toUpperCase();
       const site = String(cellAt(worksheet, rowNumber, mapping.columns, "site") || "").trim();
@@ -237,6 +243,7 @@ export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
       const uom = rawUom || "N/A";
       const deliveryDate = parsedDate || options.fallbackDate || toDate(now, now);
       const deliveryTime = parsedTime || "12:00";
+      const endTime = suppliedEndTime || defaultEndTime(deliveryTime);
 
       const po = poBySupplierMaterial.get(`${normalize(supplier)}|${normalize(materialCode)}`) || poByMaterial.get(normalize(materialCode)) || {};
       const poNumber = String(cellAt(worksheet, rowNumber, mapping.columns, "poNumber") || po.poNumber || "").trim();
@@ -259,7 +266,7 @@ export async function parseDeliveryWorkbook(buffer, fileName, options = {}) {
         poNumber,
         poBalance: po.poBalance ?? null,
         stillToBeDelivered: po.stillToBeDelivered ?? null,
-        remarks: [remarks, placeholderFields.length ? `Needs review: ${placeholderFields.join(", ")} supplied with trial placeholders` : ""].filter(Boolean).join(" · "),
+        remarks,
         placeholderFields,
         status: "ready",
         message: placeholderFields.length ? `Accepted with placeholders: ${placeholderFields.join(", ")}` : cancelled ? "Accepted; workbook marks this row cancelled" : alreadyReceived ? "Accepted; workbook marks this row received" : poNumber ? "Ready · PO matched" : "Ready · PO can be added later",

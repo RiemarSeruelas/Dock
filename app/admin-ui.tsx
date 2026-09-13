@@ -4,8 +4,8 @@ import { Eye, EyeOff, LogOut } from 'lucide-react';
 import { apiRequest, authenticatedFetch } from './api-client';
 import { Dialog } from './receiving-ui';
 import type { SessionUser, Shipment } from './types';
-export function AccountActivation({user,token,onUpdate,onLogout}:{user:SessionUser;token:string;onUpdate:(user:SessionUser)=>void;onLogout:()=>void}) {
-  const [code,setCode]=useState(''),[newPassword,setNewPassword]=useState(''),[confirm,setConfirm]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(user.verificationCodeSentAt?'A new code was sent to your email.':'');
+export function AccountActivation({user,token,onUpdate,onLogout,initialMessage=''}:{user:SessionUser;token:string;onUpdate:(user:SessionUser)=>void;onLogout:()=>void;initialMessage?:string}) {
+  const [code,setCode]=useState(''),[newPassword,setNewPassword]=useState(''),[confirm,setConfirm]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(initialMessage||(user.verificationCodeSentAt?'A new code was sent to your email.':''));
   const [showNew,setShowNew]=useState(false),[showConfirm,setShowConfirm]=useState(false);
   const run=async(path:string,body:unknown)=>{setBusy(true);setMessage('');try{return await apiRequest<{user?:SessionUser}>(token,path,'POST',body);}catch(error){setMessage(error instanceof Error?error.message:'Unable to complete this step');return null;}finally{setBusy(false);}};
   const hideWhenFocusLeaves=(event:React.FocusEvent<HTMLSpanElement>,hide:()=>void)=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))hide();};

@@ -61,13 +61,13 @@ export function registerAdminOperations({ app, auth, allow, asyncRoute, store, c
   }));
   app.post('/api/ecosystem/materials', auth, allow('admin','ecosystem'), asyncRoute(async (req, res) => {
     const ecosystemId = req.user.role === 'ecosystem' ? req.user.supplierId : Number(req.body.ecosystemId);
-    const code = String(req.body.materialCode || '').trim().toUpperCase(); const uom = String(req.body.uom || '').trim().toUpperCase();
-    if (!code || code.length > 100 || !uom || uom.length > 20) fail('Enter a material code and UOM');
+    const code = String(req.body.materialCode || '').trim().toUpperCase(); const description = String(req.body.description || '').trim(); const uom = String(req.body.uom || '').trim().toUpperCase();
+    if (!code || code.length > 100 || !description || description.length > 240 || !uom || uom.length > 20) fail('Enter a material code, description, and UOM');
     const row = await store.update(state => {
       if (!state.users.some(user => user.role === 'ecosystem' && user.supplierId === ecosystemId)) fail('Choose an Ecosystem account');
       state.ecosystemMaterials ||= [];
       if (state.ecosystemMaterials.some(row => row.ecosystemId === ecosystemId && row.materialCode === code)) fail('That material code is already in the catalog', 409);
-      const row = { id: nextId(state.ecosystemMaterials), ecosystemId, materialCode: code, uom }; state.ecosystemMaterials.push(row); return row;
+      const row = { id: nextId(state.ecosystemMaterials), ecosystemId, materialCode: code, description, uom }; state.ecosystemMaterials.push(row); return row;
     }); res.status(201).json({ material: row });
   }));
   app.delete('/api/ecosystem/materials/:id', auth, allow('admin','ecosystem'), asyncRoute(async (req,res) => {
@@ -86,7 +86,7 @@ export function registerAdminOperations({ app, auth, allow, asyncRoute, store, c
       if (!owner || !supplier) fail('Ecosystem account not found');
       if (req.body.requestId && state.shipments.some(row=>row.ecosystemRequestId===req.body.requestId && row.requestedBy===req.user.id)) fail('This request has already been submitted',409);
       let itemId=Math.max(0,...state.shipments.flatMap(row=>row.items.map(item=>item.id)))+1;
-      const materialItems=items.map(item=>{const material=(state.ecosystemMaterials||[]).find(row=>row.id===Number(item.id)&&row.ecosystemId===ecosystemId); const quantity=Number(item.quantity); if(!material||!Number.isFinite(quantity)||quantity<=0) fail('Select catalog materials with positive quantities'); return {id:itemId++,materialCode:material.materialCode,materialName:'',quantity,uom:material.uom,deliverySite:area,palletCount:0,poNumber:''};});
+      const materialItems=items.map(item=>{const material=(state.ecosystemMaterials||[]).find(row=>row.id===Number(item.id)&&row.ecosystemId===ecosystemId); const quantity=Number(item.quantity); if(!material||!Number.isFinite(quantity)||quantity<=0) fail('Select catalog materials with positive quantities'); return {id:itemId++,materialCode:material.materialCode,materialName:String(material.description||''),quantity,uom:material.uom,deliverySite:area,palletCount:0,poNumber:''};});
       const id=nextId(state.shipments); const delivery={id,supplierId:ecosystemId,supplier:supplier.name,vendorCode:supplier.vendorCode,ecosystemRequestId:String(req.body.requestId||''),requestedBy:req.user.id,shipmentNumber:nextCode('SHP',id,req.body.date),bookingReceipt:nextCode('BKG',id,req.body.date),scheduledDate:req.body.date,scheduledTime:req.body.time,status:'PROPOSED',bookingStatus:'PENDING_SUPPLIER',truckPlate:'',driverName:'',driverPhone:'',confirmedTruckLoads:[],items:materialItems,palletsScanned:0,palletsTotal:0,materialWeightKg:0};
       state.shipments.push(delivery); addNotification(state,owner,{title:'Delivery request from ULI',message:`${area} · ${req.body.date} ${req.body.time} · ${materialItems.map(item=>`${item.materialCode}: ${item.quantity} ${item.uom}`).join('; ')}`,shipment:delivery,requiresAction:true}); addAudit(state,req.user,'ECOSYSTEM_DELIVERY_REQUEST','Catalog materials requested',delivery.shipmentNumber);
       return { shipment: supplierSafeShipment(delivery), recipients: owner.emailVerifiedAt && owner.email ? [owner.email] : [] };

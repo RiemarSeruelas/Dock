@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import cors from "cors";
 import ExcelJS from "exceljs";
 import express from "express";
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import jwt from "jsonwebtoken";
 import multer from "multer";
@@ -209,20 +209,20 @@ const geocodeAddress = async (address, coordinateReference = "") => {
   throw new Error(`${[...new Set(failures)].join("; ")}. Paste a Google Maps link for a more exact location.`);
 };
 const freeTrafficProfile = (departureTime = new Date().toISOString()) => {
-  if (!FREE_TRAFFIC_ESTIMATE_ENABLED) return { multiplier: 1, label: "Traffic estimate disabled" };
+  if (!FREE_TRAFFIC_ESTIMATE_ENABLED) return { speedKph: null, label: "Speed estimate disabled" };
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(departureTime));
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const minuteOfDay = Number(values.hour || 0) * 60 + Number(values.minute || 0);
   const weekend = ["Sat", "Sun"].includes(values.weekday);
   if (weekend) {
-    if (minuteOfDay >= 9 * 60 && minuteOfDay < 20 * 60) return { multiplier: 1.2, label: "Weekend daytime" };
-    return { multiplier: 1.05, label: "Weekend off-peak" };
+    if (minuteOfDay >= 9 * 60 && minuteOfDay < 20 * 60) return { speedKph: 35, label: "Weekend daytime · 35 km/h" };
+    return { speedKph: 40, label: "Weekend off-peak · 40 km/h" };
   }
-  if (minuteOfDay >= 6 * 60 && minuteOfDay < 9 * 60 + 30) return { multiplier: 1.65, label: "Weekday morning peak" };
-  if (minuteOfDay >= 16 * 60 && minuteOfDay < 20 * 60) return { multiplier: 1.75, label: "Weekday evening peak" };
-  if (minuteOfDay >= 9 * 60 + 30 && minuteOfDay < 16 * 60) return { multiplier: 1.25, label: "Weekday daytime" };
-  if (minuteOfDay >= 20 * 60 && minuteOfDay < 22 * 60) return { multiplier: 1.15, label: "Weekday evening" };
-  return { multiplier: 1.05, label: "Weekday off-peak" };
+  if (minuteOfDay >= 6 * 60 && minuteOfDay < 9 * 60 + 30) return { speedKph: 30, label: "Weekday morning peak · 30 km/h" };
+  if (minuteOfDay >= 16 * 60 && minuteOfDay < 20 * 60) return { speedKph: 30, label: "Weekday evening peak · 30 km/h" };
+  if (minuteOfDay >= 9 * 60 + 30 && minuteOfDay < 16 * 60) return { speedKph: 35, label: "Weekday daytime · 35 km/h" };
+  if (minuteOfDay >= 20 * 60 && minuteOfDay < 22 * 60) return { speedKph: 35, label: "Weekday evening · 35 km/h" };
+  return { speedKph: 40, label: "Weekday off-peak · 40 km/h" };
 };
 const calculateOsrmRoute = async (origin, destination, departureTime = new Date().toISOString()) => {
   const base = ROUTING_API_URL.replace(/\/$/, "");
@@ -234,19 +234,21 @@ const calculateOsrmRoute = async (origin, destination, departureTime = new Date(
   const result = await response.json();
   const route = result?.routes?.[0];
   if (!route || !Number.isFinite(Number(route.distance)) || !Number.isFinite(Number(route.duration))) throw new Error("No drivable route was found between these addresses.");
+  const distanceKm = Math.round(Number(route.distance) / 100) / 10;
   const staticDurationMinutes = Math.max(1, Math.ceil(Number(route.duration) / 60));
   const profile = freeTrafficProfile(departureTime);
   const durationMinutes = FREE_TRAFFIC_ESTIMATE_ENABLED
-    ? Math.max(staticDurationMinutes, Math.ceil(staticDurationMinutes * profile.multiplier + TRAFFIC_ESTIMATE_BUFFER_MINUTES))
+    ? Math.max(1, Math.ceil((distanceKm / profile.speedKph) * 60 + TRAFFIC_ESTIMATE_BUFFER_MINUTES))
     : staticDurationMinutes;
   return {
-    distanceKm: Math.round(Number(route.distance) / 100) / 10,
+    distanceKm,
     durationMinutes,
     staticDurationMinutes,
     trafficDelayMinutes: Math.max(0, durationMinutes - staticDurationMinutes),
+    assumedSpeedKph: profile.speedKph,
     trafficAware: false,
     trafficModel: FREE_TRAFFIC_ESTIMATE_ENABLED ? "TIME_OF_DAY" : "NONE",
-    provider: FREE_TRAFFIC_ESTIMATE_ENABLED ? `OpenStreetMap / OSRM · ${profile.label} estimate` : "OpenStreetMap / OSRM · base route",
+    provider: FREE_TRAFFIC_ESTIMATE_ENABLED ? `OpenStreetMap / OSRM road distance · ${profile.label}` : "OpenStreetMap / OSRM · base route",
   };
 };
 const calculateRoute = async (origin, destination, departureTime = new Date().toISOString()) => {
@@ -312,12 +314,13 @@ const assignAvailableDock = (state, shipment) => {
 const syncAvailableDates = (state) => {
   state.settings.availableDates = [...new Set((state.settings.availableSlots || []).map((slot) => slot.date))].sort();
 };
-const ensureAvailabilityForTime = (state, date, time) => {
+const ensureAvailabilityForTime = (state, date, time, requestedEndTime = null) => {
   state.settings.availableSlots ||= [];
-  const existing = matchingAvailability(state, date, time, null);
+  const validRequestedEnd = validTime(requestedEndTime) && toMinutes(requestedEndTime) > toMinutes(time) ? requestedEndTime : null;
+  const existing = matchingAvailability(state, date, time, validRequestedEnd);
   if (existing) return existing;
   const startMinutes = Math.min(1380, Math.max(0, toMinutes(time)));
-  const endMinutes = Math.min(1439, startMinutes + 60);
+  const endMinutes = validRequestedEnd ? toMinutes(validRequestedEnd) : Math.min(1439, startMinutes + 120);
   const slot = { id: nextId(state.settings.availableSlots), date, startTime: toTime(startMinutes), endTime: toTime(endMinutes), label: "Imported delivery window" };
   state.settings.availableSlots.push(slot);
   syncAvailableDates(state);
@@ -366,13 +369,14 @@ const canAccessShipment = (user, shipment) => {
   return false;
 };
 const supplierHasAccount = (state, supplierId, area = null) => state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplierId) && (!area || area === "ECOSYSTEM" || !normalizeWorkArea(user.workArea) || normalizeWorkArea(user.workArea) === area));
-const supplierSafeShipment = (shipment) => ({
+const supplierSafeShipment = (shipment, includeMaterialName = false) => ({
   ...shipment,
   dppNumber: undefined,
   originalSchedule: undefined,
   items: (shipment.items || []).map((item) => ({
     id: item.id,
     materialCode: item.materialCode,
+    ...(includeMaterialName ? { materialName: item.materialName || "" } : {}),
     materialType: item.materialType || "",
     poNumber: item.poNumber || "",
     dnNumber: item.dnNumber || "",
@@ -453,6 +457,7 @@ await store.update(async (state) => {
   state.audit = Array.isArray(state.audit) ? state.audit : [];
   state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
   state.importBatches = Array.isArray(state.importBatches) ? state.importBatches : [];
+  state.ecosystemMaterials = Array.isArray(state.ecosystemMaterials) ? state.ecosystemMaterials : [];
   state.users = Array.isArray(state.users) ? state.users : [];
   if (!state.users.length) state.users = (await createInitialState()).users;
   const bootstrapAdminUsername = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim().toLowerCase();
@@ -531,6 +536,7 @@ await store.update(async (state) => {
     supplier.routeDurationMinutes = Number(supplier.routeDurationMinutes || 0) || null;
     supplier.routeStaticDurationMinutes = Number(supplier.routeStaticDurationMinutes || 0) || null;
     supplier.routeTrafficDelayMinutes = Number(supplier.routeTrafficDelayMinutes || 0) || null;
+    supplier.routeAssumedSpeedKph = Number(supplier.routeAssumedSpeedKph || 0) || null;
     supplier.routeTrafficAware = Boolean(supplier.routeTrafficAware);
     supplier.routeTrafficModel = ["LIVE", "TIME_OF_DAY", "NONE"].includes(supplier.routeTrafficModel) ? supplier.routeTrafficModel : supplier.routeTrafficAware ? "LIVE" : /estimate/i.test(String(supplier.routeProvider || "")) ? "TIME_OF_DAY" : "NONE";
     supplier.routeCalculatedAt = supplier.routeCalculatedAt || null;
@@ -544,6 +550,7 @@ await store.update(async (state) => {
   }
   let nextMaterialId = nextId(state.materials);
   for (const material of state.materials) { material.id ||= nextMaterialId++; material.code = String(material.code || `UNSPECIFIED-${material.id}`); material.name = String(material.name || "Material to review"); material.type = String(material.type || "RM"); material.uom = String(material.uom || "N/A"); material.shelfLifeDays = Number(material.shelfLifeDays || 0); material.unitsPerPallet = Number(material.unitsPerPallet || 0); material.storageZone = String(material.storageZone || "To review"); }
+  for (const material of state.ecosystemMaterials) { material.materialCode = String(material.materialCode || "").trim().toUpperCase(); material.description = String(material.description || "").trim(); material.uom = String(material.uom || "N/A").trim().toUpperCase(); }
   let nextShipmentId = nextId(state.shipments);
   let nextItemId = Math.max(0, ...state.shipments.flatMap((shipment) => shipment.items || []).map((item) => Number(item.id) || 0), ...state.rdsRequests.flatMap((rds) => rds.items || []).map((item) => Number(item.id) || 0)) + 1;
   for (const shipment of state.shipments) {
@@ -577,6 +584,7 @@ await store.update(async (state) => {
     shipment.driverName = String(shipment.driverName || "To be assigned");
     shipment.driverPhone = String(shipment.driverPhone || "");
     shipment.items = Array.isArray(shipment.items) && shipment.items.length ? shipment.items.map((item) => makeItem(item.id || nextItemId++, item)) : [makeItem(nextItemId++, {})];
+    shipment.items.forEach((item) => { if (/^Needs review: .+ supplied with trial placeholders$/i.test(String(item.remarks || "").trim())) item.remarks = null; });
     shipment.materialWeightKg = Number(shipment.materialWeightKg || 0);
     shipment.palletsScanned = Number(shipment.palletsScanned || 0);
     shipment.palletsTotal = Number(shipment.palletsTotal ?? shipment.items.reduce((sum, item) => sum + item.palletCount, 0));
@@ -699,9 +707,9 @@ app.use(express.json({ limit: "2mb" }));
 
 const asyncRoute = (handler) => (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next);
 const rateLimitHandler = (request, response) => response.status(429).json({ message: "Too many API requests. Please wait and try again.", requestId: request.id });
-const apiLimiter = rateLimit({ windowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60000), limit: Number(process.env.API_RATE_LIMIT_MAX || 300), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
-const loginLimiter = rateLimit({ windowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.LOGIN_RATE_LIMIT_MAX || 10), standardHeaders: "draft-8", legacyHeaders: false, skipSuccessfulRequests: true, handler: rateLimitHandler });
-const refreshLimiter = rateLimit({ windowMs: Number(process.env.REFRESH_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.REFRESH_RATE_LIMIT_MAX || 30), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
+const apiLimiter = rateLimit({ windowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60000), limit: Number(process.env.API_RATE_LIMIT_MAX || 1200), standardHeaders: "draft-8", legacyHeaders: false, skip: request => ["/auth/login", "/auth/refresh"].includes(request.path), handler: rateLimitHandler });
+const loginLimiter = rateLimit({ windowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.LOGIN_RATE_LIMIT_MAX || 20), standardHeaders: "draft-8", legacyHeaders: false, keyGenerator: request => `${ipKeyGenerator(request.ip)}:${createHash("sha256").update(String(request.body?.username || "").trim().toLowerCase()).digest("hex").slice(0, 16)}`, skipSuccessfulRequests: true, handler: rateLimitHandler });
+const refreshLimiter = rateLimit({ windowMs: Number(process.env.REFRESH_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.REFRESH_RATE_LIMIT_MAX || 60), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
 const etaLimiter = rateLimit({ windowMs: Number(process.env.ETA_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.ETA_RATE_LIMIT_MAX || 30), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
 app.use("/api", apiLimiter);
 
@@ -747,20 +755,27 @@ app.post("/api/auth/login", loginLimiter, asyncRoute(async (request, response) =
   let verificationNotice = null;
   if (user.onboardingRequired && !user.emailVerifiedAt && !user.verificationCodeSentAt && user.email && !placeholderEmail(user.email)) {
     if (emailSender) {
-      const code = String(randomInt(100000, 1000000));
-      const notification = await emailNotifications.sendVerificationCode({ sender: emailSender, recipient: user.email, code });
-      if (notification.status === "SENT") {
-        await store.update((draft) => {
-          const current = draft.users.find((row) => Number(row.id) === Number(user.id));
-          if (!current || current.emailVerifiedAt || current.verificationCodeSentAt) return;
-          current.emailVerificationHash = createHash("sha256").update(code).digest("hex");
-          current.emailVerificationExpiresAt = new Date(Date.now() + 10 * 60000).toISOString();
-          current.emailVerificationAttempts = 0;
-          current.verificationCodeSentAt = new Date().toISOString();
-        });
-        verificationNotice = "A new code was sent to your email.";
-      } else verificationNotice = notification.message || "The verification code could not be sent.";
+      try {
+        const code = String(randomInt(100000, 1000000));
+        const notification = await emailNotifications.sendVerificationCode({ sender: emailSender, recipient: user.email, code });
+        if (notification.status === "SENT") {
+          await store.update((draft) => {
+            const current = draft.users.find((row) => Number(row.id) === Number(user.id));
+            if (!current || current.emailVerifiedAt || current.verificationCodeSentAt) return;
+            current.emailVerificationHash = createHash("sha256").update(code).digest("hex");
+            current.emailVerificationExpiresAt = new Date(Date.now() + 10 * 60000).toISOString();
+            current.emailVerificationAttempts = 0;
+            current.verificationCodeSentAt = new Date().toISOString();
+          });
+          verificationNotice = "A new code was sent to your email.";
+        } else verificationNotice = notification.message || "Signed in, but the verification code could not be sent. Check SMTP, then use Resend code.";
+      } catch (error) {
+        console.error(`[email] New-account verification failed: ${error.message}`);
+        verificationNotice = "Signed in, but the verification code could not be sent. Check SMTP, then use Resend code.";
+      }
     } else verificationNotice = "Email delivery is not configured. Use Resend after SMTP is configured.";
+  } else if (user.onboardingRequired && !user.emailVerifiedAt && placeholderEmail(user.email)) {
+    verificationNotice = "This account uses a placeholder email. Ask an administrator to replace it with your real email before activation.";
   }
   const currentUser = (await store.read()).users.find((row) => Number(row.id) === Number(user.id)) || user;
   response.json({ ...await issueSession(currentUser, request, response), verificationNotice });
@@ -815,7 +830,7 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
     currentUser: publicUser(state.users.find(user => user.id === Number(_request.user.id))),
     shipments: shipments.map((shipment) => {
       const linked = supplierHasAccount(state, shipment.supplierId, shipmentWorkArea(shipment));
-      return { ...supplierSafeShipment(shipment), supplierAccountLinked: linked };
+      return { ...supplierSafeShipment(shipment, _request.user.role === "ecosystem"), supplierAccountLinked: linked };
     }).sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)),
     rdsRequests: [],
     materials: [],
@@ -1362,7 +1377,7 @@ app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUploa
   const preview = await parseDeliveryWorkbook(request.file.buffer, request.file.originalname, { fallbackDate });
   if (normalizeWorkArea(request.user.workArea) && normalizeWorkArea(request.user.workArea) !== "ECOSYSTEM") {
     const outsideArea = [...new Set(preview.rows.map((row) => normalizeWorkArea(row.site)).filter((area) => area && area !== "ECOSYSTEM" && area !== normalizeWorkArea(request.user.workArea)))];
-    if (outsideArea.length) return response.status(403).json({ message: `This account can only import ${String(request.user.workArea).toLowerCase()} schedules` });
+    if (outsideArea.length) return response.status(403).json({ message: `This account can only import ${String(request.user.workArea).toLowerCase()} and ecosystem schedules` });
   }
   const supplierByName = new Map(state.suppliers.map((supplier) => [supplier.name.trim().toLowerCase(), supplier]));
   const accountLinked = (row) => {
@@ -1507,7 +1522,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       const editableMatches = state.shipments.filter((shipment) => shipment.sdsImportIdentity === identity && shipment.bookingStatus === "PENDING_SUPPLIER" && !shipment.splitParentId && Number(shipment.sdsProposalId || shipment.id) === Number(shipment.id) && !(shipment.confirmedTruckLoads || []).length);
       const existing = editableMatches.length === 1 ? editableMatches[0] : null;
       if (existing && String(conflictDecisions[fingerprint]).toUpperCase() === "KEEP") { unchangedProposals += 1; unchangedRows += rows.length; continue; }
-      const availabilitySlot = ensureAvailabilityForTime(state, first.deliveryDate, first.deliveryTime);
+      const availabilitySlot = ensureAvailabilityForTime(state, first.deliveryDate, first.deliveryTime, first.endTime);
       const items = buildItems(rows, existing?.items || []);
       supplier.productPresets ||= [];
       for (const row of rows) {
@@ -1783,6 +1798,7 @@ app.patch("/api/settings/site-address", auth, allow("admin"), etaLimiter, asyncR
       supplier.routeDurationMinutes = null;
       supplier.routeStaticDurationMinutes = null;
       supplier.routeTrafficDelayMinutes = null;
+      supplier.routeAssumedSpeedKph = null;
       supplier.routeTrafficAware = false;
       supplier.routeTrafficModel = "NONE";
       supplier.routeCalculatedAt = null;
@@ -1817,6 +1833,7 @@ app.patch("/api/suppliers/:id/route", auth, allow("admin"), etaLimiter, asyncRou
       currentSupplier.routeDurationMinutes = route.durationMinutes;
       currentSupplier.routeStaticDurationMinutes = route.staticDurationMinutes;
       currentSupplier.routeTrafficDelayMinutes = route.trafficDelayMinutes;
+      currentSupplier.routeAssumedSpeedKph = route.assumedSpeedKph;
       currentSupplier.routeTrafficAware = route.trafficAware;
       currentSupplier.routeTrafficModel = route.trafficModel || "NONE";
       currentSupplier.routeCalculatedAt = new Date().toISOString();
@@ -1892,8 +1909,12 @@ app.post("/api/shipment-items/:id/documents", auth, allow("admin", "supplier"), 
 app.get("/api/schedule/export.xlsx", auth, allow("admin", "planner", "production"), asyncRoute(async (request, response) => {
   const state = await store.read();
   const requestedArea = normalizeWorkArea(request.query.area);
-  const rows = state.shipments
+  const accessibleRows = state.shipments
     .filter(shipment => canAccessShipment(request.user, shipment) && shipment.status !== "REJECTED" && (!requestedArea || shipmentWorkArea(shipment) === requestedArea))
+  const latestBatchByIdentity = new Map();
+  for (const shipment of accessibleRows) if (shipment.sdsImportIdentity) latestBatchByIdentity.set(shipment.sdsImportIdentity, Math.max(Number(latestBatchByIdentity.get(shipment.sdsImportIdentity) || 0), Number(shipment.importBatchId || 0)));
+  const rows = accessibleRows
+    .filter(shipment => !shipment.sdsImportIdentity || Number(shipment.importBatchId || 0) === Number(latestBatchByIdentity.get(shipment.sdsImportIdentity) || 0))
     .sort((a, b) => `${a.scheduledDate}${a.scheduledTime}${a.supplier}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}${b.supplier}`));
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "DockFlow";
@@ -1907,7 +1928,7 @@ app.get("/api/schedule/export.xlsx", auth, allow("admin", "planner", "production
     week: item.deliveryWeek || "", site: item.deliverySite || shipmentWorkArea(shipment) || "", materialType: item.materialType || "",
     supplier: shipment.supplier, materialCode: item.materialCode, materialName: item.materialName || "", quantity: Number(item.quantity || 0), uom: item.uom || "",
     poNumber: item.poNumber || shipment.poNumber || "", deliveryDate: shipment.scheduledDate, deliveryTime: shipment.scheduledTime,
-    endTime: shipment.scheduledEndTime || "", remarks: item.remarks || "",
+    endTime: shipment.scheduledEndTime || "", remarks: /^Needs review: .+ supplied with trial placeholders$/i.test(String(item.remarks || "").trim()) ? "" : item.remarks || "",
   });
   sheet.getRow(1).height = 30;
   sheet.getRow(1).eachCell(cell => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1E38" } }; cell.alignment = { vertical: "middle", wrapText: true }; });

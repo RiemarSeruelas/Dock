@@ -15,6 +15,8 @@ import {
   ClipboardList,
   Clock3,
   Download,
+  Eye,
+  EyeOff,
   Gauge,
   History,
   ImageUp,
@@ -205,12 +207,14 @@ function Modal({ title, subtitle, children, onClose, wide = false, className = "
   );
 }
 
-function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) => void }) {
+function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string, verificationNotice?: string | null) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [logoAvailable, setLogoAvailable] = useState(true);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   const submit = async () => {
     if (!username.trim() || !password) return;
@@ -218,7 +222,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
     setError("");
     try {
       const result = await apiLogin(username, password);
-      onLogin(result.user, result.token);
+      onLogin(result.user, result.token, result.verificationNotice);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to sign in");
     } finally {
@@ -234,11 +238,11 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
           <span className="login-year">© 2026 DockFlow</span>
         </div>
         <div className="story-copy">
-          <h1>One secure portal for every on-prem application.</h1>
+          <h1>Plan, receive, and trace every delivery.</h1>
           <div className="login-feature-list">
-            <span><Boxes size={21} />Launch all your applications from a single place</span>
-            <span><Route size={21} />Links stay correct even when the server IP changes</span>
-            <span><ShieldCheck size={21} />Role-based access with full audit logging</span>
+            <span><Boxes size={21} />Import SDS schedules and confirm supplier bookings</span>
+            <span><Truck size={21} />Track every truck from Gate In through Gate Out</span>
+            <span><ShieldCheck size={21} />Keep supplier, warehouse, and SAP updates in one flow</span>
           </div>
         </div>
         <div className="journey-strip" aria-label="DockFlow delivery stages">
@@ -263,7 +267,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser, token: string) 
           <p>Sign in to access the DockFlow portal.</p>
           <div className="login-form" role="form" aria-label="DockFlow sign in" onKeyDown={(event) => { if (event.key === "Enter") void submit(); }}>
             <label>Email or username<input name="dockflow_identity" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="you@company.com" required /></label>
-            <label>Password<input name="dockflow_access_key" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="Enter your password" required /></label>
+            <label>Password<span className="login-password-field" onFocusCapture={() => setPasswordFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { setPasswordFocused(false); setPasswordVisible(false); } }}><input name="dockflow_access_key" type={passwordVisible ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="Enter your password" required />{passwordFocused && <button type="button" className="login-password-toggle" aria-label={passwordVisible ? "Hide password" : "Show password"} title={passwordVisible ? "Hide password" : "Show password"} onClick={() => setPasswordVisible((current) => !current)}>{passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}</button>}</span></label>
             {error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}
             <button type="button" className="button primary full" disabled={loading || !username.trim() || !password} onClick={() => void submit()}>{loading ? <><Loader2 className="spin" size={17} /> Signing in</> : <>Sign in <ArrowRight size={17} /></>}</button>
           </div>
@@ -572,13 +576,13 @@ function AdminCreateModal({ currentUser, onClose, onSubmit }: { currentUser: Ses
   const areaRequired = ["planner", "supplier", "warehouse", "sap"].includes(role);
   const areaChoice = role === "admin" || areaRequired;
   const roleOptions = ACCOUNT_ROLE_OPTIONS.filter((option) => !currentUser.workArea || !["security", "ecosystem"].includes(option.role));
-  return <Modal title="Add user account" onClose={onClose}><form className="modal-form" onSubmit={async event => { event.preventDefault();if(busy)return;setBusy(true);setError("");try{await onSubmit({...form,email:form.email});}catch(error){setError(error instanceof Error ? error.message : "Unable to add account");}finally{setBusy(false);} }}><div className="form-grid"><label>Account display name<input value={form.name} onChange={event => set("name", event.target.value)} required /></label><label>Username<input value={form.username} onChange={event => set("username", event.target.value.toLowerCase())} required /></label>{needsEmail && <label>Email<input type="email" value={form.email} onChange={event => set("email", event.target.value.toLowerCase())} required /></label>}<label>Initial password<input type="password" minLength={8} value={form.password} onChange={event => set("password", event.target.value)} required /></label><label>Account role<select value={form.role} onChange={event => { const nextRole = event.target.value; setForm(current => ({ ...current, role: nextRole, workArea: currentUser.workArea || (nextRole === "admin" ? "" : "DRESSINGS") })); }}>{roleOptions.map(({ role: optionRole, label }) => <option value={optionRole} key={optionRole}>{label}</option>)}</select></label>{areaChoice && <label>Access area<select value={form.workArea} disabled={Boolean(currentUser.workArea)} onChange={event => set("workArea", event.target.value as WorkArea)} required={areaRequired}>{role === "admin" && !currentUser.workArea && <option value="">Both areas</option>}<option value="DRESSINGS">Dressings only</option><option value="SAVOURY">Savoury only</option></select></label>}</div>{error&&<p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={busy}><Plus size={17} /> Add account</button></div></form></Modal>;
+  return <Modal title="Add user account" onClose={onClose}><form className="modal-form" onSubmit={async event => { event.preventDefault();if(busy)return;setBusy(true);setError("");try{await onSubmit({...form,email:form.email});}catch(error){setError(error instanceof Error ? error.message : "Unable to add account");}finally{setBusy(false);} }}><div className="form-grid"><label>Account display name<input value={form.name} onChange={event => set("name", event.target.value)} required /></label><label>Username<input value={form.username} onChange={event => set("username", event.target.value.toLowerCase())} required /></label>{needsEmail && <label>Email<input type="email" value={form.email} onChange={event => set("email", event.target.value.toLowerCase())} required /></label>}<label>Initial password<input type="password" minLength={8} value={form.password} onChange={event => set("password", event.target.value)} required /></label><label>Account role<select value={form.role} onChange={event => { const nextRole = event.target.value; setForm(current => ({ ...current, role: nextRole, workArea: currentUser.workArea || (nextRole === "admin" ? "" : "DRESSINGS") })); }}>{roleOptions.map(({ role: optionRole, label }) => <option value={optionRole} key={optionRole}>{label}</option>)}</select></label>{areaChoice && <label>Access area{currentUser.workArea ? <span className="locked-access-area"><ShieldCheck size={17} /><span><b>{currentUser.workArea === "DRESSINGS" ? "Dressings" : "Savoury"}</b><small>Locked to your administrator area</small></span></span> : <select value={form.workArea} onChange={event => set("workArea", event.target.value as WorkArea)} required={areaRequired}>{role === "admin" && <option value="">Both</option>}<option value="DRESSINGS">Dressings</option><option value="SAVOURY">Savoury</option></select>}</label>}</div>{error&&<p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={busy}><Plus size={17} /> Add account</button></div></form></Modal>;
 }
 
 function DeleteAccountModal({ account, onClose, onDelete }: { account: SessionUser; onClose: () => void; onDelete: (password: string) => Promise<void> | void }) {
-  const [password, setPassword] = useState(""), [busy, setBusy] = useState(false);
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (busy) return; setBusy(true); try { await onDelete(password); } catch { setBusy(false); } };
-  return <Modal title={`Delete ${account.name}?`} subtitle="The login will be removed, but supplier, booking, scan, history, and report records will stay." onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="deletion-warning"><Trash2 size={19} /><span><b>This deletes access only</b><small>Enter the password of the administrator account you are currently using.</small></span></div><label>Administrator password<input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button danger" disabled={busy || !password}>{busy ? <Loader2 className="spin" size={17} /> : <Trash2 size={17} />} Delete account</button></div></form></Modal>;
+  const [password, setPassword] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (busy) return; setBusy(true); setError(""); try { await onDelete(password); } catch (reason) { setError(reason instanceof Error ? reason.message : "The administrator password is incorrect."); setBusy(false); } };
+  return <Modal title={`Delete ${account.name}?`} subtitle="The login will be removed, but supplier, booking, scan, history, and report records will stay." onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="deletion-warning"><Trash2 size={19} /><span><b>This deletes access only</b><small>Enter the password of the administrator account you are currently using.</small></span></div><label>Administrator password<input autoFocus type="password" value={password} onChange={(event) => { setPassword(event.target.value); setError(""); }} required /></label>{error && <div className="form-error" role="alert"><AlertTriangle size={16} />{error}</div>}<div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button danger" disabled={busy || !password}>{busy ? <Loader2 className="spin" size={17} /> : <Trash2 size={17} />} Delete account</button></div></form></Modal>;
 }
 
 function VerifyAccountEmailModal({ account, onClose, onSaveEmail, onSendCode, onVerify }: { account: SessionUser; onClose: () => void; onSaveEmail: (account: SessionUser, email: string) => Promise<void>; onSendCode: (account: SessionUser) => Promise<void>; onVerify: (account: SessionUser, code: string) => Promise<void> }) {
@@ -592,7 +596,7 @@ function VerifyAccountEmailModal({ account, onClose, onSaveEmail, onSendCode, on
 function SupplierEtaModal({ supplier, siteConfigured, onClose, onCalculate }: { supplier: SupplierAccount; siteConfigured: boolean; onClose: () => void; onCalculate: (address: string, mapReference: string) => Promise<void> | void }) {
   const [address, setAddress] = useState(supplier.originAddress || ""), [mapReference, setMapReference] = useState(""), [busy, setBusy] = useState(false);
   const submit = async (event: React.FormEvent) => { event.preventDefault(); if (busy) return; setBusy(true); try { await onCalculate(address, mapReference); } catch { setBusy(false); } };
-  return <Modal title={`${supplier.name} ETA`} subtitle="Free road routing with a Manila time-of-day traffic estimate. No paid routing key is required." onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="eta-route-preview"><span><small>From</small><b>{address || "Supplier dispatch address"}</b></span><ArrowRight size={18} /><span><small>To</small><b>{siteConfigured ? "Protected receiving site" : "Set the receiving address first"}</b></span></div><label>Supplier dispatch address<input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, city, province, postal code" minLength={6} required /></label><label>Google Maps link (optional)<input value={mapReference} onChange={(event) => setMapReference(event.target.value)} placeholder="Paste the Google Maps link" /></label><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={busy || !siteConfigured || address.trim().length < 6}>{busy ? <Loader2 className="spin" size={17} /> : <Route size={17} />} Calculate & save ETA</button></div></form></Modal>;
+  return <Modal title={`${supplier.name} ETA`} subtitle="Free OSRM road distance with a Manila time-based 30–40 km/h speed estimate. No paid routing key is required." onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="eta-route-preview"><span><small>From</small><b>{address || "Supplier dispatch address"}</b></span><ArrowRight size={18} /><span><small>To</small><b>{siteConfigured ? "Protected receiving site" : "Set the receiving address first"}</b></span></div><label>Supplier dispatch address<input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, city, province, postal code" minLength={6} required /></label><label>Google Maps link (optional)<input value={mapReference} onChange={(event) => setMapReference(event.target.value)} placeholder="Paste the Google Maps link" /></label><div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={busy || !siteConfigured || address.trim().length < 6}>{busy ? <Loader2 className="spin" size={17} /> : <Route size={17} />} Calculate & save ETA</button></div></form></Modal>;
 }
 
 function ReceivingSitePanel({ onUnlock, onSave }: { onUnlock: (password: string) => Promise<{ siteAddress: string; configured: boolean }>; onSave: (address: string, mapReference: string, password: string) => Promise<void> }) {
@@ -614,15 +618,27 @@ function AdminPage({ data, token, currentUser, onAddUser, onDeleteUser, onUnlock
     { key: "BOTH", title: "Both areas", helper: "Site-wide administrators, Security, and Ecosystem", accounts: matchingAccounts.filter(account => !account.workArea || account.workArea === "ECOSYSTEM") },
     { key: "DRESSINGS", title: "Dressings", helper: "Accounts locked to Dressings deliveries", accounts: matchingAccounts.filter(account => account.workArea === "DRESSINGS") },
     { key: "SAVOURY", title: "Savoury", helper: "Accounts locked to Savoury deliveries", accounts: matchingAccounts.filter(account => account.workArea === "SAVOURY") },
+  ].filter((group) => !currentUser.workArea || group.key === currentUser.workArea);
+  const roleSections: { role: Role; title: string }[] = [
+    { role: "supplier", title: "Suppliers" },
+    { role: "admin", title: "Administrators" },
+    { role: "planner", title: "Planner / Production" },
+    { role: "production", title: "Production" },
+    { role: "sap", title: "SAP Analysis" },
+    { role: "warehouse", title: "Warehouse" },
+    { role: "security", title: "Security" },
+    { role: "ecosystem", title: "Ecosystem" },
+    { role: "driver", title: "Truck drivers" },
+    { role: "qa", title: "Quality inspection" },
   ];
   const accountCard = (account: SessionUser) => {
     const RoleIcon = ROLE_ICONS[account.role];
     const supplier = data.suppliers.find((row) => Number(row.id) === Number(account.supplierId));
     const emailEnabled = Boolean(account.email);
-    return <article className="user-card" key={account.id} style={{"--company-hue": supplierHue(account.supplierId, account.name)} as CSSProperties}><span className="user-avatar">{initials(account.name)}</span><div><strong>{account.name}</strong><small>@{account.username}{emailEnabled && account.email ? ` · ${account.email}` : ""}</small>{supplier && <small className="account-eta">{supplier.routeDurationMinutes ? `ETA ${supplier.routeDurationMinutes} min · ${supplier.routeDistanceKm} km${supplier.routeTrafficModel === "TIME_OF_DAY" ? supplier.routeTrafficDelayMinutes ? ` · estimated traffic +${supplier.routeTrafficDelayMinutes} min` : " · estimated traffic" : " · base road time"}` : "ETA route not configured"}</small>}</div><span className="role-chip"><RoleIcon size={14} /> {accountRoleLabel(account)}</span><span className="account-actions">{supplier && <button className="icon-button" title="Configure ETA route" aria-label={`Configure ETA for ${account.name}`} onClick={() => setEtaSupplier(supplier)}><MapPinned size={16} /></button>}<button className="icon-button danger" title={account.id === currentUser.id ? "You cannot delete your current account" : "Delete account"} aria-label={`Delete ${account.name}`} disabled={account.id === currentUser.id} onClick={() => setDeleting(account)}><Trash2 size={16} /></button></span></article>;
+    return <article className="user-card" key={account.id} style={{"--company-hue": supplierHue(account.supplierId, account.name)} as CSSProperties}><span className="user-avatar">{initials(account.name)}</span><div><strong>{account.name}</strong><small>@{account.username}{emailEnabled && account.email ? ` · ${account.email}` : ""}</small>{supplier && <small className="account-eta">{supplier.routeDurationMinutes ? `ETA ${supplier.routeDurationMinutes} min · ${supplier.routeDistanceKm} km${supplier.routeAssumedSpeedKph ? ` · ${supplier.routeAssumedSpeedKph} km/h estimate` : ""}` : "ETA route not configured"}</small>}</div><span className="role-chip"><RoleIcon size={14} /> {accountRoleLabel(account)}</span><span className="account-actions">{supplier && <button className="icon-button" title="Configure ETA route" aria-label={`Configure ETA for ${account.name}`} onClick={() => setEtaSupplier(supplier)}><MapPinned size={16} /></button>}<button className="icon-button danger" title={account.id === currentUser.id ? "You cannot delete your current account" : "Delete account"} aria-label={`Delete ${account.name}`} disabled={account.id === currentUser.id} onClick={() => setDeleting(account)}><Trash2 size={16} /></button></span></article>;
   };
   return <div className="page-stack"><section className="hero-row"><div><span className="eyebrow">System control</span><h1>Administration</h1></div></section>
-    <section className="panel admin-panel"><div className="toolbar"><label className="search-box"><Search size={17} /><input placeholder="Search accounts" value={search} onChange={(event) => setSearch(event.target.value)} /></label><span className="admin-toolbar-actions"><button className="button secondary" onClick={() => setSiteOpen(true)}><MapPinned size={17} /> Receiving site</button><button className="button primary" onClick={() => setCreating(true)}><Plus size={17} /> Add account</button></span></div><div className="admin-account-groups">{accountGroups.map(group => <section className="admin-account-group" key={group.key}><header><span><b>{group.title}</b><small>{group.helper}</small></span><em>{group.accounts.length}</em></header>{group.accounts.length ? <div className="user-cards">{group.accounts.map(accountCard)}</div> : <p>No matching accounts in this section.</p>}</section>)}</div></section><EmailSchedule token={token}/>{siteOpen && <Modal title="Receiving site" subtitle="Protected destination settings" onClose={() => setSiteOpen(false)}><ReceivingSitePanel onUnlock={onUnlockSiteAddress} onSave={async (address, mapReference, password) => { await onSaveSiteAddress(address, mapReference, password); setSiteOpen(false); }}/></Modal>}{creating && <AdminCreateModal currentUser={currentUser} onClose={() => setCreating(false)} onSubmit={finishCreate} />}{deleting && <DeleteAccountModal account={deleting} onClose={() => setDeleting(null)} onDelete={async (password) => { await onDeleteUser(deleting, password); setDeleting(null); }} />}{etaSupplier && <SupplierEtaModal supplier={etaSupplier} siteConfigured={Boolean(data.settings.siteAddressConfigured)} onClose={() => setEtaSupplier(null)} onCalculate={async (address, mapReference) => { await onCalculateSupplierEta(etaSupplier, address, mapReference); setEtaSupplier(null); }} />}
+    <section className="panel admin-panel"><div className="toolbar"><label className="search-box"><Search size={17} /><input placeholder="Search accounts" value={search} onChange={(event) => setSearch(event.target.value)} /></label><span className="admin-toolbar-actions"><button className="button secondary" onClick={() => setSiteOpen(true)}><MapPinned size={17} /> Receiving site</button><button className="button primary" onClick={() => setCreating(true)}><Plus size={17} /> Add account</button></span></div><div className="admin-account-groups">{accountGroups.map(group => <section className="admin-account-group" key={group.key}><header><span><b>{group.title}</b><small>{group.helper}</small></span><em>{group.accounts.length}</em></header>{group.accounts.length ? <div className="admin-role-groups">{roleSections.map((section) => { const accounts = group.accounts.filter((account) => account.role === section.role); return accounts.length ? <section className="admin-role-group" key={section.role}><header><b>{section.title}</b><span>{accounts.length}</span></header><div className="user-cards">{accounts.map(accountCard)}</div></section> : null; })}</div> : <p>No matching accounts in this section.</p>}</section>)}</div></section><EmailSchedule token={token}/>{siteOpen && <Modal title="Receiving site" subtitle="Protected destination settings" onClose={() => setSiteOpen(false)}><ReceivingSitePanel onUnlock={onUnlockSiteAddress} onSave={async (address, mapReference, password) => { await onSaveSiteAddress(address, mapReference, password); setSiteOpen(false); }}/></Modal>}{creating && <AdminCreateModal currentUser={currentUser} onClose={() => setCreating(false)} onSubmit={finishCreate} />}{deleting && <DeleteAccountModal account={deleting} onClose={() => setDeleting(null)} onDelete={async (password) => { await onDeleteUser(deleting, password); setDeleting(null); }} />}{etaSupplier && <SupplierEtaModal supplier={etaSupplier} siteConfigured={Boolean(data.settings.siteAddressConfigured)} onClose={() => setEtaSupplier(null)} onCalculate={async (address, mapReference) => { await onCalculateSupplierEta(etaSupplier, address, mapReference); setEtaSupplier(null); }} />}
   </div>;
 }
 
@@ -705,6 +721,7 @@ export default function DockFlowApp() {
   const [companyDecisionShipment, setCompanyDecisionShipment] = useState<Shipment | null>(null);
   const [excelImport, setExcelImport] = useState(false);
   const [selfVerificationOpen, setSelfVerificationOpen] = useState(false);
+  const [activationNotice, setActivationNotice] = useState("");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -753,13 +770,15 @@ export default function DockFlowApp() {
     return () => clearApiSession();
   }, [user, token]);
 
-  const handleLogin = (nextUser: SessionUser, nextToken: string) => {
+  const handleLogin = (nextUser: SessionUser, nextToken: string, verificationNotice?: string | null) => {
     setUser(nextUser); setToken(nextToken); setView(ROLE_VIEWS[nextUser.role][0]);
+    setActivationNotice(verificationNotice || "");
     if (nextUser.workArea === "SAVOURY" || nextUser.workArea === "DRESSINGS") setReceivingArea(nextUser.workArea);
     localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token: nextToken }));
   };
   const activateUser = (nextUser: SessionUser) => {
     setUser(nextUser);
+    if (!nextUser.onboardingRequired || (nextUser.emailVerifiedAt && !nextUser.mustChangePassword)) setActivationNotice("");
     localStorage.setItem("dockflow-session", JSON.stringify({ user: nextUser, token }));
   };
   const logout = () => { void logoutSession().finally(() => { clearApiSession(); setUser(null); setToken(""); setData(EMPTY_DATA); localStorage.removeItem("dockflow-session"); }); };
@@ -860,7 +879,7 @@ export default function DockFlowApp() {
     try {
       const result = await apiRequest<{ supplier: SupplierAccount; trafficAware: boolean; trafficModel: "LIVE" | "TIME_OF_DAY" | "NONE" }>(token, `/api/suppliers/${supplier.id}/route`, "PATCH", { originAddress: address, mapReference });
       await refresh();
-      notify(`${supplier.name}: ${result.supplier.routeDurationMinutes} min over ${result.supplier.routeDistanceKm} km${result.trafficModel === "TIME_OF_DAY" ? " with the free time-of-day traffic estimate" : " using the base road time"}.`);
+      notify(`${supplier.name}: ${result.supplier.routeDurationMinutes} min over ${result.supplier.routeDistanceKm} km${result.supplier.routeAssumedSpeedKph ? ` at ${result.supplier.routeAssumedSpeedKph} km/h` : " using the base road time"}.`);
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : "The ETA route could not be calculated.");
       throw reason;
@@ -885,7 +904,7 @@ export default function DockFlowApp() {
   };
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
-  if (user.onboardingRequired && (!user.emailVerifiedAt || user.mustChangePassword)) return <AccountActivation user={user} token={token} onUpdate={activateUser} onLogout={logout}/>;
+  if (user.onboardingRequired && (!user.emailVerifiedAt || user.mustChangePassword)) return <AccountActivation user={user} token={token} initialMessage={activationNotice} onUpdate={activateUser} onLogout={logout}/>;
   const receivingData = user.role === "ecosystem" || user.workArea === "ECOSYSTEM" ? {...data, shipments: data.shipments.filter(row => row.destinationEcosystemId === user.supplierId || (!row.destinationEcosystemId && row.items.some(item => item.deliverySite?.toUpperCase().includes("ECOSYSTEM"))))} : {...data, shipments: data.shipments.filter(row => !row.items.some(item => item.deliverySite?.toUpperCase().includes("ECOSYSTEM")))};
   const schedulingData = user.role === "ecosystem" ? receivingData : data;
   const outgoingData = user.role === "ecosystem" ? {...data, shipments: data.shipments.filter(row => Number(row.supplierId) === Number(user.supplierId))} : data;

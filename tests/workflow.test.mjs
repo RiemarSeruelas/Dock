@@ -107,6 +107,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const blockedCors = await fetch(`${baseUrl}/api/auth/login`, { method: "OPTIONS", headers: { Origin: "http://evil.example", "Access-Control-Request-Method": "POST" } });
   assert.equal(blockedCors.status, 403);
 
+  for (let attempt = 0; attempt < 20; attempt += 1) assert.equal((await call("/api/auth/login", { method: "POST", body: { username: "blocked-user", password: "wrong" } })).response.status, 401);
+  assert.equal((await call("/api/auth/login", { method: "POST", body: { username: "blocked-user", password: "wrong" } })).response.status, 429);
   const admin = await login("admin", "admin123");
   const createAccount = async (body) => {
     const created = await call("/api/users", { token: admin.token, method: "POST", body: {email:`${body.username}.dockflow.test@gmail.com`,...body} });
@@ -309,8 +311,9 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(supplierRoute.response.status, 200);
   assert.equal(supplierRoute.result.supplier.routeDistanceKm, 12.3);
   assert.equal(supplierRoute.result.supplier.routeStaticDurationMinutes, 42);
-  assert.ok(supplierRoute.result.supplier.routeDurationMinutes > 42);
-  assert.equal(supplierRoute.result.supplier.routeTrafficDelayMinutes, supplierRoute.result.supplier.routeDurationMinutes - 42);
+  assert.ok([30,35,40].includes(supplierRoute.result.supplier.routeAssumedSpeedKph));
+  assert.equal(supplierRoute.result.supplier.routeDurationMinutes, Math.ceil(12.3 / supplierRoute.result.supplier.routeAssumedSpeedKph * 60 + 3));
+  assert.equal(supplierRoute.result.supplier.routeTrafficDelayMinutes, Math.max(0, supplierRoute.result.supplier.routeDurationMinutes - 42));
   assert.equal(supplierRoute.result.trafficModel, "TIME_OF_DAY");
 
   const rejectionWorkbook = new ExcelJS.Workbook();
@@ -462,15 +465,17 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal((await ecoScan(security.token, 'GATE')).response.status, 200);
   assert.equal((await ecoScan(eco.token, 'UNLOADING')).response.status, 200);
   assert.equal((await ecoScan(eco.token, 'RECEIVED', { outcome: 'FULL', items: inbound.items.map(item => ({ itemId: item.id, acceptedQuantity: item.quantity })) })).response.status, 200);
-  const added=await call('/api/ecosystem/materials',{token:eco.token,method:'POST',body:{materialCode:'ECO-100',uom:'KG'}});
+  const added=await call('/api/ecosystem/materials',{token:eco.token,method:'POST',body:{materialCode:'ECO-100',description:'Ecosystem ingredient',uom:'KG'}});
   assert.equal(added.response.status,201);
-  const added2=await call('/api/ecosystem/materials',{token:admin.token,method:'POST',body:{ecosystemId:ecoAccount.supplierId,materialCode:'ECO-200',uom:'PC'}});
+  const added2=await call('/api/ecosystem/materials',{token:admin.token,method:'POST',body:{ecosystemId:ecoAccount.supplierId,materialCode:'ECO-200',description:'Ecosystem packaging',uom:'PC'}});
   assert.equal(added2.response.status,201);
   const transfer={ecosystemId:ecoAccount.supplierId,items:[{id:added.result.material.id,quantity:9999},{id:added2.result.material.id,quantity:20}],date:'2026-09-12',time:'09:00',area:'DRESSINGS',requestId:'request-test-1'};
   const requested=await call('/api/ecosystem/transfers',{token:planner.token,method:'POST',body:transfer});
   assert.equal(requested.response.status,201,JSON.stringify(requested.result));
   assert.equal(requested.result.shipment.items.length,2);
   assert.equal(requested.result.shipment.supplierId,ecoAccount.supplierId);
+  const ecosystemRequestView=(await call('/api/bootstrap',{token:eco.token})).result.shipments.find(shipment=>shipment.id===requested.result.shipment.id);
+  assert.equal(ecosystemRequestView.items.find(item=>item.materialCode==='ECO-100').materialName,'Ecosystem ingredient');
   assert.equal(requested.result.notification.status,'SENT');
   assert.equal((await call('/api/ecosystem/transfers',{token:planner.token,method:'POST',body:transfer})).response.status,409);
   assert.equal((await call(`/api/shipments/${first.id}/clearance.pdf`,{token:supplier.token})).response.status,403);

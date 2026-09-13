@@ -57,7 +57,7 @@ export async function authenticatedFetch(path: string, init: RequestInit = {}, t
   return response;
 }
 
-export async function login(username: string, password: string): Promise<{ token: string; accessToken: string; accessTokenExpiresIn: string; user: SessionUser }> {
+export async function login(username: string, password: string): Promise<{ token: string; accessToken: string; accessTokenExpiresIn: string; user: SessionUser; verificationNotice?: string | null }> {
   const response = await fetchWithRequestId("/api/auth/login", {
     method: "POST",
     headers: JSON_HEADERS,

@@ -32,6 +32,7 @@ test("detects RM/PM schedules, enriches PO data, and accepts every nonblank row"
   assert.equal(preview.rows[2].deliveryDate, "2026-08-18");
   assert.match(preview.rows[2].message, /placeholders.*date/i);
   assert.equal(preview.rows[3].deliveryTime, "19:15");
+  assert.equal(preview.rows[3].endTime, "21:15");
   assert.match(preview.detectedSheets.find((sheet) => sheet.name === "PO download").role, /not imported/i);
 });
 
@@ -73,7 +74,9 @@ test("accepts repeated-looking rows, different materials, different dates, and m
   assert.equal(preview.rows[2].status, "ready");
   assert.equal(preview.rows[3].deliveryDate, "2026-08-20");
   assert.equal(preview.rows[3].deliveryTime, "12:00");
+  assert.equal(preview.rows[3].endTime, "14:00");
   assert.equal(preview.rows[3].uom, "N/A");
+  assert.equal(preview.rows[3].remarks, "");
   assert.match(preview.rows[3].message, /placeholders/i);
 });
 

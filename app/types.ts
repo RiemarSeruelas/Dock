@@ -205,6 +205,7 @@ export interface SupplierAccount {
   routeDurationMinutes?: number | null;
   routeStaticDurationMinutes?: number | null;
   routeTrafficDelayMinutes?: number | null;
+  routeAssumedSpeedKph?: number | null;
   routeTrafficAware?: boolean;
   routeTrafficModel?: "LIVE" | "TIME_OF_DAY" | "NONE";
   routeCalculatedAt?: string | null;
