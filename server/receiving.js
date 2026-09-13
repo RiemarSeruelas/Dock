@@ -4,6 +4,18 @@ export const fail = (message, status = 400) => { const error = new Error(message
 export const validDay = value => { if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false; const date = new Date(`${value}T00:00:00Z`); return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value; };
 export const validClock = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value || '');
 export const roundQuantity = n => Math.round(n * 1e6) / 1e6;
+export const defaultScheduleEnd = (start, duration = 120) => {
+  if (!validClock(start)) return null;
+  const [hour, minute] = start.split(':').map(Number);
+  const total = Math.min(1439, hour * 60 + minute + duration);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
+export const scheduleDurationMinutes = (start, end) => {
+  if (!validClock(start) || !validClock(end)) return null;
+  const [startHour, startMinute] = start.split(':').map(Number);
+  const [endHour, endMinute] = end.split(':').map(Number);
+  return endHour * 60 + endMinute - (startHour * 60 + startMinute);
+};
 export function normalizeSplits(proposal, input, date, time) {
   if (input !== undefined && !Array.isArray(input)) fail('Quantity allocations must be a list');
   const rows = input?.length ? input : proposal.items.map(item => ({ itemId: item.id, quantity: item.quantity, date, time }));
@@ -44,7 +56,13 @@ export function applySplits(state, proposal, nextId, nextCode) {
     delivery.originalSchedule ||= { date: original.scheduledDate, time: original.scheduledTime, items: original.items };
     delivery.scheduledDate = rows[0].date;
     delivery.scheduledTime = rows[0].time;
-    delivery.scheduledEndTime = null;
+    const approvedAlternativeEnd = rows[0].date === proposal.alternativeDate && rows[0].time === proposal.alternativeTime && validClock(proposal.alternativeEndTime) && proposal.alternativeEndTime > rows[0].time
+      ? proposal.alternativeEndTime
+      : null;
+    delivery.scheduledEndTime = approvedAlternativeEnd || defaultScheduleEnd(rows[0].time);
+    delivery.scheduleDurationSource = approvedAlternativeEnd ? 'MANUAL' : 'DEFAULT';
+    delivery.expectedDurationMinutes = scheduleDurationMinutes(delivery.scheduledTime, delivery.scheduledEndTime);
+    delivery.timeSlot = `${delivery.scheduledTime} - ${delivery.scheduledEndTime}`;
     delivery.shipmentNumber = nextCode('SHP', delivery.id, delivery.scheduledDate);
     delivery.bookingReceipt = nextCode('BKG', delivery.id, delivery.scheduledDate);
     delivery.items = original.items.filter(item => rows.some(row => row.itemId === item.id)).map(item => ({ ...item, id: created.length ? nextItem++ : item.id, sourceAllocationItemId: item.sourceAllocationItemId || item.id, quantity: roundQuantity(rows.filter(row => row.itemId === item.id).reduce((sum, row) => sum + row.quantity, 0)), supplierApprovedAt: null, assignedTruckPlate: null }));
@@ -87,7 +105,8 @@ export function createReplacements(state, shipment, nextId, nextCode) {
   let nextItem = Math.max(0, ...state.shipments.flatMap(s => s.items.map(item => item.id))) + 1;
   return [...groups.values()].map(rows => {
     const id = nextId(state.shipments);
-    const replacement = { id, shipmentNumber: nextCode('SHP', id, rows[0].date), bookingReceipt: nextCode('BKG', id, rows[0].date), supplier: shipment.supplier, supplierId: shipment.supplierId, vendorCode: shipment.vendorCode, destinationEcosystemId: shipment.destinationEcosystemId || null, replacementForId: shipment.id, isFollowUp: true, followUpLabel: 'Follow up', scheduledDate: rows[0].date, scheduledTime: rows[0].time, scheduledEndTime: null, status: 'PROPOSED', bookingStatus: 'PENDING_SUPPLIER', truckPlate: '', driverName: '', driverPhone: '', confirmedTruckLoads: [], palletsScanned: 0, palletsTotal: 0, materialWeightKg: 0, items: rows.map(row => ({ ...shipment.items.find(item => item.id === row.itemId), id: nextItem++, quantity: row.remainingQuantity, supplierApprovedAt: null, assignedTruckPlate: null, remarks: row.reason })) };
+    const scheduledEndTime = defaultScheduleEnd(rows[0].time);
+    const replacement = { id, shipmentNumber: nextCode('SHP', id, rows[0].date), bookingReceipt: nextCode('BKG', id, rows[0].date), supplier: shipment.supplier, supplierId: shipment.supplierId, vendorCode: shipment.vendorCode, destinationEcosystemId: shipment.destinationEcosystemId || null, replacementForId: shipment.id, isFollowUp: true, followUpLabel: 'Follow up', scheduledDate: rows[0].date, scheduledTime: rows[0].time, scheduledEndTime, expectedDurationMinutes: 120, timeSlot: `${rows[0].time} - ${scheduledEndTime}`, status: 'PROPOSED', bookingStatus: 'PENDING_SUPPLIER', truckPlate: '', driverName: '', driverPhone: '', confirmedTruckLoads: [], palletsScanned: 0, palletsTotal: 0, materialWeightKg: 0, items: rows.map(row => ({ ...shipment.items.find(item => item.id === row.itemId), id: nextItem++, quantity: row.remainingQuantity, supplierApprovedAt: null, assignedTruckPlate: null, remarks: row.reason })) };
     state.shipments.push(replacement);
     return replacement;
   });

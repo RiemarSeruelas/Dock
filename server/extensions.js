@@ -1,5 +1,5 @@
 import { registerClearance } from "./clearance.js";
-import { createSapRepository, sapCanFormat, sapColumns, sapEditableColumns, sapNetworkAllowed } from "./sap-postgres.js";
+import { calculateOtifValues, createSapRepository, sapCanFormat, sapColumns, sapEditableColumns, sapNetworkAllowed } from "./sap-postgres.js";
 import { registerAdminOperations } from "./admin-operations.js";
 import ExcelJS from 'exceljs';
 import { randomUUID } from 'node:crypto';
@@ -13,21 +13,27 @@ export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus 
   const saved = state.sapRows?.[key];
   const clearance = s.clearance?.[item.id] || {};
   const accepted = s.receipt?.items?.find(row => Number(row.itemId) === Number(item.id))?.acceptedQuantity;
+  const scheduledAt = Date.parse(`${s.scheduledDate}T${s.scheduledTime}:00+08:00`);
+  const gateInAt = Date.parse(s.gateInAt);
+  const onTime = Number.isFinite(scheduledAt) && Number.isFinite(gateInAt) ? gateInAt <= scheduledAt + Number(state.settings?.graceMinutes || 0) * 60000 : null;
+  const actualReceived = clearance.actualReceived ?? accepted ?? '';
   const defaults = {
     supplierName: s.supplier || '', plateNumber: s.truckPlate || '', driverName: s.driverName || '',
     gateIn: manila(s.gateInAt), gateOut: manila(s.gateOutAt), destination: item.deliverySite || s.originWorkArea || '',
-    deliveryDate: manila(s.gateInAt), encodedBy: '', item: item.materialCode, description: item.materialName || '',
+    deliveryDate: `${s.scheduledDate} ${s.scheduledTime}`, encodedBy: '', item: item.materialCode, description: item.materialName || '',
     drNumber: s.drNumber || item.dnNumber || '', gatepassNumber: '', quantity: item.quantity,
     poNumber: s.poNumber || item.poNumber || '', batch: item.batchNumber || '', breakdown: '',
     mfgDate: item.productionDate || '', expDate: item.expiryDate || '', matdoc: '', supplierLot: '', remarks: '',
     inventoryController: clearance.inventoryController || '', receivingController: clearance.receivingController || '',
     helperCount: clearance.helperCount ?? ([s.helper1Name,s.helper2Name].filter(Boolean).length || ''), truckType: clearance.truckType || '',
-    actualReceived: clearance.actualReceived ?? accepted ?? '', palletCount: clearance.palletCount || '',
-    warehouseRemarks: clearance.remarks || '', startUnloading: manila(s.unloadingAt), endUnloading: manila(s.receivedAt),
+    actualReceived, ...calculateOtifValues(onTime, item.quantity, actualReceived), palletCount: clearance.palletCount || '',
+    warehouseRemarks: clearance.remarks || '', startUnloading: manila(s.unloadingAt), endUnloading: manila(s.gateOutAt || s.receivedAt),
     qaStart: clearance.qaStart || '', qaEnd: clearance.qaEnd || '', qaDisposition: clearance.disposition || '',
   };
-  return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values: { ...defaults, ...saved?.values }, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
-})), ...(state.sapManualRows || []).map(row=>{const saved=state.sapRows?.[row.key];return saved?{...row,...saved,values:{...row.values,...saved.values}}:row;})];
+  const values = { ...defaults, ...saved?.values };
+  Object.assign(values, calculateOtifValues(onTime, values.quantity, values.actualReceived));
+  return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
+})), ...(state.sapManualRows || []).map(row=>{const saved=state.sapRows?.[row.key];const merged=saved?{...row,...saved,values:{...row.values,...saved.values}}:row;const values={...merged.values,...calculateOtifValues(merged.values?.onTime,merged.values?.quantity,merged.values?.actualReceived)};return{...merged,values};})];
 export function registerExtensions({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database }) {
   registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database });
   const sap = createSapRepository();

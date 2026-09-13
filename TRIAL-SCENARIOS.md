@@ -15,7 +15,7 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | Supplier A | Savoury | Same supplier name, separate area access |
 | Supplier B | Dressings | Confidentiality between suppliers |
 | Security | Both | Gate review and Gate in |
-| Warehouse | Dressings | Unloading, receiving, clearance, SAP fields |
+| Warehouse | Dressings | Unloading, clearance, SAP receiving fields |
 | Warehouse | Savoury | Area isolation |
 | SAP Analyst | Dressings | PostgreSQL rows and SAP editing |
 | SAP Analyst | Savoury | Area-specific SAP access |
@@ -159,6 +159,8 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | ALT-17 | Mark quantity Can’t deliver without reason | Submission is blocked |
 | ALT-18 | Mark all quantities Can’t deliver with reasons | Planner approval records unable-to-deliver outcome without fake booking |
 | ALT-19 | Reject an alternative, then import/update the schedule | App does not resurrect an already invalid stale response silently |
+| ALT-20 | Propose a new time without manually setting an end | Approved schedule automatically spans two hours |
+| ALT-21 | Approve, then add one or two trucks | Two-hour start/end window remains unchanged on every booking |
 
 ## 8. Schedule and calendar consistency
 
@@ -217,13 +219,10 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | SCAN-07 | Scan same stage twice | No duplicate transition/timestamp is created |
 | SCAN-08 | Warehouse scans Unloading before Gate in | Server blocks sequence |
 | SCAN-09 | Warehouse scans Unloading after Gate in | Unloading timestamp is recorded |
-| SCAN-10 | Record full, on-time receipt | In Full and OTIF are true |
-| SCAN-11 | Record full but late receipt | In Full true; OTIF false because Gate in was late |
-| SCAN-12 | Record short/rejected quantity | Accepted and outstanding quantities are correct |
-| SCAN-13 | Outstanding quantity without follow-up date/time | Completion is blocked |
-| SCAN-14 | Complete partial receipt with follow-up | Linked Follow up proposal is created |
-| SCAN-15 | Gate out before Received | Server blocks sequence |
-| SCAN-16 | Gate out after Received | Final timestamp and total site duration are recorded |
+| SCAN-10 | Try the old Received stage | Server rejects it as an unavailable stage |
+| SCAN-11 | Gate out before Unloading | Server blocks the sequence |
+| SCAN-12 | Gate out after Unloading | Gate-out and unloading-completion timestamps are recorded and the dock is released |
+| SCAN-13 | Repeat Gate out | No duplicate transition/timestamp is created |
 
 ## 12. SAP PostgreSQL worksheet
 
@@ -245,6 +244,13 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | SAP-14 | Apply formatting and row height | Formatting persists after refresh/restart |
 | SAP-15 | Export workbook | Leading zeros and saved formats remain intact |
 | SAP-16 | App syncs a Gate-in row that already has analyst edits | Existing edits are preserved |
+| SAP-17 | Gate in is within scheduled time plus grace | On Time is Yes |
+| SAP-18 | Gate in is later than scheduled time plus grace | On Time is No |
+| SAP-19 | Warehouse enters Actual Quantity Received equal to or above DR Quantity | In Full is Yes |
+| SAP-20 | Warehouse enters Actual Quantity Received below DR Quantity | In Full is No |
+| SAP-21 | On Time and In Full are both Yes | OTIF is Yes |
+| SAP-22 | Either On Time or In Full is No | OTIF is No |
+| SAP-23 | Actual Quantity Received is blank | In Full and OTIF stay blank, not falsely No |
 
 ## 13. Clearance and reports
 
@@ -256,9 +262,12 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | CLR-04 | Open a delivery with matching SAP DR/PO/material | Supplier, truck, quantity, batch/lot, and timestamps autofill |
 | CLR-05 | Enter Warehouse/QA fields and download | One A4 landscape page contains matching left/right copies |
 | CLR-06 | Delivery has multiple materials | Values are combined on one delivery page as designed |
+| CLR-07 | Filter by supplier and status | Only matching clearance entries remain |
+| CLR-08 | Filter by From and To dates | Only schedules inside the inclusive date range remain |
+| CLR-09 | Clear filters | Full clearance list returns |
 | RPT-01 | Change report month | Counts and rows follow selected month |
 | RPT-02 | Supplier opens report | Only that supplier’s deliveries appear |
-| RPT-03 | Full, late, partial, and follow-up records exist | OTIF denominator and exclusions follow documented rules |
+| RPT-03 | Open operational report | Old receipt-based OTIF fields are absent; OTIF remains in SAP Analysis |
 | RPT-04 | Export report Excel | Download matches visible month and role scope |
 
 ## 14. Responsive and recovery checks

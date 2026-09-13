@@ -21,9 +21,9 @@ const STATUS_META: Record<ShipmentStatus, { label: string; color: string }> = {
   UNLOADING: { label: "Unload", color: "orange" }, RECEIVED: { label: "Received", color: "green" }, GATE_OUT: { label: "Gate out", color: "teal" }, REJECTED: { label: "Rejected", color: "red" },
 };
 const statusOrder: ShipmentStatus[] = ["PROPOSED", "BOOKED", "IN_TRANSIT", "GATE_IN", "UNLOADING", "RECEIVED", "GATE_OUT", "REJECTED"];
-const journeySteps = ["Booking", "Trip", "Gate in", "Unload", "Received", "Gate out"];
-const journeyPosition: Record<ShipmentStatus, number> = { PROPOSED: 0, BOOKED: 1, IN_TRANSIT: 2, GATE_IN: 3, UNLOADING: 4, RECEIVED: 5, GATE_OUT: 6, REJECTED: 0 };
-const processRank: Record<ShipmentStatus, number> = { PROPOSED: 0, BOOKED: 1, IN_TRANSIT: 2, GATE_IN: 3, UNLOADING: 4, RECEIVED: 5, GATE_OUT: 6, REJECTED: 0 };
+const journeySteps = ["Booking", "Trip", "Gate in", "Unload", "Gate out"];
+const journeyPosition: Record<ShipmentStatus, number> = { PROPOSED: 0, BOOKED: 1, IN_TRANSIT: 2, GATE_IN: 3, UNLOADING: 4, RECEIVED: 4, GATE_OUT: 5, REJECTED: 0 };
+const processRank: Record<ShipmentStatus, number> = { PROPOSED: 0, BOOKED: 1, IN_TRANSIT: 2, GATE_IN: 3, UNLOADING: 4, RECEIVED: 4, GATE_OUT: 5, REJECTED: 0 };
 const formatDate = (date: string, short = false) => new Intl.DateTimeFormat("en-PH", short ? { month: "short", day: "numeric", year: "numeric" } : { weekday: "short", month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 const formatEta = (value?: string | null) => value ? new Intl.DateTimeFormat("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" }).format(new Date(value)) : null;
 const addDays = (date: string, days: number) => { const next = new Date(`${date}T12:00:00`); next.setDate(next.getDate() + days); return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`; };
@@ -31,7 +31,7 @@ const startOfWeek = (date: string) => { const value = new Date(`${date}T12:00:00
 const toMinutes = (time: string) => { const [hour, minute] = String(time || "00:00").split(":").map(Number); return hour * 60 + minute; };
 const colorFor = (shipment: Shipment) => supplierHue(shipment.supplierId, shipment.supplier);
 
-function StatusPill({ status, receipt }: { status: ShipmentStatus; receipt?: Shipment["receipt"] }) { const meta = STATUS_META[status]; return <span className={`status-pill status-${meta.color}`}><span />{meta.label}{receipt?.inFull === false ? " · Not in Full" : ""}</span>; }
+function StatusPill({ status }: { status: ShipmentStatus; receipt?: Shipment["receipt"] }) { const meta = STATUS_META[status]; return <span className={`status-pill status-${meta.color}`}><span />{meta.label}</span>; }
 
 type PositionedBooking = { shipment: Shipment; lane: number; lanes: number; start: number; end: number };
 
@@ -41,7 +41,7 @@ const layoutDayBookings = (shipments: Shipment[], date: string): PositionedBooki
     .map((shipment) => {
       const start = toMinutes(shipment.scheduledTime);
       const scheduledEnd = toMinutes(shipment.scheduledEndTime || shipment.scheduledTime);
-      const end = shipment.scheduledEndTime ? (scheduledEnd > start ? scheduledEnd : scheduledEnd + 1440) : start + 30;
+      const end = shipment.scheduledEndTime ? (scheduledEnd > start ? scheduledEnd : scheduledEnd + 1440) : Math.min(1439, start + 120);
       return { shipment, start, end: Math.max(start + 30, end) };
     })
     .sort((a, b) => a.start - b.start || a.end - b.end);
@@ -148,7 +148,7 @@ function ScheduleTimeline({ shipments, anchorDate, mode, showPending, canManage,
         const pendingSupplier = shipment.bookingStatus === "PENDING_SUPPLIER";
         const pendingCompany = shipment.bookingStatus === "PENDING_COMPANY";
         const pending = pendingSupplier || pendingCompany;
-        return <button type="button" className={`schedule-entry ${pending ? "proposal" : "approved"}`} style={{ "--event-hue": colorFor(shipment), top: `${Math.max(dayStart, start) / dayEnd * 100}%`, height: `${Math.max(2.1, (Math.min(dayEnd, end) - Math.max(dayStart, start)) / dayEnd * 100)}%`, left: `calc(${lane / lanes * 100}% + 4px)`, width: `calc(${100 / lanes}% - 8px)` } as CSSProperties} key={shipment.id} title={canManage ? "Click to change this delivery schedule" : "Click to view this delivery"} onClick={() => onOpenShipment(shipment)}>{canManage && <em className="schedule-edit-badge">Edit</em>}<b>{shipment.scheduledTime}</b><span>{pendingCompany ? "Company review" : pendingSupplier ? "Waiting for Confirmation" : shipment.truckPlate}</span><small>{shipment.supplier}{pending ? " · not booked yet" : " · booked"}</small></button>;
+        return <button type="button" className={`schedule-entry ${pending ? "proposal" : "approved"}`} style={{ "--event-hue": colorFor(shipment), position: "absolute", top: `${Math.max(dayStart, start) / dayEnd * 100}%`, height: `${Math.max(2.1, (Math.min(dayEnd, end) - Math.max(dayStart, start)) / dayEnd * 100)}%`, left: `calc(${lane / lanes * 100}% + 4px)`, width: `calc(${100 / lanes}% - 8px)` } as CSSProperties} key={shipment.id} title={canManage ? "Click to change this delivery schedule" : "Click to view this delivery"} onClick={() => onOpenShipment(shipment)}>{canManage && <em className="schedule-edit-badge">Edit</em>}<b>{shipment.scheduledTime}</b><span>{pendingCompany ? "Company review" : pendingSupplier ? "Waiting for Confirmation" : shipment.truckPlate}</span><small>{shipment.supplier}{pending ? " · not booked yet" : " · booked"}</small></button>;
       })}
     </div>)}
   </div>;
@@ -215,7 +215,7 @@ function SdsWorkflowPanel({ data, onOpenShipment, onReviewAlternative }: { data:
 function ScheduleEditModal({ shipment, onClose, onSubmit }: { shipment: Shipment; onClose: () => void; onSubmit: (shipment: Shipment, change: { scheduledDate: string; scheduledTime: string; scheduledEndTime: string; items: { id: number; quantity: number }[] }) => Promise<void> }) {
   const minutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
   const clock = (value: number) => `${String(Math.floor(value / 60) % 24).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
-  const [date, setDate] = useState(shipment.scheduledDate), [time, setTime] = useState(shipment.scheduledTime), [endTime, setEndTime] = useState(shipment.scheduledEndTime || clock(minutes(shipment.scheduledTime) + 60));
+  const [date, setDate] = useState(shipment.scheduledDate), [time, setTime] = useState(shipment.scheduledTime), [endTime, setEndTime] = useState(shipment.scheduledEndTime || clock(Math.min(1439, minutes(shipment.scheduledTime) + 120)));
   const [items, setItems] = useState(shipment.items.map(item => ({ id: item.id, code: item.materialCode, uom: item.uom, quantity: String(item.quantity) })));
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const save = async (event: React.FormEvent) => {
@@ -285,7 +285,7 @@ export function MonitoringPage({ data, theme, area, canSwitchArea, onAreaChange,
       <LiveClock className="monitor-tv-clock" showZone={false} showDate />
       <button className="monitor-tv-exit" onClick={exitFullscreen} aria-label="Exit fullscreen" title="Exit fullscreen"><Minimize2 size={22} /></button>
     </header>}
-    {!fullscreen && <section className="monitor-status-strip">{statusOrder.filter((item) => !["PROPOSED", "GATE_OUT", "REJECTED"].includes(item)).map((item) => <button key={item} className={status === item ? "active" : ""} onClick={() => setStatus(status === item ? "ALL" : item)}><StatusPill status={item} /><b>{active.filter((shipment) => shipment.status === item).length}</b></button>)}</section>}
+    {!fullscreen && <section className="monitor-status-strip">{statusOrder.filter((item) => !["PROPOSED", "RECEIVED", "GATE_OUT", "REJECTED"].includes(item)).map((item) => <button key={item} className={status === item ? "active" : ""} onClick={() => setStatus(status === item ? "ALL" : item)}><StatusPill status={item} /><b>{active.filter((shipment) => shipment.status === item).length}</b></button>)}</section>}
     <section className="panel monitoring-panel">
       {!fullscreen && <div className="monitor-toolbar">
         <label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search truck, delivery, supplier, driver or product" /></label>
@@ -299,7 +299,7 @@ export function MonitoringPage({ data, theme, area, canSwitchArea, onAreaChange,
             ? ` · +${shipment.estimatedTrafficDelayMinutes} min estimated traffic`
             : " · estimated traffic"
           : " · base road time";
-        const showEta = false;
+        const showEta = shipment.status === "IN_TRANSIT";
         return <button className={`monitor-delivery-card monitor-tone-${STATUS_META[shipment.status].color}`} key={shipment.id} onClick={() => void openMonitoringEntry(shipment)}>
           <span className="monitor-card-head">
             <span><small>{formatDate(shipment.scheduledDate)}</small><b>{shipment.scheduledTime}</b></span>

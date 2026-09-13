@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeSplits, applySplits, inspectReceipt, createReplacements, calculateKpi } from '../server/receiving.js';
 import { sapRows } from '../server/extensions.js';
+import { calculateOtifValues, sapColumns } from '../server/sap-postgres.js';
 const proposal = () => ({ id: 1, supplierId: 7, supplier: 'Supplier', scheduledDate: '2026-09-06', scheduledTime: '09:00', gateInAt: '2026-09-06T01:00:00Z', bookingStatus: 'APPROVED', items: [{ id: 1, materialCode: 'A', materialName: 'Internal name', quantity: 60, uom: 'KG' }, { id: 2, materialCode: 'B', quantity: 5, uom: 'PC' }] });
 const nextId = rows => Math.max(0, ...rows.map(row => row.id)) + 1;
 const nextCode = (prefix, id) => `${prefix}-${id}`;
@@ -13,6 +14,8 @@ test('splits conserve each material and unit, preserving approved schedules', ()
   const groups = applySplits(state, s, nextId, nextCode);
   assert.equal(groups.length, 2); assert.equal(groups[0].items.length, 2);
   assert.equal(groups[1].scheduledDate, '2026-09-07');
+  assert.equal(groups[0].scheduledEndTime, '11:00');
+  assert.equal(groups[1].scheduledEndTime, '12:00');
   assert.equal(groups.flatMap(row => row.items).filter(item => item.materialCode === "A").reduce((sum, item) => sum + item.quantity, 0), 60);
   assert.throws(() => normalizeSplits(proposal(), input.map((row, i) => i === 0 ? { ...row, quantity: 31 } : row)), /must total/);
   assert.throws(() => normalizeSplits(proposal(), [{ itemId: 9, quantity: 60 }]), /valid material/);
@@ -43,4 +46,8 @@ test('SAP uses DR quantities, leaves actual received blank, and preserves saved 
   const s = proposal(); s.receipt = { items: [{ itemId: 1, acceptedQuantity: 40 }] };
   const state = { shipments: [s], sapRows: { '1:1': { revision: 1, values: { matdoc: '001234' } } } };
   const row = sapRows(state)[0]; assert.equal(row.values.quantity, 60); assert.equal(row.values.matdoc, '001234'); assert.equal(row.values.breakdown, ''); assert.equal(row.values.description, 'Internal name');
+  assert.deepEqual(calculateOtifValues(true, 60, 60), { onTime: 'Yes', inFull: 'Yes', otif: 'Yes' });
+  assert.deepEqual(calculateOtifValues(false, 60, 60), { onTime: 'No', inFull: 'Yes', otif: 'No' });
+  assert.deepEqual(calculateOtifValues(true, 60, ''), { onTime: 'Yes', inFull: '', otif: '' });
+  assert.deepEqual(sapColumns.filter(column => ['onTime','inFull','otif'].includes(column[0])).map(column => column[1]), ['ON TIME','IN FULL','OTIF']);
 });

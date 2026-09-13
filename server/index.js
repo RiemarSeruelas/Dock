@@ -1,5 +1,5 @@
 import { normalizePhone } from "./booking.js";
-import { normalizeSplits, applySplits, inspectReceipt, createReplacements } from "./receiving.js";
+import { normalizeSplits, applySplits, defaultScheduleEnd } from "./receiving.js";
 import { registerExtensions } from "./extensions.js";
 import bcrypt from "bcryptjs";
 import cors from "cors";
@@ -292,9 +292,8 @@ const scanShipmentNumber = (rawValue) => {
 };
 const SCAN_STAGES = {
   TRIP: { status: "IN_TRANSIT", label: "Trip", roles: ["admin", "supplier", "driver", "ecosystem"], from: ["BOOKED"] },
-  GATE: { status: null, label: "Gate", roles: ["admin", "security", "ecosystem"], from: ["BOOKED", "IN_TRANSIT", "RECEIVED"] },
+  GATE: { status: null, label: "Gate", roles: ["admin", "security", "ecosystem"], from: ["BOOKED", "IN_TRANSIT", "UNLOADING", "RECEIVED"] },
   UNLOADING: { status: "UNLOADING", label: "Unloading", roles: ["admin", "warehouse", "ecosystem"], from: ["GATE_IN"] },
-  RECEIVED: { status: "RECEIVED", label: "Received", roles: ["admin", "warehouse", "ecosystem"], from: ["UNLOADING"] },
 };
 const dockStatuses = new Set(["GATE_IN", "UNLOADING", "RECEIVED"]);
 const assignAvailableDock = (state, shipment) => {
@@ -557,7 +556,11 @@ await store.update(async (state) => {
     shipment.id ||= nextShipmentId++;
     shipment.scheduledDate = validDate(shipment.scheduledDate) ? shipment.scheduledDate : localDate();
     shipment.scheduledTime = validTime(shipment.scheduledTime) ? shipment.scheduledTime : "12:00";
-    shipment.scheduledEndTime = validTime(shipment.scheduledEndTime) ? shipment.scheduledEndTime : null;
+    const legacyOneHourReschedule = !shipment.scheduleDurationSource && shipment.companyDecision === "APPROVED" && validTime(shipment.scheduledEndTime) && durationMinutes(shipment.scheduledTime, shipment.scheduledEndTime) === 60;
+    shipment.scheduledEndTime = !legacyOneHourReschedule && validTime(shipment.scheduledEndTime) && toMinutes(shipment.scheduledEndTime) > toMinutes(shipment.scheduledTime)
+      ? shipment.scheduledEndTime
+      : defaultScheduleEnd(shipment.scheduledTime);
+    shipment.scheduleDurationSource ||= legacyOneHourReschedule ? "DEFAULT" : "SAVED";
     shipment.availabilitySlotId = availabilityForShipment(state, shipment)?.id || null;
     const legacyStatus = shipment.status;
     const statusMigration = { PLANNED: "BOOKED", ARRIVED: "GATE_IN", VERIFIED: "GATE_IN", PARKING: "GATE_IN", AT_DOCK: "UNLOADING" };
@@ -953,7 +956,9 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
       if (proposal.confirmedTruckLoads?.length) return { alreadyResponded: true };
       alternativeDate ||= proposal.scheduledDate;
       alternativeTime ||= proposal.scheduledTime;
-      alternativeEndTime ||= proposal.scheduledEndTime || "";
+      alternativeEndTime ||= alternativeTime === proposal.scheduledTime && proposal.scheduledEndTime
+        ? proposal.scheduledEndTime
+        : defaultScheduleEnd(alternativeTime) || "";
       proposal.quantityAllocations = normalizeSplits(proposal, request.body.quantityAllocations, alternativeDate, alternativeTime);
       resolveShipmentNotifications(state, proposal, [request.user.id]);
       const respondedAt = new Date().toISOString();
@@ -1168,6 +1173,7 @@ app.patch("/api/shipments/:id/schedule", auth, allow(...planningRoles), asyncRou
     shipment.scheduledDate = scheduledDate;
     shipment.scheduledTime = scheduledTime;
     shipment.scheduledEndTime = scheduledEndTime;
+    shipment.scheduleDurationSource = "MANUAL";
     shipment.expectedDurationMinutes = durationMinutes(scheduledTime, scheduledEndTime);
     shipment.timeSlot = scheduleLabel(scheduledTime, scheduledEndTime);
     shipment.availabilitySlotId = matchingAvailability(state, scheduledDate, scheduledTime, scheduledEndTime)?.id || null;
@@ -1299,7 +1305,7 @@ app.patch("/api/shipments/:id/gate-review", auth, allow("admin", "security", "ec
 app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response) => {
   const stage = String(request.body?.stage || "").toUpperCase();
   const configuration = SCAN_STAGES[stage];
-  if (!configuration) return response.status(400).json({ message: "Choose Trip, Gate, Unloading, or Received before scanning" });
+  if (!configuration) return response.status(400).json({ message: "Choose Trip, Gate, or Unloading before scanning" });
   if (!configuration.roles.includes(request.user.role)) return response.status(403).json({ message: `Your role cannot record the ${configuration.label} scan` });
   const shipmentNumber = scanShipmentNumber(request.body?.scanValue);
   if (!shipmentNumber) return response.status(400).json({ message: "The QR code does not contain a shipment number" });
@@ -1308,15 +1314,14 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     if (!shipment) return null;
     if (!canAccessShipment(request.user, shipment) || (request.user.role === "ecosystem" && Number(request.user.supplierId) !== Number(shipment.destinationEcosystemId) && (shipment.destinationEcosystemId || shipmentWorkArea(shipment) !== "ECOSYSTEM"))) return { forbidden: true };
     if (shipment.bookingStatus !== "APPROVED") return { approvalRequired: true };
-    const targetStatus = stage === "GATE" ? (shipment.status === "RECEIVED" || shipment.status === "GATE_OUT" ? "GATE_OUT" : "GATE_IN") : configuration.status;
+    const targetStatus = stage === "GATE" ? (["UNLOADING", "RECEIVED", "GATE_OUT"].includes(shipment.status) ? "GATE_OUT" : "GATE_IN") : configuration.status;
     if (targetStatus === "GATE_IN" && String(request.body?.gateDecision || "").toUpperCase() !== "ACCEPT") return { gateDecisionRequired: true };
     if (targetStatus === "GATE_IN") {
       const scheduledAt = Date.parse(`${shipment.scheduledDate}T${shipment.scheduledTime}:00+08:00`);
       if (Number.isFinite(scheduledAt) && Date.now() < scheduledAt - 15 * 60_000) return { tooEarly: true, earliestAt: new Date(scheduledAt - 15 * 60_000).toISOString() };
     }
-    const alreadyRecorded = shipment.status === targetStatus || (stage === "TRIP" && Boolean(shipment.tripAt)) || (stage === "RECEIVED" && Boolean(shipment.receivedAt)) || (stage === "UNLOADING" && Boolean(shipment.unloadingAt));
-    if (alreadyRecorded) return { shipment: supplierSafeShipment(shipment), alreadyRecorded: true, stageLabel: configuration.label, receivedRecipients: [] };
-    const receipt = stage === "RECEIVED" ? inspectReceipt(shipment, request.body.receipt, state.settings.graceMinutes) : null;
+    const alreadyRecorded = shipment.status === targetStatus || (stage === "TRIP" && Boolean(shipment.tripAt)) || (stage === "UNLOADING" && Boolean(shipment.unloadingAt));
+    if (alreadyRecorded) return { shipment: supplierSafeShipment(shipment), alreadyRecorded: true, stageLabel: configuration.label };
     if (!alreadyRecorded && !configuration.from.includes(shipment.status)) return { wrongStage: true, currentStatus: shipment.status };
     if (targetStatus === "UNLOADING" && !assignAvailableDock(state, shipment)) return { noDock: true };
     if (targetStatus === "GATE_IN") assignAvailableDock(state, shipment);
@@ -1326,26 +1331,14 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; applyShipmentEta(state, shipment, shipment.tripAt); }
     if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; shipment.gateDecision = "ACCEPTED"; shipment.gateDecisionAt = scannedAt; shipment.gateDecisionBy = request.user.name; shipment.gateRejectionReason = null; clearShipmentEta(shipment); resolveShipmentNotifications(state, shipment); }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
-    if (stage === "RECEIVED") {
-      shipment.receivedAt ||= scannedAt;
-      shipment.receipt = { ...receipt, inspectedAt: scannedAt, inspectedBy: request.user.name, inspectorId: request.user.id };
-      shipment.replacementIds = createReplacements(state, shipment, nextId, nextCode).map(row => row.id);
-      for (const user of state.users.filter(user => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && canAccessShipment(user, shipment))) {
-        addNotification(state, user, { title: receipt.inFull ? "Delivery received" : "Received – Not in Full", message: receipt.items.filter(row => row.remainingQuantity).map(row => `${row.materialCode}: ${row.remainingQuantity} ${row.uom}, ${row.date} ${row.time}. ${row.reason}`).join("; ") || shipment.shipmentNumber, shipment });
-        for (const id of shipment.replacementIds) addNotification(state, user, { title: "Follow up delivery created", message: "Review the outstanding quantities and confirm the Follow up delivery.", shipment: state.shipments.find(row => row.id === id), requiresAction: true });
-      }
-    }
-    if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
+    if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.receivedAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
     const stageLabel = stage === "GATE" ? (targetStatus === "GATE_OUT" ? "Gate out" : "Gate in") : configuration.label;
     if (!alreadyRecorded) {
       shipment.scanHistory ||= [];
       shipment.scanHistory.push({ stage: stageLabel, status: targetStatus, scannedAt, userId: Number(request.user.id), actor: request.user.name, role: request.user.role });
       addAudit(state, request.user, `QR_${targetStatus}`, `${shipment.shipmentNumber} scanned at ${stageLabel}`, shipment.shipmentNumber);
     }
-    const receivedRecipients = !alreadyRecorded && targetStatus === "RECEIVED"
-      ? state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(shipment.supplierId) && canAccessShipment(user, shipment) && user.emailVerifiedAt && user.email).map((user) => user.email)
-      : [];
-    return { shipment: supplierSafeShipment(shipment), alreadyRecorded, stageLabel, receivedRecipients };
+    return { shipment: supplierSafeShipment(shipment), alreadyRecorded, stageLabel };
   });
   if (!result) return response.status(404).json({ message: "Shipment not found in this QR code" });
   if (result.approvalRequired) return response.status(409).json({ message: "This booking must be approved before it can be scanned" });
@@ -1354,18 +1347,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
   if (result.tooEarly) return response.status(409).json({ message: `Entry opens 15 minutes before the schedule. Earliest Gate In: ${new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: TIME_ZONE }).format(new Date(result.earliestAt))}` });
   if (result.wrongStage) return response.status(409).json({ message: `This delivery is currently ${String(result.currentStatus).replaceAll("_", " ").toLowerCase()}. Complete the earlier scan stage first.` });
   if (result.noDock) return response.status(409).json({ message: "The receiving dock for this work area is occupied. Complete Gate out before starting another unloading." });
-  let notification = { status: "NOT_SENT", sent: 0, failed: 0 };
-  if (result.receivedRecipients?.length) {
-    try {
-      notification = await emailNotifications.sendItemsReceived({ sender: emailSender, recipients: result.receivedRecipients, shipmentNumber: result.shipment.shipmentNumber, deliveryCode: result.shipment.deliveryCode, supplier: result.shipment.supplier, truckPlate: result.shipment.truckPlate, receivedAt: result.shipment.receivedAt, receipt: result.shipment.receipt, materialCodes: result.shipment.items.map((item) => item.materialCode) });
-    } catch (error) {
-      notification = { status: "FAILED", sent: 0, failed: result.receivedRecipients.length };
-      console.error(`[email] Received-delivery notification failed: ${error.message}`);
-    }
-  }
-  const { receivedRecipients: _receivedRecipients, ...publicResult } = result;
-  void _receivedRecipients;
-  response.json({ ...publicResult, notification, message: result.alreadyRecorded ? `${result.stageLabel} was already recorded for ${result.shipment.shipmentNumber}` : `${result.shipment.shipmentNumber} updated to ${result.stageLabel}` });
+  response.json({ ...result, message: result.alreadyRecorded ? `${result.stageLabel} was already recorded for ${result.shipment.shipmentNumber}` : `${result.shipment.shipmentNumber} updated to ${result.stageLabel}` });
 }));
 
 app.patch("/api/shipments/:id/status", auth, (_request, response) => response.status(410).json({ message: "Use the role-authorized scan stations and receipt inspection" }));
@@ -1967,7 +1949,7 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
     approved: rows.length,
     complete: rows.filter((shipment) => shipment.status === "GATE_OUT").length,
     trip: average(rows.map((shipment) => duration(shipment.gateInAt, shipment.unloadingAt))),
-    unload: average(rows.map((shipment) => duration(shipment.unloadingAt, shipment.receivedAt))),
+    unload: average(rows.map((shipment) => duration(shipment.unloadingAt, shipment.gateOutAt))),
     turnaround: average(rows.map((shipment) => duration(shipment.gateInAt, shipment.gateOutAt))),
   })).sort((a, b) => a.supplier.localeCompare(b.supplier));
   const workbook = new ExcelJS.Workbook();
@@ -2001,7 +1983,7 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   const generated = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: TIME_ZONE }).format(new Date());
   titleSheet(summary, "DockFlow Delivery Performance Report", `${selectedSupplier}  •  Generated ${generated}  •  Asia/Manila (GMT+8)`, "F");
   const completedCount = shipments.filter((shipment) => shipment.status === "GATE_OUT").length;
-  const kpis = [["CONFIRMED DELIVERIES", shipments.length], ["GATE-OUT COMPLETE", completedCount], ["AVG UNLOADING", `${average(shipments.map((shipment) => duration(shipment.unloadingAt, shipment.receivedAt)))} min`]];
+  const kpis = [["CONFIRMED DELIVERIES", shipments.length], ["GATE-OUT COMPLETE", completedCount], ["AVG UNLOADING", `${average(shipments.map((shipment) => duration(shipment.unloadingAt, shipment.gateOutAt)))} min`]];
   kpis.forEach(([label, value], index) => {
     const start = index * 2 + 1;
     summary.mergeCells(4, start, 4, start + 1);
@@ -2032,9 +2014,9 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   summary.autoFilter = { from: "A7", to: `F${Math.max(7, summary.rowCount)}` };
 
   const details = workbook.addWorksheet("Deliveries", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  details.columns = [18, 18, 26, 16, 14, 16, 20, 18, 18, 17, 16, 20, 20, 22, 22, 24, 16].map((width) => ({ width }));
-  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "Q", 4);
-  const detailHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)", "PO number", "DR number", "Helper 1", "Helper 2", "Receipt outcome", "On time"];
+  details.columns = [18, 18, 26, 16, 14, 16, 20, 18, 18, 17, 16, 20, 20, 22, 22].map((width) => ({ width }));
+  titleSheet(details, "Confirmed Deliveries", `${selectedSupplier}  •  Core booking and truck information`, "O", 4);
+  const detailHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Site time (min)", "PO number", "DR number", "Helper 1", "Helper 2"];
   const detailHeader = details.getRow(4);
   detailHeaders.forEach((value, index) => { detailHeader.getCell(index + 1).value = value; });
   detailHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
@@ -2043,19 +2025,19 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
     const entrance = gateParts(shipment.gateInAt);
     const output = details.addRow([
       shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time,
-      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—", shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "", shipment.receipt ? shipment.receipt.inFull ? "Received" : "Received – Not in Full" : "Pending inspection", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No",
+      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), duration(shipment.gateInAt, shipment.gateOutAt) ?? "—", shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "",
     ]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 9, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "top", wrapText: true }; if (index % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(10).font = { name: "Aptos", size: 9, bold: true, color: { argb: ["GATE_OUT", "RECEIVED"].includes(shipment.status) ? "08766B" : blue } };
     output.height = 28;
   });
   details.getColumn(8).numFmt = "@";
-  details.autoFilter = { from: "A4", to: `Q${Math.max(4, details.rowCount)}` };
+  details.autoFilter = { from: "A4", to: `O${Math.max(4, details.rowCount)}` };
 
   const materials = workbook.addWorksheet("Material Codes", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  materials.columns = [18, 18, 25, 16, 14, 18, 22, 14, 12, 14, 14, 19, 14].map((width) => ({ width }));
-  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "M", 4);
-  const materialHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Material code", "Total need", "UOM", "Site", "On Time", "Quantity Received", "OTIF %"];
+  materials.columns = [18, 18, 25, 16, 14, 18, 22, 14, 12, 14].map((width) => ({ width }));
+  titleSheet(materials, "Material Code Allocation", `${selectedSupplier}  •  One row per material code`, "J", 4);
+  const materialHeaders = ["Booking", "Shipment", "Supplier", "Actual entrance date", "Actual entrance time", "Truck plate", "Material code", "Total need", "UOM", "Site"];
   const materialHeader = materials.getRow(4);
   materialHeaders.forEach((value, index) => { materialHeader.getCell(index + 1).value = value; });
   materialHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
@@ -2063,9 +2045,8 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   let materialIndex = 0;
   shipments.forEach((shipment) => shipment.items.forEach((item) => {
     const entrance = gateParts(shipment.gateInAt);
-    const received = Number(shipment.receipt?.items?.find(row => Number(row.itemId) === Number(item.id))?.acceptedQuantity || 0);
     const need = Number(item.quantity || 0);
-    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time, shipment.truckPlate, item.materialCode, need, item.uom || "—", item.deliverySite || "—", shipment.receipt?.onTime == null ? "Not evaluated" : shipment.receipt.onTime ? "Yes" : "No", received, need > 0 ? received / need : 0]);
+    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time, shipment.truckPlate, item.materialCode, need, item.uom || "—", item.deliverySite || "—"]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; if (materialIndex % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(7).font = { name: "Aptos", size: 10, bold: true, color: { argb: blue } };
     output.height = 25;
@@ -2073,9 +2054,7 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   }));
   materials.getColumn(7).numFmt = "@";
   materials.getColumn(8).numFmt = "#,##0.00";
-  materials.getColumn(12).numFmt = "#,##0.00";
-  materials.getColumn(13).numFmt = "0.00%";
-  materials.autoFilter = { from: "A4", to: `M${Math.max(4, materials.rowCount)}` };
+  materials.autoFilter = { from: "A4", to: `J${Math.max(4, materials.rowCount)}` };
 
   const safeName = selectedSupplier.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "all-suppliers";
   response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

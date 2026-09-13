@@ -12,7 +12,7 @@ export type ShipmentStatus =
   | "REJECTED";
 
 export type BookingStatus = "PENDING_SUPPLIER" | "PENDING_COMPANY" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
-export type ScanStage = "LOOKUP" | "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
+export type ScanStage = "LOOKUP" | "TRIP" | "GATE" | "UNLOADING";
 
 export interface AvailabilitySlot {
   id: number;

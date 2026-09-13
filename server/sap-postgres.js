@@ -31,6 +31,9 @@ export const sapColumns = [
   ['helperCount', 'NO. OF HELPER', 16, 'helper_count', 'warehouse'],
   ['truckType', 'TYPE OF TRUCK', 18, 'truck_type', 'warehouse'],
   ['actualReceived', 'ACTUAL QUANTITY RECEIVED', 24, 'actual_received', 'warehouse'],
+  ['onTime', 'ON TIME', 14, 'on_time', 'system'],
+  ['inFull', 'IN FULL', 14, 'in_full', 'system'],
+  ['otif', 'OTIF', 14, 'otif', 'system'],
   ['palletCount', 'NO. OF PALLETS', 17, 'pallet_count', 'warehouse'],
   ['warehouseRemarks', 'WAREHOUSE REMARKS', 30, 'warehouse_remarks', 'warehouse'],
   ['startUnloading', 'START UNLOADING', 22, 'start_unloading', 'system'],
@@ -60,6 +63,16 @@ export function encodedByName(name) {
   const parts = String(name || 'SAP Analyst').trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return parts[0] || 'SAP Analyst';
   return `${parts[0][0].toUpperCase()}. ${parts.at(-1)}`;
+}
+
+export function calculateOtifValues(onTime, quantity, actualReceived) {
+  const scheduledResult = onTime === true || onTime === 'Yes' ? 'Yes' : onTime === false || onTime === 'No' ? 'No' : '';
+  const expected = Number(quantity);
+  const actual = Number(actualReceived);
+  const hasQuantities = String(quantity ?? '').trim() !== '' && String(actualReceived ?? '').trim() !== '' && Number.isFinite(expected) && Number.isFinite(actual) && expected >= 0 && actual >= 0;
+  const inFull = hasQuantities ? (actual >= expected ? 'Yes' : 'No') : '';
+  const otif = scheduledResult && inFull ? (scheduledResult === 'Yes' && inFull === 'Yes' ? 'Yes' : 'No') : '';
+  return { onTime: scheduledResult, inFull, otif };
 }
 
 const identifier = value => {
@@ -96,7 +109,11 @@ export function createSapRepository() {
   }) : null;
   pool?.on('error', () => {});
   let ready = false;
-  const synced = new Set();
+  const synced = new Map();
+  const systemSyncFields = ['deliveryDate', 'supplierName', 'plateNumber', 'driverName', 'gateIn', 'gateOut', 'startUnloading', 'endUnloading', 'onTime'];
+  const numeric = column => `NULLIF(BTRIM(${identifier(column)}), '') ~ '^[0-9]+(?:\\.[0-9]+)?$'`;
+  const inFullSql = `CASE WHEN ${numeric('quantity')} AND ${numeric('actual_received')} THEN CASE WHEN ${identifier('actual_received')}::numeric >= ${identifier('quantity')}::numeric THEN 'Yes' ELSE 'No' END ELSE '' END`;
+  const otifSql = `CASE WHEN ${identifier('on_time')} IN ('Yes','No') AND ${numeric('quantity')} AND ${numeric('actual_received')} THEN CASE WHEN ${identifier('on_time')}='Yes' AND ${identifier('actual_received')}::numeric >= ${identifier('quantity')}::numeric THEN 'Yes' ELSE 'No' END ELSE '' END`;
 
   const initialize = async () => {
     if (!pool) fail('SAP database is not configured', 503);
@@ -135,7 +152,8 @@ export function createSapRepository() {
     jsonTrial,
     async sync(rows) {
       await initialize();
-      const records = rows.filter(row => !synced.has(row.key)).map(row => ({
+      const fingerprints = new Map(rows.map(row => [row.key, JSON.stringify(systemSyncFields.map(key => row.values[key] ?? ''))]));
+      const records = rows.filter(row => synced.get(row.key) !== fingerprints.get(row.key)).map(row => ({
         record_key: row.key,
         shipment_id: row.shipmentId || null,
         supplier: row.supplier,
@@ -145,8 +163,12 @@ export function createSapRepository() {
       await pool.query(`INSERT INTO ${table} (record_key, shipment_id, supplier, ${sapColumns.map(([, , , db]) => identifier(db)).join(',')})
         SELECT record_key, shipment_id, supplier, ${sapColumns.map(([, , , db]) => identifier(db)).join(',')}
         FROM jsonb_to_recordset($1::jsonb) AS x(record_key TEXT, shipment_id BIGINT, supplier TEXT, ${sapColumns.map(([, , , db]) => `${identifier(db)} TEXT`).join(',')})
-        ON CONFLICT (record_key) DO NOTHING`, [JSON.stringify(records)]);
-      records.forEach(row => synced.add(row.record_key));
+        ON CONFLICT (record_key) DO UPDATE SET
+          shipment_id=EXCLUDED.shipment_id,
+          supplier=EXCLUDED.supplier,
+          ${systemSyncFields.map(key => { const db = sapColumns.find(column => column[0] === key)[3]; return `${identifier(db)}=EXCLUDED.${identifier(db)}`; }).join(',\n')}`, [JSON.stringify(records)]);
+      await pool.query(`UPDATE ${table} SET ${identifier('in_full')}=${inFullSql}, ${identifier('otif')}=${otifSql} WHERE record_key=ANY($1::text[])`, [records.map(row => row.record_key)]);
+      records.forEach(row => synced.set(row.record_key, fingerprints.get(row.record_key)));
     },
     async page(offset, limit, search = '', sort = 'desc') {
       await initialize();
@@ -239,6 +261,7 @@ export function createSapRepository() {
           const result = await client.query(`UPDATE ${table} SET ${assignments.join(',')}, revision=revision+1, updated_at=NOW()
             WHERE record_key=$${keyParameter} AND revision=$${revisionParameter} RETURNING record_key`, args);
           if (!result.rowCount) fail('Worksheet changed. Reload before saving.', 409);
+          await client.query(`UPDATE ${table} SET ${identifier('in_full')}=${inFullSql}, ${identifier('otif')}=${otifSql} WHERE record_key=$1`, [row.key]);
         }
         await client.query('COMMIT');
       } catch (error) {

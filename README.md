@@ -61,7 +61,7 @@ Choose one or two trucks and allocate every remaining material quantity. With tw
 
 ## Monitoring and history
 
-**Monitoring** displays confirmed trucks in process order. Use **See all** or the two-click date range. Gate-in and Gate-out timestamps measure factory time. Partial receipt outcomes remain visible, and linked replacement proposals track outstanding quantities.
+**Monitoring** displays confirmed trucks in process order. Use **See all** or the two-click date range. While a truck is In Transit, its calculated ETA appears immediately to the left of the status. Gate-in and Gate-out timestamps measure factory time.
 
 The notification bell is in the top navigation. Opening an alert marks it read, but an action-required count remains until the linked schedule confirmation or reschedule decision is actually completed.
 
@@ -69,13 +69,13 @@ The notification bell is in the top navigation. Opening an alert marks it read, 
 
 ## Scan flow
 
-`Booking → optional Trip → Gate in → Unloading → Received → Gate out`
+`Booking → optional Trip → Gate in → Unloading → Gate out`
 
 - Supplier can record Trip, but Trip may be skipped before Security records Gate in.
 - Security records Gate in and Gate out.
-- Authorized Warehouse, Ecosystem or Administrator users record Unloading and inspect Received.
-- Received can be full or **Received – Not in Full**, with outstanding quantities, reason and a required Follow up schedule. Each shortage creates a linked **Follow up** entry.
-- Gate out finishes site time and releases the dock.
+- Authorized Warehouse, Ecosystem or Administrator users record Unloading.
+- Security or the receiving Ecosystem records Gate out after unloading is complete. Gate out also records the unloading-completion timestamp and releases the dock.
+- Warehouse enters Actual Quantity Received in SAP Analysis. On Time, In Full, and OTIF are calculated there instead of during QR scanning.
 - Over HTTP, use QR photos, hardware scanners or manual codes. Live camera scanning requires HTTPS.
 
 ## Trial storage
