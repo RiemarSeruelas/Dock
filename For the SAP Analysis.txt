@@ -1,25 +1,17 @@
-For confirm delivery:
-If it's one truck, it would be lock, I wont be able to see the change quantity, if it's 2 truck, thats when I can see the changable.
+For the schedule:
+Situation 2: It still happened, 2 trucks, both at 9:00am, both says 9:00am too, but the schedule put the other 9:00am to 11:00am. I tried checking Day/Week, the 2nd entry rlly is not on 9:00am
+But I checked the Supplier's acc, both 9:00am is there at 9:00am.
+Situation 5: I propose, accepted, and it said 10:00am, but in the calendar, it's possitioned in 12pm, this is from the admin's side. The supplier's side it's on the right time.
 
-For the Delivery Ticket:
 
-Truck & driver
-VER-4535
-Broi · +639550950526
-Can you make this look bigger, I rlly cant see it haha.
+For the reject:
+I notice that when I propose, then accept it, then the supplier put the details, it becomes 1 hour again, it should automatically put 2 hours.
 
-And separate DR/PO
+For the ETA:
+I already put the location, but it dsoesnt show. In the Monitoring, is it possible to put the ETA beside the "In Transit", on its left side.
 
-For deleting an account:
-Remoive this Enter the password of the administrator account you are currently using.
+For the OTIF:
+Can we remove the received delivery and see if it's otif? instead, it'll all be in the SAP Analysis.
 
-For making an account:
-The password shower is gone
-
-For admin accounts:
-If there's only 1 acc for that role, it stretches so far for the row that it looks so awful. Make it a consistent length.
-
-For the schedule: 
-I tried scheduling 2 trucks, but it says both 17:00pm, but in the calendar it's aligned to 5:00pm-7pm, then the other is 7pm-9pm(this is for ecosystem). But in the Ajinomoto account, I have delivery in dressings and ecosystem, the dressings says 5:00pm-7:00pm, but the ecosystem has 7-9, then the other is 8-10??? Why is it all differnet?
-
-Also, for the trial and error, can you give me every single scenario that I can try. Like what if it's proposed alternative, what if it's different time. Every single scenario for the trial and error so I can see all possible bugs.
+For the clearance: 
+Right now it's very messy, can you add filters?
