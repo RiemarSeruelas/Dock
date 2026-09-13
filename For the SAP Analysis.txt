@@ -15,3 +15,9 @@ Remoive this Enter the password of the administrator account you are currently u
 
 For making an account:
 The password shower is gone
+
+For admin accounts:
+If there's only 1 acc for that role, it stretches so far for the row that it looks so awful. Make it a consistent length.
+
+For the schedule: 
+I tried scheduling 2 trucks, but it says both 17:00pm, but in the calendar it's aligned to 5:00pm-7pm, then the other is 7pm-9pm(this is for ecosystem). But in the Ajinomoto account, I have delivery in dressings and ecosystem, the dressings says 5:00pm-7:00pm, but the ecosystem has 7-9, then the other is 8-10??? Why is it all differnet?
