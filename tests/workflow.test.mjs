@@ -281,6 +281,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.ok(group.every((shipment) => shipment.bookingStatus === "APPROVED"));
   assert.ok(group.every((shipment) => shipment.status === "BOOKED"));
   assert.ok(group.every((shipment) => shipment.supplierResponse === "ACCEPTED"));
+  assert.ok(group.every((shipment) => shipment.scheduledTime === "09:00" && shipment.scheduledEndTime === "11:00"), "Every truck created from one confirmation must keep the exact shared schedule window");
   assert.equal((await call(`/api/shipments/${proposal.id}/final-decision`, { token: planner.token, method: "PATCH", body: { decision: "APPROVE" } })).response.status, 404);
 
   const approvedBootstrap = await call("/api/bootstrap", { token: supplier.token });

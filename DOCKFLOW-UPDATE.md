@@ -25,11 +25,17 @@ The npm web commands now use `server/web.js`. Use these commands rather than inv
 
 ## Supplier confirmation and alternatives
 
-Choose one or two trucks. Each needs plate, driver, phone, PO, DR and a positive assigned quantity; helper names are optional. Plates are normalized to `AAA-1111`: the first three characters are letters and the final four are numbers. Select `+63` or local `0`, then enter exactly ten mobile digits beginning in 9. Material quantities start on the first truck. With two trucks, changing either quantity automatically balances the other truck, and the combined amount must remain exactly equal to the SDS request.
+Choose one or two trucks. Each needs plate, driver, phone, PO, DR and a positive assigned quantity; helper names are optional. Plates are normalized to `AAA-1111`: the first three characters are letters and the final four are numbers. Select `+63` or local `0`, then enter exactly ten mobile digits beginning in 9. With one truck, every requested quantity is assigned automatically and shown as a locked value. With two trucks, the quantity controls become editable; changing either truck automatically balances the other, and the combined amount must remain exactly equal to the SDS request.
 
 Alternative reasons are Reschedule Time and Date, Change in quantities, and Other. Notes are optional. Blank date/time fields keep the existing schedule. Quantity splits add the remaining amount when you leave the quantity field, rather than on every keystroke. Each material must either be fully allocated across the proposed schedules or marked **Can't deliver** with a reason.
 
 Truck details are not requested with an alternative. After submission, the request timestamp and **Waiting for planner approval** state are read-only; the supplier cannot submit another proposal for the same pending request. Planner approval returns the approved schedule to the supplier, who then assigns one or two trucks and confirms the delivery. That final confirmation creates the booking and QR. Approval and rejection both email verified supplier recipients. Rejection requires a reason; the application never invents drivers or plates.
+
+The booking/delivery ticket now gives the plate, driver, and phone larger type. PO and DR are separate detail fields. Calendar tickets remain absolutely positioned against their saved start/end time, so filtering by account or Ecosystem destination cannot visually push one truck into a later time slot. Two trucks confirmed against one SDS schedule retain the same stored date, start time, and end time and appear side by side when their windows overlap.
+
+Administration restores the show/hide control for the initial password field. Account cards use a consistent maximum width instead of stretching a single account across the role section. The delete dialog no longer includes the extra sentence instructing which administrator password to enter; the required field remains labelled **Administrator password**.
+
+For a complete manual regression plan, use `TRIAL-SCENARIOS.md` in this project.
 
 ## Receiving and clearance
 
