@@ -6,8 +6,8 @@
     "graceMinutes": 30,
     "deliveryCodeSequence": 12,
     "siteName": "Cavite Foods Receiving",
-    "siteAddress": "enc:v1:1WJVM7eeVIKNMVqz:gbvZagYCTo3lfO7yii3qzQ:BhNFWPiHbTD13PYL_ng6FY04waZoMmmxHXyzZVvK5Zs3Jw6M83qjtQ",
-    "siteCoordinates": "enc:v1:17oP8A26EP1eQsCJ:2Uwd77XHRRc3pTB3xbISAA:zqknHtxCYELltQLTyTcfM2WUrQ0EgYhXIwzqkYFg9SuS7Mlg",
+    "siteAddress": "enc:v1:pA3ES66q2of3_nuD:a66DNknyR60aJ0aaYiV_4w:S0iBRQ6NLyYnnrstxx1CXa8xMvWphNODVRe840bfQytmiysYDduIkQ",
+    "siteCoordinates": "enc:v1:STPhZsl3Sx8-UPqv:At0oJZY4tIf210CdUgeS6A:Lb4KTUcEM7EWX0rVDXBaEaulDEzeibkKs39qFPcfeoR9hcYn",
     "availableDates": [
       "2026-09-13",
       "2026-09-21",
@@ -113,12 +113,12 @@
       "id": 1,
       "name": "System Administrator",
       "username": "admin",
-      "passwordHash": "$2b$10$jgBIbecw70R0l6N1g06lQeT6doh3Y95cE/p7IeR0rAlfufGMZy0Ny",
+      "passwordHash": "$2b$10$ItGnSfbNa1UMCxFDXJNZhuCpNM5GghuwbHLKtxr6326hOLEKJcuP6",
       "role": "admin",
       "supplierId": null,
       "workArea": null,
       "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": "2026-09-13T09:08:57.812Z",
+      "emailVerifiedAt": "2026-09-13T12:42:45.265Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
@@ -362,8 +362,8 @@
           "defaultAmount": 200
         }
       ],
-      "originAddress": "enc:v1:s9TRrOkwpuc1Z9os:9SMwhGtIfGS0APVs40mvkQ:Pmdnb63j1ASp2WUY1d925f-20WBbsAdTLdwdUQT6v-0FJGnSvuIjaacLKuUL",
-      "originCoordinates": "enc:v1:OvSb0OGgwF_2mnIq:gAcXXp793U424_-6MmWnmw:i_hC2qiBrTsLQRCNtK2X45kdWcv3kCa2LVpDJFZ3xMngZsqh",
+      "originAddress": "enc:v1:Tv8E8XWFFrg38rxf:HSi3TNC5DdcPNIBI_Eue7Q:-ZrZXWVXYg_DoYgQwYtQcGQq-bM4g0EnaiRt8nRJ8Y2-0Jckt3_rQlNv4Gwh",
+      "originCoordinates": "enc:v1:NF0DZyWgoky854hp:aey5CPK8II9RlrimVP6nnQ:nSdc9o7KzPHpAwT08UQ5YvDLDGty4JQHWGyXCs0n9EprE-5w",
       "routeDistanceKm": 12.9,
       "routeDurationMinutes": 26,
       "routeCalculatedAt": "2026-09-13T09:43:30.345Z",
@@ -651,13 +651,13 @@
       "drNumber": "53453453453",
       "isFollowUp": false,
       "followUpLabel": null,
-      "estimatedTravelMinutes": null,
-      "estimatedTravelDistanceKm": null,
-      "estimatedTrafficDelayMinutes": null,
+      "estimatedTravelMinutes": 26,
+      "estimatedTravelDistanceKm": 12.9,
+      "estimatedTrafficDelayMinutes": 11,
       "etaTrafficAware": false,
-      "etaTrafficModel": "NONE",
-      "etaProvider": null,
-      "estimatedArrivalAt": null,
+      "etaTrafficModel": "TIME_OF_DAY",
+      "etaProvider": "OpenStreetMap / OSRM road distance · Weekend daytime · 35 km/h",
+      "estimatedArrivalAt": "2026-09-13T10:03:52.386Z",
       "companyDecision": null,
       "companyDecisionReason": null,
       "companyDecisionAt": null,
@@ -675,7 +675,8 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "scheduleDurationSource": "SAVED"
     },
     {
       "id": 2,
@@ -774,7 +775,8 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "scheduleDurationSource": "SAVED"
     },
     {
       "id": 3,
@@ -873,7 +875,8 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "scheduleDurationSource": "SAVED"
     },
     {
       "id": 4,
@@ -945,8 +948,7 @@
           "stillToBeDelivered": null,
           "remarks": "Supplier: accept with one truck",
           "supplierApprovedAt": "2026-09-13T09:12:04.409Z",
-          "assignedTruckPlate": "AAA-1111",
-          "sourceAllocationItemId": 4
+          "assignedTruckPlate": "AAA-1111"
         },
         {
           "id": 5,
@@ -970,8 +972,7 @@
           "stillToBeDelivered": null,
           "remarks": "Quantities should be locked in one-truck mode",
           "supplierApprovedAt": "2026-09-13T09:12:04.409Z",
-          "assignedTruckPlate": "AAA-1111",
-          "sourceAllocationItemId": 5
+          "assignedTruckPlate": "AAA-1111"
         }
       ],
       "palletsScanned": 0,
@@ -981,13 +982,13 @@
       "helper2Name": "",
       "poNumber": "123456789",
       "drNumber": "123456789",
-      "estimatedTravelMinutes": null,
-      "estimatedTravelDistanceKm": null,
-      "estimatedTrafficDelayMinutes": null,
+      "estimatedTravelMinutes": 26,
+      "estimatedTravelDistanceKm": 12.9,
+      "estimatedTrafficDelayMinutes": 11,
       "etaTrafficAware": false,
-      "etaTrafficModel": "NONE",
-      "etaProvider": null,
-      "estimatedArrivalAt": null,
+      "etaTrafficModel": "TIME_OF_DAY",
+      "etaProvider": "OpenStreetMap / OSRM road distance · Weekend daytime · 35 km/h",
+      "estimatedArrivalAt": "2026-09-13T10:03:54.394Z",
       "scanHistory": [
         {
           "stage": "Trip",
@@ -1001,7 +1002,14 @@
       "gateDecision": "REJECTED",
       "gateDecisionAt": "2026-09-13T09:39:10.708Z",
       "gateDecisionBy": "Czarina",
-      "gateRejectionReason": "Driver or vehicle credentials do not match the booking"
+      "gateRejectionReason": "Driver or vehicle credentials do not match the booking",
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 5,
@@ -1073,8 +1081,7 @@
           "stillToBeDelivered": null,
           "remarks": "Split 60 / 40 between trucks",
           "supplierApprovedAt": "2026-09-13T09:14:28.968Z",
-          "assignedTruckPlate": "AAA-1111 / AAA-2222",
-          "sourceAllocationItemId": 6
+          "assignedTruckPlate": "AAA-1111 / AAA-2222"
         },
         {
           "id": 7,
@@ -1098,8 +1105,7 @@
           "stillToBeDelivered": null,
           "remarks": "Split 125 / 75 between trucks",
           "supplierApprovedAt": "2026-09-13T09:14:28.968Z",
-          "assignedTruckPlate": "AAA-1111 / AAA-2222",
-          "sourceAllocationItemId": 7
+          "assignedTruckPlate": "AAA-1111 / AAA-2222"
         }
       ],
       "palletsScanned": 0,
@@ -1109,13 +1115,13 @@
       "helper2Name": "",
       "poNumber": "1234567890",
       "drNumber": "098765432",
-      "estimatedTravelMinutes": null,
-      "estimatedTravelDistanceKm": null,
-      "estimatedTrafficDelayMinutes": null,
+      "estimatedTravelMinutes": 26,
+      "estimatedTravelDistanceKm": 12.9,
+      "estimatedTrafficDelayMinutes": 11,
       "etaTrafficAware": false,
-      "etaTrafficModel": "NONE",
-      "etaProvider": null,
-      "estimatedArrivalAt": null,
+      "etaTrafficModel": "TIME_OF_DAY",
+      "etaProvider": "OpenStreetMap / OSRM road distance · Weekend daytime · 35 km/h",
+      "estimatedArrivalAt": "2026-09-13T10:03:55.784Z",
       "scanHistory": [
         {
           "stage": "Trip",
@@ -1125,7 +1131,18 @@
           "actor": "Czarina",
           "role": "admin"
         }
-      ]
+      ],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 6,
@@ -1197,8 +1214,7 @@
           "stillToBeDelivered": null,
           "remarks": "Split 60 / 40 between trucks",
           "supplierApprovedAt": "2026-09-13T09:14:28.968Z",
-          "assignedTruckPlate": "AAA-1111 / AAA-2222",
-          "sourceAllocationItemId": 6
+          "assignedTruckPlate": "AAA-1111 / AAA-2222"
         },
         {
           "id": 7,
@@ -1222,8 +1238,7 @@
           "stillToBeDelivered": null,
           "remarks": "Split 125 / 75 between trucks",
           "supplierApprovedAt": "2026-09-13T09:14:28.968Z",
-          "assignedTruckPlate": "AAA-1111 / AAA-2222",
-          "sourceAllocationItemId": 7
+          "assignedTruckPlate": "AAA-1111 / AAA-2222"
         }
       ],
       "palletsScanned": 0,
@@ -1233,13 +1248,13 @@
       "helper2Name": "",
       "poNumber": "`123456789",
       "drNumber": "098765432",
-      "estimatedTravelMinutes": null,
-      "estimatedTravelDistanceKm": null,
-      "estimatedTrafficDelayMinutes": null,
+      "estimatedTravelMinutes": 26,
+      "estimatedTravelDistanceKm": 12.9,
+      "estimatedTrafficDelayMinutes": 11,
       "etaTrafficAware": false,
-      "etaTrafficModel": "NONE",
-      "etaProvider": null,
-      "estimatedArrivalAt": null,
+      "etaTrafficModel": "TIME_OF_DAY",
+      "etaProvider": "OpenStreetMap / OSRM road distance · Weekend daytime · 35 km/h",
+      "estimatedArrivalAt": "2026-09-13T10:03:56.912Z",
       "scanHistory": [
         {
           "stage": "Trip",
@@ -1253,7 +1268,14 @@
       "gateDecision": "REJECTED",
       "gateDecisionAt": "2026-09-13T09:38:39.343Z",
       "gateDecisionBy": "Czarina",
-      "gateRejectionReason": "Truck arrived earlier than the 15-minute entry allowance"
+      "gateRejectionReason": "Truck arrived earlier than the 15-minute entry allowance",
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 7,
@@ -1265,10 +1287,10 @@
       "vendorCode": "SUP-001",
       "scheduledDate": "2026-09-23",
       "scheduledTime": "13:00",
-      "scheduledEndTime": null,
-      "availabilitySlotId": 5,
+      "scheduledEndTime": "15:00",
+      "availabilitySlotId": null,
       "expectedDurationMinutes": 120,
-      "timeSlot": "09:00 - 11:00",
+      "timeSlot": "13:00 - 15:00",
       "shift": "Flexible date",
       "bookingStatus": "APPROVED",
       "status": "BOOKED",
@@ -1325,8 +1347,7 @@
           "stillToBeDelivered": null,
           "remarks": "Supplier proposes 13:00-15:00; planner approves",
           "supplierApprovedAt": "2026-09-13T09:18:35.672Z",
-          "assignedTruckPlate": "AAA-1111",
-          "sourceAllocationItemId": 8
+          "assignedTruckPlate": "AAA-1111"
         }
       ],
       "palletsScanned": 0,
@@ -1384,7 +1405,22 @@
       "helper1Name": "jyjyj",
       "helper2Name": "rjyjy",
       "poNumber": "45356",
-      "drNumber": "6546456"
+      "drNumber": "6546456",
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 8,
@@ -1419,7 +1455,7 @@
       "gateOutAt": null,
       "rejectionReason": "Nah men",
       "supplierResponse": "ALTERNATIVE_PROPOSED",
-      "supplierResponseReason": "",
+      "supplierResponseReason": null,
       "supplierRespondedAt": "2026-09-13T09:19:21.174Z",
       "alternativeDate": "2026-09-24",
       "alternativeTime": "14:00",
@@ -1479,7 +1515,22 @@
       "companyDecision": "REJECTED",
       "companyDecisionReason": "Nah men",
       "companyDecisionAt": "2026-09-13T09:19:55.271Z",
-      "companyDecisionBy": "Czarina"
+      "companyDecisionBy": "Czarina",
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 9,
@@ -1491,8 +1542,8 @@
       "vendorCode": "SUP-001",
       "scheduledDate": "2026-09-26",
       "scheduledTime": "10:00",
-      "scheduledEndTime": null,
-      "availabilitySlotId": 7,
+      "scheduledEndTime": "12:00",
+      "availabilitySlotId": null,
       "expectedDurationMinutes": 120,
       "timeSlot": "10:00 - 12:00",
       "shift": "Flexible date",
@@ -1551,8 +1602,7 @@
           "stillToBeDelivered": null,
           "remarks": "Supplier proposes 2026-09-29; planner approves",
           "supplierApprovedAt": "2026-09-13T09:22:25.451Z",
-          "assignedTruckPlate": "WER-3424",
-          "sourceAllocationItemId": 10
+          "assignedTruckPlate": "WER-3424"
         }
       ],
       "palletsScanned": 0,
@@ -1610,7 +1660,22 @@
       "helper1Name": "5656546",
       "helper2Name": "",
       "poNumber": "6543",
-      "drNumber": "24563"
+      "drNumber": "24563",
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 10,
@@ -1622,7 +1687,7 @@
       "vendorCode": "SUP-001",
       "scheduledDate": "2026-09-26",
       "scheduledTime": "08:00",
-      "scheduledEndTime": null,
+      "scheduledEndTime": "10:00",
       "availabilitySlotId": 8,
       "expectedDurationMinutes": 120,
       "timeSlot": "08:00 - 10:00",
@@ -1682,8 +1747,7 @@
           "stillToBeDelivered": null,
           "remarks": "Supplier proposes 60 now and 40 on another date/time",
           "supplierApprovedAt": "2026-09-13T09:26:21.021Z",
-          "assignedTruckPlate": "FWG-4356",
-          "sourceAllocationItemId": 11
+          "assignedTruckPlate": "FWG-4356"
         }
       ],
       "palletsScanned": 0,
@@ -1752,13 +1816,13 @@
       "helper2Name": "",
       "poNumber": "76",
       "drNumber": "75675",
-      "estimatedTravelMinutes": null,
-      "estimatedTravelDistanceKm": null,
-      "estimatedTrafficDelayMinutes": null,
+      "estimatedTravelMinutes": 26,
+      "estimatedTravelDistanceKm": 12.9,
+      "estimatedTrafficDelayMinutes": 11,
       "etaTrafficAware": false,
-      "etaTrafficModel": "NONE",
-      "etaProvider": null,
-      "estimatedArrivalAt": null,
+      "etaTrafficModel": "TIME_OF_DAY",
+      "etaProvider": "OpenStreetMap / OSRM road distance · Weekend daytime · 35 km/h",
+      "estimatedArrivalAt": "2026-09-13T10:03:58.209Z",
       "scanHistory": [
         {
           "stage": "Trip",
@@ -1768,7 +1832,14 @@
           "actor": "Czarina",
           "role": "admin"
         }
-      ]
+      ],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 11,
@@ -1780,7 +1851,7 @@
       "vendorCode": "SUP-001",
       "scheduledDate": "2026-09-27",
       "scheduledTime": "08:00",
-      "scheduledEndTime": null,
+      "scheduledEndTime": "10:00",
       "availabilitySlotId": 9,
       "expectedDurationMinutes": 120,
       "timeSlot": "08:00 - 10:00",
@@ -1840,8 +1911,7 @@
           "stillToBeDelivered": null,
           "remarks": "Supplier schedules 60; marks 40 Can't deliver with reason",
           "supplierApprovedAt": "2026-09-13T09:31:22.347Z",
-          "assignedTruckPlate": "FGH-5364",
-          "sourceAllocationItemId": 12
+          "assignedTruckPlate": "FGH-5364"
         }
       ],
       "palletsScanned": 0,
@@ -1910,13 +1980,13 @@
       "helper2Name": "",
       "poNumber": "55",
       "drNumber": "76756",
-      "estimatedTravelMinutes": null,
-      "estimatedTravelDistanceKm": null,
-      "estimatedTrafficDelayMinutes": null,
+      "estimatedTravelMinutes": 26,
+      "estimatedTravelDistanceKm": 12.9,
+      "estimatedTrafficDelayMinutes": 11,
       "etaTrafficAware": false,
-      "etaTrafficModel": "NONE",
-      "etaProvider": null,
-      "estimatedArrivalAt": null,
+      "etaTrafficModel": "TIME_OF_DAY",
+      "etaProvider": "OpenStreetMap / OSRM road distance · Weekend daytime · 35 km/h",
+      "estimatedArrivalAt": "2026-09-13T10:04:00.104Z",
       "scanHistory": [
         {
           "stage": "Trip",
@@ -1926,7 +1996,14 @@
           "actor": "Czarina",
           "role": "admin"
         }
-      ]
+      ],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 12,
@@ -1961,7 +2038,7 @@
       "gateOutAt": null,
       "rejectionReason": "Supplier cannot deliver the requested quantity",
       "supplierResponse": "ALTERNATIVE_PROPOSED",
-      "supplierResponseReason": "",
+      "supplierResponseReason": null,
       "supplierRespondedAt": "2026-09-13T09:31:47.281Z",
       "alternativeDate": "2026-09-28",
       "alternativeTime": "08:00",
@@ -2021,7 +2098,22 @@
       "companyDecision": "APPROVED",
       "companyDecisionReason": null,
       "companyDecisionAt": "2026-09-13T09:32:18.681Z",
-      "companyDecisionBy": "Czarina"
+      "companyDecisionBy": "Czarina",
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 13,
@@ -2093,8 +2185,7 @@
           "stillToBeDelivered": null,
           "remarks": "Upload this file first",
           "supplierApprovedAt": "2026-09-13T09:35:38.522Z",
-          "assignedTruckPlate": "AAA-4321",
-          "sourceAllocationItemId": 14
+          "assignedTruckPlate": "AAA-4321"
         },
         {
           "id": 15,
@@ -2118,8 +2209,7 @@
           "stillToBeDelivered": null,
           "remarks": "Original proposal",
           "supplierApprovedAt": "2026-09-13T09:35:38.522Z",
-          "assignedTruckPlate": "AAA-4321",
-          "sourceAllocationItemId": 15
+          "assignedTruckPlate": "AAA-4321"
         }
       ],
       "palletsScanned": 0,
@@ -2133,13 +2223,13 @@
       "gateDecisionAt": null,
       "gateDecisionBy": null,
       "gateRejectionReason": null,
-      "estimatedTravelMinutes": null,
-      "estimatedTravelDistanceKm": null,
-      "estimatedTrafficDelayMinutes": null,
+      "estimatedTravelMinutes": 26,
+      "estimatedTravelDistanceKm": 12.9,
+      "estimatedTrafficDelayMinutes": 11,
       "etaTrafficAware": false,
-      "etaTrafficModel": "NONE",
-      "etaProvider": null,
-      "estimatedArrivalAt": null,
+      "etaTrafficModel": "TIME_OF_DAY",
+      "etaProvider": "OpenStreetMap / OSRM road distance · Weekend daytime · 35 km/h",
+      "estimatedArrivalAt": "2026-09-13T10:03:59.208Z",
       "scanHistory": [
         {
           "stage": "Trip",
@@ -2149,7 +2239,14 @@
           "actor": "Czarina",
           "role": "admin"
         }
-      ]
+      ],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 14,
@@ -2221,8 +2318,7 @@
           "stillToBeDelivered": null,
           "remarks": "Supplier: accept with one truck",
           "supplierApprovedAt": "2026-09-13T09:41:51.463Z",
-          "assignedTruckPlate": "AAA-3231",
-          "sourceAllocationItemId": 16
+          "assignedTruckPlate": "AAA-3231"
         }
       ],
       "palletsScanned": 0,
@@ -2308,7 +2404,14 @@
         "inspectedBy": "Czarina",
         "inspectorId": 2
       },
-      "replacementIds": []
+      "replacementIds": [],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null
     },
     {
       "id": 15,
@@ -2385,7 +2488,26 @@
       ],
       "palletsScanned": 0,
       "palletsTotal": 0,
-      "palletIds": []
+      "palletIds": [],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     }
   ],
   "rdsRequests": [],
