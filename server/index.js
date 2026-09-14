@@ -292,8 +292,9 @@ const scanShipmentNumber = (rawValue) => {
 };
 const SCAN_STAGES = {
   TRIP: { status: "IN_TRANSIT", label: "Trip", roles: ["admin", "supplier", "driver", "ecosystem"], from: ["BOOKED"] },
-  GATE: { status: null, label: "Gate", roles: ["admin", "security", "ecosystem"], from: ["BOOKED", "IN_TRANSIT", "UNLOADING", "RECEIVED"] },
+  GATE: { status: null, label: "Gate", roles: ["admin", "security", "ecosystem"], from: ["BOOKED", "IN_TRANSIT", "RECEIVED"] },
   UNLOADING: { status: "UNLOADING", label: "Unloading", roles: ["admin", "warehouse", "ecosystem"], from: ["GATE_IN"] },
+  RECEIVED: { status: "RECEIVED", label: "Received", roles: ["admin", "warehouse", "ecosystem"], from: ["UNLOADING"] },
 };
 const dockStatuses = new Set(["GATE_IN", "UNLOADING", "RECEIVED"]);
 const assignAvailableDock = (state, shipment) => {
@@ -355,16 +356,16 @@ const supplierForClient = (supplier, includeAddress = false) => {
   return output;
 };
 const companyScopedRoles = new Set(["supplier", "driver"]);
+const ecosystemReceivesShipment = (user, shipment) => Number(user.supplierId) === Number(shipment.destinationEcosystemId) || (!shipment.destinationEcosystemId && shipmentWorkArea(shipment) === "ECOSYSTEM");
 const canAccessShipment = (user, shipment) => {
-  if (user.role === "ecosystem") return Number(user.supplierId) === Number(shipment.supplierId) || Number(user.supplierId) === Number(shipment.destinationEcosystemId) || (!shipment.destinationEcosystemId && shipmentWorkArea(shipment) === "ECOSYSTEM");
+  if (user.role === "ecosystem") return Number(user.supplierId) === Number(shipment.supplierId) || ecosystemReceivesShipment(user, shipment);
   if (companyScopedRoles.has(user.role) && Number(user.supplierId) !== Number(shipment.supplierId)) return false;
   if (companyScopedRoles.has(user.role) && shipmentWorkArea(shipment) === "ECOSYSTEM") return true;
   const scope = AREA_SCOPED_ROLES.has(user.role) ? normalizeWorkArea(user.workArea) : null;
   if (!scope) return true;
   const area = shipmentWorkArea(shipment);
   if (area === scope) return true;
-  if (Boolean(shipment.destinationEcosystemId) && normalizeWorkArea(shipment.originWorkArea) === scope) return true;
-  if (user.role === "planner" && area === "ECOSYSTEM") return true;
+  if (area === "ECOSYSTEM" && normalizeWorkArea(shipment.originWorkArea) === scope) return true;
   return false;
 };
 const supplierHasAccount = (state, supplierId, area = null) => state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplierId) && (!area || area === "ECOSYSTEM" || !normalizeWorkArea(user.workArea) || normalizeWorkArea(user.workArea) === area));
@@ -581,6 +582,8 @@ await store.update(async (state) => {
     shipment.followUpLabel = shipment.isFollowUp ? String(shipment.followUpLabel || "Follow up") : null;
     shipment.vendorCode = String(shipment.vendorCode || "SUPPLIER");
     shipment.supplierId = Number(shipment.supplierId) || state.suppliers.find((supplier) => supplier.vendorCode === shipment.vendorCode || supplier.name === shipment.supplier)?.id || null;
+    shipment.destinationEcosystemId = Number(shipment.destinationEcosystemId) || null;
+    shipment.originWorkArea = normalizeWorkArea(shipment.originWorkArea);
     delete shipment.dppNumber;
     shipment.deliveryCode = shipment.deliveryCode || (shipment.bookingStatus === "APPROVED" ? nextCode("DLV", shipment.id, shipment.scheduledDate) : null);
     shipment.truckPlate = String(shipment.truckPlate || "TO BE ASSIGNED");
@@ -1284,7 +1287,7 @@ app.patch("/api/shipments/:id/gate-review", auth, allow("admin", "security", "ec
   const result = await store.update((state) => {
     const shipment = state.shipments.find(row => row.id === Number(request.params.id));
     if (!shipment) return null;
-    if (!canAccessShipment(request.user, shipment)) return { forbidden: true };
+    if (!canAccessShipment(request.user, shipment) || (request.user.role === "ecosystem" && !ecosystemReceivesShipment(request.user, shipment))) return { forbidden: true };
     if (shipment.bookingStatus !== "APPROVED" || !["BOOKED", "IN_TRANSIT"].includes(shipment.status)) return { locked: true };
     const reviewedAt = new Date().toISOString();
     shipment.gateDecision = "REJECTED";
@@ -1305,22 +1308,23 @@ app.patch("/api/shipments/:id/gate-review", auth, allow("admin", "security", "ec
 app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response) => {
   const stage = String(request.body?.stage || "").toUpperCase();
   const configuration = SCAN_STAGES[stage];
-  if (!configuration) return response.status(400).json({ message: "Choose Trip, Gate, or Unloading before scanning" });
+  if (!configuration) return response.status(400).json({ message: "Choose Trip, Gate, Unloading, or Received before scanning" });
   if (!configuration.roles.includes(request.user.role)) return response.status(403).json({ message: `Your role cannot record the ${configuration.label} scan` });
   const shipmentNumber = scanShipmentNumber(request.body?.scanValue);
   if (!shipmentNumber) return response.status(400).json({ message: "The QR code does not contain a shipment number" });
   const result = await store.update(async (state) => {
     const shipment = state.shipments.find((row) => row.shipmentNumber.toUpperCase() === shipmentNumber || String(row.deliveryCode || "").toUpperCase() === shipmentNumber || String(row.id) === shipmentNumber);
     if (!shipment) return null;
-    if (!canAccessShipment(request.user, shipment) || (request.user.role === "ecosystem" && Number(request.user.supplierId) !== Number(shipment.destinationEcosystemId) && (shipment.destinationEcosystemId || shipmentWorkArea(shipment) !== "ECOSYSTEM"))) return { forbidden: true };
+    const ecosystemStageAllowed = request.user.role !== "ecosystem" || (stage === "TRIP" ? Number(request.user.supplierId) === Number(shipment.supplierId) : ecosystemReceivesShipment(request.user, shipment));
+    if (!canAccessShipment(request.user, shipment) || !ecosystemStageAllowed) return { forbidden: true };
     if (shipment.bookingStatus !== "APPROVED") return { approvalRequired: true };
-    const targetStatus = stage === "GATE" ? (["UNLOADING", "RECEIVED", "GATE_OUT"].includes(shipment.status) ? "GATE_OUT" : "GATE_IN") : configuration.status;
+    const targetStatus = stage === "GATE" ? (["RECEIVED", "GATE_OUT"].includes(shipment.status) ? "GATE_OUT" : "GATE_IN") : configuration.status;
     if (targetStatus === "GATE_IN" && String(request.body?.gateDecision || "").toUpperCase() !== "ACCEPT") return { gateDecisionRequired: true };
     if (targetStatus === "GATE_IN") {
       const scheduledAt = Date.parse(`${shipment.scheduledDate}T${shipment.scheduledTime}:00+08:00`);
       if (Number.isFinite(scheduledAt) && Date.now() < scheduledAt - 15 * 60_000) return { tooEarly: true, earliestAt: new Date(scheduledAt - 15 * 60_000).toISOString() };
     }
-    const alreadyRecorded = shipment.status === targetStatus || (stage === "TRIP" && Boolean(shipment.tripAt)) || (stage === "UNLOADING" && Boolean(shipment.unloadingAt));
+    const alreadyRecorded = shipment.status === targetStatus || (stage === "TRIP" && Boolean(shipment.tripAt)) || (stage === "UNLOADING" && Boolean(shipment.unloadingAt)) || (stage === "RECEIVED" && Boolean(shipment.receivedAt));
     if (alreadyRecorded) return { shipment: supplierSafeShipment(shipment), alreadyRecorded: true, stageLabel: configuration.label };
     if (!alreadyRecorded && !configuration.from.includes(shipment.status)) return { wrongStage: true, currentStatus: shipment.status };
     if (targetStatus === "UNLOADING" && !assignAvailableDock(state, shipment)) return { noDock: true };
@@ -1331,7 +1335,8 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; applyShipmentEta(state, shipment, shipment.tripAt); }
     if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; shipment.gateDecision = "ACCEPTED"; shipment.gateDecisionAt = scannedAt; shipment.gateDecisionBy = request.user.name; shipment.gateRejectionReason = null; clearShipmentEta(shipment); resolveShipmentNotifications(state, shipment); }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
-    if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.receivedAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
+    if (stage === "RECEIVED") shipment.receivedAt ||= scannedAt;
+    if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
     const stageLabel = stage === "GATE" ? (targetStatus === "GATE_OUT" ? "Gate out" : "Gate in") : configuration.label;
     if (!alreadyRecorded) {
       shipment.scanHistory ||= [];
@@ -1350,7 +1355,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
   response.json({ ...result, message: result.alreadyRecorded ? `${result.stageLabel} was already recorded for ${result.shipment.shipmentNumber}` : `${result.shipment.shipmentNumber} updated to ${result.stageLabel}` });
 }));
 
-app.patch("/api/shipments/:id/status", auth, (_request, response) => response.status(410).json({ message: "Use the role-authorized scan stations and receipt inspection" }));
+app.patch("/api/shipments/:id/status", auth, (_request, response) => response.status(410).json({ message: "Use the role-authorized Trip, Gate, Unloading, and Received scan stations" }));
 
 app.post("/api/imports/excel/preview", auth, allow(...planningRoles), excelUpload.single("file"), asyncRoute(async (request, response) => {
   if (!request.file) return response.status(400).json({ message: "Choose an Excel, OpenDocument, CSV, or TSV file up to 25 MB" });
@@ -1457,6 +1462,8 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     let itemId = Math.max(0, ...state.shipments.flatMap((shipment) => shipment.items || []).map((item) => Number(item.id) || 0)) + 1;
     let createdProposals = 0, updatedProposals = 0, unchangedProposals = 0, importedRows = 0, unchangedRows = 0;
     const supplierChanges = new Map();
+    const ecosystemDestinationIds = [...new Set(state.users.filter((user) => user.role === "ecosystem" && Number(user.supplierId)).map((user) => Number(user.supplierId)))];
+    const defaultEcosystemDestinationId = ecosystemDestinationIds.length === 1 ? ecosystemDestinationIds[0] : null;
     const emailDetails = ({ scheduledDate, scheduledTime, scheduledEndTime, items }) => ({
       date: scheduledDate,
       time: scheduledTime,
@@ -1506,6 +1513,8 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
       if (existing && String(conflictDecisions[fingerprint]).toUpperCase() === "KEEP") { unchangedProposals += 1; unchangedRows += rows.length; continue; }
       const availabilitySlot = ensureAvailabilityForTime(state, first.deliveryDate, first.deliveryTime, first.endTime);
       const items = buildItems(rows, existing?.items || []);
+      const destinationArea = normalizeWorkArea(first.site);
+      const importOriginWorkArea = destinationArea === "ECOSYSTEM" ? normalizeWorkArea(request.user.workArea) : null;
       supplier.productPresets ||= [];
       for (const row of rows) {
         const preset = supplier.productPresets.find((item) => item.materialCode.toUpperCase() === row.materialCode.toUpperCase());
@@ -1522,6 +1531,8 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
         existing.expectedDurationMinutes = first.endTime ? durationMinutes(first.deliveryTime, first.endTime) : null;
         existing.timeSlot = scheduleLabel(first.deliveryTime, first.endTime);
         existing.items = items;
+        existing.originWorkArea = importOriginWorkArea || existing.originWorkArea || null;
+        if (destinationArea === "ECOSYSTEM") existing.destinationEcosystemId ||= defaultEcosystemDestinationId;
         existing.materialWeightKg = rows.reduce((sum, row) => sum + (row.uom === "KG" ? row.quantity : row.uom === "MT" ? row.quantity * 1000 : 0), 0);
         existing.importBatchId = batchId;
         existing.sdsImportFingerprint = fingerprint;
@@ -1545,6 +1556,7 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
         rejectionReason: null, supplierResponse: null, supplierResponseReason: null, supplierRespondedAt: null, alternativeDate: null, alternativeTime: null, alternativeEndTime: null,
         loadConfirmedAt: null, finalDecisionAt: null, finalDecisionBy: null, sdsProposalId: currentShipmentId, importBatchId: batchId, importSource: null,
         sdsImportIdentity: identity, sdsImportFingerprint: fingerprint, confirmedTruckLoads: [], items, palletsScanned: 0, palletsTotal: 0, palletIds: [],
+        originWorkArea: importOriginWorkArea, destinationEcosystemId: destinationArea === "ECOSYSTEM" ? defaultEcosystemDestinationId : null,
       };
       state.shipments.push(proposal);
       createdProposals += 1;

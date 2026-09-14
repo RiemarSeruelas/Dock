@@ -386,20 +386,25 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(unloadingScan.result.shipment.status, "UNLOADING");
   assert.match(unloadingScan.result.shipment.dock, /^Dock [123] - (PM|RM)$/);
   assert.equal(unloadingScan.result.shipment.scanHistory.at(-1).actor, "Warehouse Dressings");
+  const earlyGateOut = await scan(security.token, "GATE");
+  assert.equal(earlyGateOut.response.status, 409, "Gate Out must wait for the Received scan");
+  const receivedScan = await scan(warehouse.token, "RECEIVED");
+  assert.equal(receivedScan.result.shipment.status, "RECEIVED");
+  assert.ok(receivedScan.result.shipment.receivedAt);
   const gateOutScan = await scan(security.token, "GATE");
   assert.equal(gateOutScan.result.shipment.status, "GATE_OUT");
-  assert.ok(gateOutScan.result.shipment.receivedAt, "Gate out records the unloading completion timestamp used by legacy exports");
+  assert.equal(gateOutScan.result.shipment.receivedAt, receivedScan.result.shipment.receivedAt);
   assert.equal(gateOutScan.result.shipment.dock, null);
-  assert.deepEqual(gateOutScan.result.shipment.scanHistory.map((record) => record.actor), ["Supplier User", "Security User", "Warehouse Dressings", "Security User"]);
+  assert.deepEqual(gateOutScan.result.shipment.scanHistory.map((record) => record.actor), ["Supplier User", "Security User", "Warehouse Dressings", "Warehouse Dressings", "Security User"]);
 
 
-  // Received is no longer a scan station; Gate out completes unloading directly.
+  // Trip is optional, but Received remains mandatory between Unloading and Gate Out.
   const second = approvedGroup.find(row => row.id !== first.id);
   const secondScan = (stage) => call('/api/shipments/scan-stage', { token: admin.token, method: 'POST', body: { scanValue: second.shipmentNumber, stage, ...(stage === 'GATE' ? { gateDecision: 'ACCEPT' } : {}) } });
-  assert.equal((await secondScan('RECEIVED')).response.status, 400);
-  // Trip is optional: Security may scan Gate in while the delivery is still Booked.
+  assert.equal((await secondScan('RECEIVED')).response.status, 409);
   assert.equal((await secondScan('GATE')).response.status, 200);
   assert.equal((await secondScan('UNLOADING')).response.status, 200);
+  assert.equal((await secondScan('RECEIVED')).response.status, 200);
   assert.equal((await secondScan('GATE')).response.status, 200);
   assert.equal((await call(`/api/shipments/${second.id}/status`, { token: admin.token, method: 'PATCH', body: { status: 'RECEIVED' } })).response.status, 410);
   assert.equal((await call(`/api/shipments/lookup?code=${first.deliveryCode}`, { token: supplier.token })).response.status, 200);
@@ -451,19 +456,26 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const inboundWorkbook = new ExcelJS.Workbook();
   const inboundSheet = inboundWorkbook.addWorksheet('SDS Schedule');
   inboundSheet.addRow(['Supplier','Material Code','UOM','Quantity','Delivery Date','Delivery Time','End Time','Site']);
-  inboundSheet.addRow(['Trial Ingredients Supplier','ECO-INBOUND-1','KG',40,'10-Sep-2026','10:00','12:00','Dressings']);
-  const inboundPreview = await uploadPreview(inboundWorkbook,'ecosystem-inbound.xlsx');
-  assert.equal((await call('/api/imports/excel/commit',{token:admin.token,method:'POST',body:{previewToken:inboundPreview.result.previewToken}})).response.status,201);
+  inboundSheet.addRow(['Trial Ingredients Supplier','ECO-INBOUND-1','KG',40,'10-Sep-2026','10:00','12:00','Ecosystem']);
+  const inboundPreview = await uploadPreview(inboundWorkbook,'ecosystem-inbound.xlsx',planner.token);
+  assert.equal((await call('/api/imports/excel/commit',{token:planner.token,method:'POST',body:{previewToken:inboundPreview.result.previewToken}})).response.status,201);
   const inboundId = (await call('/api/bootstrap',{token:admin.token})).result.shipments.find(s=>s.items.some(item=>item.materialCode==='ECO-INBOUND-1')).id;
-  assert.equal((await call(`/api/shipments/${inboundId}/destination`, { token: admin.token, method: 'PATCH', body: { ecosystemId: ecoAccount.supplierId } })).response.status, 200);
+  const importedInbound = (await call('/api/bootstrap',{token:admin.token})).result.shipments.find(s=>s.id===inboundId);
+  assert.equal(importedInbound.originWorkArea,'DRESSINGS');
+  assert.equal(importedInbound.destinationEcosystemId,ecoAccount.supplierId);
+  assert.equal((await call('/api/bootstrap',{token:savouryAdmin.token})).result.shipments.some(s=>s.id===inboundId),false);
   const ecoInbound = (await call('/api/bootstrap', { token: supplier.token })).result.shipments.find(s => s.id === inboundId);
   assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: eco.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 403);
   assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: supplier.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 200);
-  const inbound = (await call('/api/bootstrap', { token: eco.token })).result.shipments.find(s => s.id === inboundId);
+  const ecoBootstrap = await call('/api/bootstrap', { token: eco.token });
+  const inbound = ecoBootstrap.result.shipments.find(s => s.id === inboundId);
+  assert.ok(inbound);
+  assert.ok(ecoBootstrap.result.notifications.some(notification => notification.shipmentId === inboundId && !notification.requiresAction), 'Ecosystem receives an informational notice, not an approval request');
   const ecoScan = (token, stage) => call('/api/shipments/scan-stage', { token, method: 'POST', body: { scanValue: inbound.shipmentNumber, stage, ...(stage === 'GATE' ? { gateDecision: 'ACCEPT' } : {}) } });
   assert.equal((await ecoScan(supplier.token, 'TRIP')).response.status, 200);
   assert.equal((await ecoScan(security.token, 'GATE')).response.status, 200);
   assert.equal((await ecoScan(eco.token, 'UNLOADING')).response.status, 200);
+  assert.equal((await ecoScan(eco.token, 'RECEIVED')).response.status, 200);
   assert.equal((await ecoScan(eco.token, 'GATE')).response.status, 200);
   const added=await call('/api/ecosystem/materials',{token:eco.token,method:'POST',body:{materialCode:'ECO-100',description:'Ecosystem ingredient',uom:'KG'}});
   assert.equal(added.response.status,201);
@@ -475,6 +487,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(requested.result.shipment.items.length,2);
   assert.equal(requested.result.shipment.supplierId,ecoAccount.supplierId);
   const ecosystemRequestView=(await call('/api/bootstrap',{token:eco.token})).result.shipments.find(shipment=>shipment.id===requested.result.shipment.id);
+  assert.ok(ecosystemRequestView, 'Ecosystem sees its outgoing company delivery request');
   assert.equal(ecosystemRequestView.items.find(item=>item.materialCode==='ECO-100').materialName,'Ecosystem ingredient');
   assert.equal(requested.result.notification.status,'SENT');
   assert.equal((await call('/api/ecosystem/transfers',{token:planner.token,method:'POST',body:transfer})).response.status,409);

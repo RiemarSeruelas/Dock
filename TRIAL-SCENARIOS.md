@@ -205,6 +205,13 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | ECO-08 | Wrong Ecosystem account opens a specifically assigned inbound delivery | Access is denied |
 | ECO-09 | Two trucks deliver one Ecosystem schedule | Both retain the same stored time and appear side by side |
 | ECO-10 | Compare Ajinomoto supplier view and Ecosystem view | Same shipment IDs have the same date/start/end values |
+| ECO-11 | Dressings imports an SDS row with Site = Ecosystem | Dressings, its supplier and Ecosystem can see it; Savoury cannot |
+| ECO-12 | Savoury imports an SDS row with Site = Ecosystem | Savoury, its supplier and Ecosystem can see it; Dressings cannot |
+| ECO-13 | Ecosystem opens an incoming proposal awaiting confirmation | Proposal is informational; Ecosystem cannot approve or reject it |
+| ECO-14 | Assigned supplier approves the incoming proposal | Booking is created and Ecosystem can receive it |
+| ECO-15 | Open Ecosystem Monitoring → Receiving | Only supplier-to-Ecosystem tickets appear |
+| ECO-16 | Open Ecosystem Monitoring → Sending | Only Ecosystem-to-company tickets appear |
+| ECO-17 | Open Ecosystem Schedule with both directions | Incoming suppliers use supplier colors; outgoing tickets use the fixed sending color |
 
 ## 11. Scan and receiving workflow
 
@@ -219,10 +226,11 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | SCAN-07 | Scan same stage twice | No duplicate transition/timestamp is created |
 | SCAN-08 | Warehouse scans Unloading before Gate in | Server blocks sequence |
 | SCAN-09 | Warehouse scans Unloading after Gate in | Unloading timestamp is recorded |
-| SCAN-10 | Try the old Received stage | Server rejects it as an unavailable stage |
-| SCAN-11 | Gate out before Unloading | Server blocks the sequence |
-| SCAN-12 | Gate out after Unloading | Gate-out and unloading-completion timestamps are recorded and the dock is released |
-| SCAN-13 | Repeat Gate out | No duplicate transition/timestamp is created |
+| SCAN-10 | Record Received before Unloading | Server blocks the sequence |
+| SCAN-11 | Record Received after Unloading | Received timestamp and actor are recorded |
+| SCAN-12 | Gate out before Received | Server blocks the sequence |
+| SCAN-13 | Gate out after Received | Gate-out timestamp is recorded and the dock is released |
+| SCAN-14 | Repeat Gate out | No duplicate transition/timestamp is created |
 
 ## 12. SAP PostgreSQL worksheet
 

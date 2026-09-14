@@ -39,19 +39,19 @@ For a complete manual regression plan, use `TRIAL-SCENARIOS.md` in this project.
 
 ## Receiving and clearance
 
-The scan sequence is Booking → optional Trip → Gate in → Unloading → Gate out. At Gate in, Security first scans and reviews the booking, then explicitly accepts or rejects it. Entry may begin 15 minutes before the scheduled time. Rejection requires a categorized reason (or written Other reason), leaves the booking available for correction, and notifies the supplier. After Warehouse records Unloading, Security gets a separate **Confirm Gate Out** action. Ecosystem can record the unloading and gate-out stages for its own incoming deliveries.
+The scan sequence is Booking → optional Trip → Gate in → Unloading → Received → Gate out. At Gate in, Security first scans and reviews the booking, then explicitly accepts or rejects it. Entry may begin 15 minutes before the scheduled time. Rejection requires a categorized reason (or written Other reason), leaves the booking available for correction, and notifies the supplier. After unloading, an authorized receiving account records **Received** before Gate out can be completed. Ecosystem can record Unloading, Received and Gate out for deliveries it receives.
 
 Before unloading begins, the supplier can correct the plate, driver, phone, helper names, and comma-separated PO/DR values. Delivery date and time remain planner-controlled.
 
-There is no Received/OTIF QR station for new deliveries. Gate out completes the operational journey. Warehouse enters **Actual Quantity Received** in SAP Analysis; **On Time**, **In Full**, and **OTIF** are read-only calculated columns there. On Time uses Gate in plus the configured grace period, In Full compares Actual Quantity Received with DR Quantity, and OTIF is Yes only when both are Yes.
+Received is an operational QR stage and does not replace the quantity controls in SAP Analysis. Warehouse enters **Actual Quantity Received** in SAP Analysis; **On Time**, **In Full**, and **OTIF** are read-only calculated columns there. On Time uses Gate in plus the configured grace period, In Full compares Actual Quantity Received with DR Quantity, and OTIF is Yes only when both are Yes.
 
 Administrator, Warehouse and SAP Analyst accounts have a searchable **Clearance** sidebar page with supplier, status, From-date, and To-date filters. Administrator and Warehouse can open an entry to complete it. Available supplier, material, truck, driver, helper, DR/PO, quantity, batch/lot and scan timestamps autofill from DockFlow and SAP. SAP Actual Received is used when available. Both left/right copies use the same entered values and download as one A4 landscape page per delivery; multiple material values are combined on that page.
 
 ## Ecosystem
 
-Incoming deliveries with Site = Ecosystem appear in its Overview, Monitoring and Schedule. Outgoing ULI requests appear in My entries and notifications. Dressings/Savoury operations use their own docks.
+Ecosystem acts as both a receiver and a sender. Its Overview focuses on incoming deliveries. **Monitoring → Receiving** shows supplier-to-Ecosystem tickets, while **Monitoring → Sending** shows Ecosystem-to-company tickets. Schedule shows both directions: each incoming supplier keeps its own color and outgoing Ecosystem deliveries use a fixed sending color and direction label.
 
-A Dressings or Savoury Planner can import spreadsheet rows whose Site is Ecosystem. The account's normal work-area restriction still applies to every non-Ecosystem row in that upload.
+A Dressings or Savoury Planner can import spreadsheet rows whose Site is Ecosystem. The delivery remains visible only to the originating work area, the assigned supplier and the receiving Ecosystem account; the other company work area cannot see it. The supplier alone approves its proposed schedule. Ecosystem receives an informational notice but cannot approve or reject that supplier's proposal.
 
 Administrator or Ecosystem maintains requestable material code, description, and UOM under **Ecosystem → Manage materials**. A request submits only the selected catalog IDs/codes and quantities; the API retrieves the trusted description and UOM from that catalog for the Ecosystem view. Administrator or Planner/Production selects multiple codes, enters quantities, destination and date/time, then sends a delivery request. A scoped account's destination is locked to its own area. There are no inventory quantities or stock-availability limits. Duplicate submission IDs are rejected.
 

@@ -4,12 +4,13 @@
     "flexibleScheduling": true,
     "dockCount": 3,
     "graceMinutes": 30,
-    "deliveryCodeSequence": 12,
+    "deliveryCodeSequence": 14,
     "siteName": "Cavite Foods Receiving",
-    "siteAddress": "enc:v1:pA3ES66q2of3_nuD:a66DNknyR60aJ0aaYiV_4w:S0iBRQ6NLyYnnrstxx1CXa8xMvWphNODVRe840bfQytmiysYDduIkQ",
-    "siteCoordinates": "enc:v1:STPhZsl3Sx8-UPqv:At0oJZY4tIf210CdUgeS6A:Lb4KTUcEM7EWX0rVDXBaEaulDEzeibkKs39qFPcfeoR9hcYn",
+    "siteAddress": "enc:v1:LQ0gapKxOlwoOpIh:tYUrpSoZHCTJp_ART446pw:y0qj_ByF9NY7tIDIgGou7SSap01XNJudjG8V3uxIRxvEAFGfEdiiYw",
+    "siteCoordinates": "enc:v1:l0WKxReXJXyczOhT:5o4B9jDJqOrjpeAMMaGk0A:v_lS2EY-FLX3OGMFg6aaI7A8gYVSV-c8LDfsUNdEyFnupU_n",
     "availableDates": [
       "2026-09-13",
+      "2026-09-14",
       "2026-09-21",
       "2026-09-22",
       "2026-09-23",
@@ -104,6 +105,13 @@
         "startTime": "09:00",
         "endTime": "11:00",
         "label": "Imported delivery window"
+      },
+      {
+        "id": 13,
+        "date": "2026-09-14",
+        "startTime": "08:00",
+        "endTime": "10:00",
+        "label": "Imported delivery window"
       }
     ],
     "emailNotifications": {}
@@ -113,12 +121,12 @@
       "id": 1,
       "name": "System Administrator",
       "username": "admin",
-      "passwordHash": "$2b$10$ItGnSfbNa1UMCxFDXJNZhuCpNM5GghuwbHLKtxr6326hOLEKJcuP6",
+      "passwordHash": "$2b$10$q9y3DyQOjQgUitNXKlm7b.ea29fc4qkJxKjPVVW9SA5kKquLq83XG",
       "role": "admin",
       "supplierId": null,
       "workArea": null,
       "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": "2026-09-13T12:42:45.265Z",
+      "emailVerifiedAt": "2026-09-14T02:42:40.554Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
@@ -142,7 +150,7 @@
       "onboardingRequired": false,
       "role": "admin",
       "supplierId": null,
-      "workArea": "DRESSINGS",
+      "workArea": null,
       "passwordChangedAt": "2026-09-13T08:25:20.312Z",
       "monthlyPerformanceEnabled": false,
       "monthlyPerformanceDay": 1,
@@ -163,7 +171,7 @@
       "onboardingRequired": true,
       "role": "admin",
       "supplierId": null,
-      "workArea": "SAVOURY",
+      "workArea": null,
       "monthlyPerformanceEnabled": false,
       "monthlyPerformanceDay": 1,
       "monthlyPerformanceTime": "09:00"
@@ -207,62 +215,94 @@
       "passwordChangedAt": "2026-09-13T08:28:28.013Z"
     },
     {
-      "id": 6,
-      "name": "Warehouse",
-      "username": "warehouse",
+      "id": 8,
+      "name": "SAPAnalyst",
+      "username": "sapanalyst",
       "email": "riemsjr534@gmail.com",
-      "emailVerifiedAt": null,
+      "emailVerifiedAt": "2026-09-14T01:38:31.821Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
-      "verificationCodeSentAt": null,
-      "passwordHash": "$2b$10$NY4SLbsohxJbCf6MZJIPsOwroMbjli7Snw6tqk2aO7pWV09PsGNPC",
-      "mustChangePassword": true,
-      "onboardingRequired": true,
+      "verificationCodeSentAt": "2026-09-14T01:37:20.953Z",
+      "passwordHash": "$2b$10$Yk1nFSjao0RN6NOw1uO3E.uajqPyNgbWfa3BvYwBXGKc81.DDcfQa",
+      "mustChangePassword": false,
+      "onboardingRequired": false,
+      "role": "sap",
+      "supplierId": null,
+      "workArea": "DRESSINGS",
+      "passwordChangedAt": "2026-09-14T01:38:44.097Z"
+    },
+    {
+      "id": 9,
+      "name": "Warehouse",
+      "username": "warehouse",
+      "email": "riemar53seruelas@gmail.com",
+      "emailVerifiedAt": "2026-09-14T01:24:26.994Z",
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": "2026-09-14T01:24:17.171Z",
+      "passwordHash": "$2b$10$fF/EOb6OtXg0r2ppoR3Nu./balRtPx950A4RwKAPa9hZ3pMgn3dUS",
+      "mustChangePassword": false,
+      "onboardingRequired": false,
       "role": "warehouse",
       "supplierId": null,
       "workArea": "DRESSINGS",
-      "monthlyPerformanceEnabled": false,
-      "monthlyPerformanceDay": 1,
-      "monthlyPerformanceTime": "09:00"
+      "passwordChangedAt": "2026-09-14T01:24:36.928Z"
     },
     {
-      "id": 7,
-      "name": "Ecosystem",
-      "username": "ecosystem",
-      "email": "riemsjr534@gmail.com",
-      "emailVerifiedAt": "2026-09-13T08:33:26.201Z",
+      "id": 10,
+      "name": "Security1",
+      "username": "security1",
+      "email": "riemar53seruelas@gmail.com",
+      "emailVerifiedAt": "2026-09-14T01:26:51.560Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
-      "verificationCodeSentAt": "2026-09-13T08:33:19.831Z",
-      "passwordHash": "$2b$10$KdU1nF1ysw2J/xKye7i7Jez8gk6XaXNu1tPzPZI.fRKAfo5x5aCBq",
+      "verificationCodeSentAt": "2026-09-14T01:26:39.770Z",
+      "passwordHash": "$2b$10$vy8L7SIM/MsIk.sTLPati.j/eMXjAMtMBTK/d2DBNqXyeCnDxNTGy",
+      "mustChangePassword": false,
+      "onboardingRequired": false,
+      "role": "security",
+      "supplierId": null,
+      "workArea": null,
+      "passwordChangedAt": "2026-09-14T01:27:03.636Z"
+    },
+    {
+      "id": 11,
+      "name": "Planner",
+      "username": "planner",
+      "email": "riemar53seruelas@gmail.com",
+      "emailVerifiedAt": "2026-09-14T01:28:22.460Z",
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": "2026-09-14T01:28:13.815Z",
+      "passwordHash": "$2b$10$Gt2fUQ0iM0Q/8qEWTDCmruRSM.D1/283DGsn2ZT3p3ujSN7/7Nbjq",
+      "mustChangePassword": false,
+      "onboardingRequired": false,
+      "role": "planner",
+      "supplierId": null,
+      "workArea": "DRESSINGS",
+      "passwordChangedAt": "2026-09-14T01:28:36.719Z"
+    },
+    {
+      "id": 12,
+      "name": "Ecosystem",
+      "username": "ecosystem",
+      "email": "riemar53seruelas@gmail.com",
+      "emailVerifiedAt": "2026-09-14T01:31:08.143Z",
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": "2026-09-14T01:30:56.731Z",
+      "passwordHash": "$2b$10$.GjfPyLffLKl.KlOvcTZWO9Pv4LdAnqWj8CxAjXYOyoZki4EisdLe",
       "mustChangePassword": false,
       "onboardingRequired": false,
       "role": "ecosystem",
       "supplierId": 2,
       "workArea": "ECOSYSTEM",
-      "monthlyPerformanceEnabled": false,
-      "monthlyPerformanceDay": 1,
-      "monthlyPerformanceTime": "09:00",
-      "passwordChangedAt": "2026-09-13T08:33:35.910Z"
-    },
-    {
-      "id": 8,
-      "name": "SAPAnalyst",
-      "username": "sapanalyst",
-      "email": "riemsjr534@gmail.com",
-      "emailVerifiedAt": null,
-      "emailVerificationHash": null,
-      "emailVerificationExpiresAt": null,
-      "emailVerificationAttempts": 0,
-      "verificationCodeSentAt": null,
-      "passwordHash": "$2b$10$11zzNGk4eECnnVUUCrgi7.3xn4FMFUeqbqNptNzU5rxo7iGUfuphO",
-      "mustChangePassword": true,
-      "onboardingRequired": true,
-      "role": "sap",
-      "supplierId": null,
-      "workArea": "DRESSINGS"
+      "passwordChangedAt": "2026-09-14T01:31:25.074Z"
     }
   ],
   "suppliers": [
@@ -360,10 +400,28 @@
           "materialCode": "SDS-DUP-002",
           "uom": "KG",
           "defaultAmount": 200
+        },
+        {
+          "id": 16,
+          "materialCode": "SDS-001-001",
+          "uom": "KG",
+          "defaultAmount": 75
+        },
+        {
+          "id": 17,
+          "materialCode": "SDS-001-002",
+          "uom": "KG",
+          "defaultAmount": 76
+        },
+        {
+          "id": 18,
+          "materialCode": "SDS-001-003",
+          "uom": "KG",
+          "defaultAmount": 77
         }
       ],
-      "originAddress": "enc:v1:Tv8E8XWFFrg38rxf:HSi3TNC5DdcPNIBI_Eue7Q:-ZrZXWVXYg_DoYgQwYtQcGQq-bM4g0EnaiRt8nRJ8Y2-0Jckt3_rQlNv4Gwh",
-      "originCoordinates": "enc:v1:NF0DZyWgoky854hp:aey5CPK8II9RlrimVP6nnQ:nSdc9o7KzPHpAwT08UQ5YvDLDGty4JQHWGyXCs0n9EprE-5w",
+      "originAddress": "enc:v1:aHuw1nMfv3hS1kIy:q6pVFmpwB01xm4oDYmxaUg:7kbuNdEEPBK5moLgG5kKYAg7gYLxc_ARUT3x-rdYQgplI2KBgJvMvQwdF1Tv",
+      "originCoordinates": "enc:v1:T5YfefTpF9psvRFz:XeQ56n-ZxV-pxnSNK4_Dmw:EUtsJxpMBDGtLdoqPEZHbK1UPQaeag0IrjsR-FwqsehoZRjZ",
       "routeDistanceKm": 12.9,
       "routeDurationMinutes": 26,
       "routeCalculatedAt": "2026-09-13T09:43:30.345Z",
@@ -378,7 +436,14 @@
       "id": 2,
       "vendorCode": "SUP-002",
       "name": "Ecosystem",
-      "productPresets": [],
+      "productPresets": [
+        {
+          "id": 19,
+          "materialCode": "123456789",
+          "uom": "KG",
+          "defaultAmount": 22
+        }
+      ],
       "originAddress": "",
       "originCoordinates": null,
       "routeDistanceKm": null,
@@ -542,6 +607,36 @@
       "shelfLifeDays": 0,
       "unitsPerPallet": 0,
       "storageZone": "To review"
+    },
+    {
+      "id": 16,
+      "code": "SDS-001-001",
+      "name": "Heyya",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 0,
+      "storageZone": "To review"
+    },
+    {
+      "id": 17,
+      "code": "SDS-001-002",
+      "name": "Heyya",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 0,
+      "storageZone": "To review"
+    },
+    {
+      "id": 18,
+      "code": "SDS-001-003",
+      "name": "Heyya",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 0,
+      "storageZone": "To review"
     }
   ],
   "shipments": [
@@ -676,7 +771,9 @@
       "gateDecisionAt": null,
       "gateDecisionBy": null,
       "gateRejectionReason": null,
-      "scheduleDurationSource": "SAVED"
+      "scheduleDurationSource": "SAVED",
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 2,
@@ -776,7 +873,9 @@
       "gateDecisionAt": null,
       "gateDecisionBy": null,
       "gateRejectionReason": null,
-      "scheduleDurationSource": "SAVED"
+      "scheduleDurationSource": "SAVED",
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 3,
@@ -876,7 +975,9 @@
       "gateDecisionAt": null,
       "gateDecisionBy": null,
       "gateRejectionReason": null,
-      "scheduleDurationSource": "SAVED"
+      "scheduleDurationSource": "SAVED",
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 4,
@@ -1009,7 +1110,9 @@
       "companyDecision": null,
       "companyDecisionReason": null,
       "companyDecisionAt": null,
-      "companyDecisionBy": null
+      "companyDecisionBy": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 5,
@@ -1142,7 +1245,9 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 6,
@@ -1275,7 +1380,9 @@
       "companyDecision": null,
       "companyDecisionReason": null,
       "companyDecisionAt": null,
-      "companyDecisionBy": null
+      "companyDecisionBy": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 7,
@@ -1420,7 +1527,9 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 8,
@@ -1530,7 +1639,9 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 9,
@@ -1675,7 +1786,9 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 10,
@@ -1839,7 +1952,9 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 11,
@@ -2003,7 +2118,9 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 12,
@@ -2113,7 +2230,9 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
-      "gateRejectionReason": null
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 13,
@@ -2246,7 +2365,9 @@
       "companyDecision": null,
       "companyDecisionReason": null,
       "companyDecisionAt": null,
-      "companyDecisionBy": null
+      "companyDecisionBy": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 14,
@@ -2411,7 +2532,9 @@
       "companyDecision": null,
       "companyDecisionReason": null,
       "companyDecisionAt": null,
-      "companyDecisionBy": null
+      "companyDecisionBy": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
     },
     {
       "id": 15,
@@ -2507,11 +2630,440 @@
       "gateDecision": null,
       "gateDecisionAt": null,
       "gateDecisionBy": null,
+      "gateRejectionReason": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null
+    },
+    {
+      "id": 16,
+      "shipmentNumber": "SHP-20260914-016",
+      "bookingReceipt": "BKG-20260914-016",
+      "supplier": "Ajinomoto",
+      "supplierId": 1,
+      "deliveryCode": "DLV-20260914-013",
+      "vendorCode": "SUP-001",
+      "scheduledDate": "2026-09-14",
+      "scheduledTime": "08:00",
+      "scheduledEndTime": "10:00",
+      "availabilitySlotId": 13,
+      "expectedDurationMinutes": 120,
+      "timeSlot": "08:00 - 10:00",
+      "shift": "Flexible date",
+      "bookingStatus": "APPROVED",
+      "status": "BOOKED",
+      "truckPlate": "FEF-2313",
+      "driverName": "Heyya",
+      "driverPhone": "+639746656363",
+      "materialWeightKg": 228,
+      "dock": null,
+      "arrivalTime": null,
+      "startedAt": null,
+      "completedAt": null,
+      "lastProcessAt": null,
+      "tripAt": null,
+      "gateInAt": null,
+      "unloadingAt": null,
+      "receivedAt": null,
+      "gateOutAt": null,
+      "rejectionReason": null,
+      "supplierResponse": "ACCEPTED",
+      "supplierResponseReason": null,
+      "supplierRespondedAt": "2026-09-14T02:16:38.578Z",
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "loadConfirmedAt": "2026-09-14T02:16:38.578Z",
+      "finalDecisionAt": "2026-09-14T02:16:38.578Z",
+      "finalDecisionBy": "Ajinomoto",
+      "sdsProposalId": 16,
+      "importBatchId": 13,
+      "importSource": null,
+      "sdsImportIdentity": "627bf9bd30b6ac8469a1a2a46f81aac0c9ca9588b66e7a023a5179dc33e0afdc",
+      "sdsImportFingerprint": "ff387c6072e16013bd2a1738b784f74747c5c296d425848a4cc2aac26d6aae8d",
+      "confirmedTruckLoads": [],
+      "items": [
+        {
+          "id": 18,
+          "presetId": null,
+          "poNumber": "3232",
+          "materialCode": "SDS-001-001",
+          "materialName": "Heyya",
+          "materialType": "RM",
+          "quantity": 75,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "131231",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Ecosystem",
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Supplier ma+J2+B2:K2+A2:K2",
+          "supplierApprovedAt": "2026-09-14T02:16:38.578Z",
+          "assignedTruckPlate": "FEF-2313"
+        },
+        {
+          "id": 19,
+          "presetId": null,
+          "poNumber": "3232",
+          "materialCode": "SDS-001-002",
+          "materialName": "Heyya",
+          "materialType": "RM",
+          "quantity": 76,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "131231",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Ecosystem",
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Supplier ma+J2+B2:K2+A2:K3",
+          "supplierApprovedAt": "2026-09-14T02:16:38.578Z",
+          "assignedTruckPlate": "FEF-2313"
+        },
+        {
+          "id": 20,
+          "presetId": null,
+          "poNumber": "3232",
+          "materialCode": "SDS-001-003",
+          "materialName": "Heyya",
+          "materialType": "RM",
+          "quantity": 77,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "131231",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "Ecosystem",
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": 0,
+          "stillToBeDelivered": null,
+          "remarks": "Supplier ma+J2+B2:K2+A2:K4",
+          "supplierApprovedAt": "2026-09-14T02:16:38.578Z",
+          "assignedTruckPlate": "FEF-2313"
+        }
+      ],
+      "palletsScanned": 0,
+      "palletsTotal": 0,
+      "palletIds": [],
+      "helper1Name": "21313",
+      "helper2Name": "",
+      "poNumber": "3232",
+      "drNumber": "131231",
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
       "gateRejectionReason": null
+    },
+    {
+      "id": 17,
+      "supplierId": 2,
+      "supplier": "Ecosystem",
+      "vendorCode": "SUP-002",
+      "ecosystemRequestId": "337fa2dd-7906-469d-a9f4-ba234c7a8d93",
+      "requestedBy": 11,
+      "shipmentNumber": "SHP-20260914-017",
+      "bookingReceipt": "BKG-20260914-017",
+      "scheduledDate": "2026-09-14",
+      "scheduledTime": "09:00",
+      "status": "BOOKED",
+      "bookingStatus": "APPROVED",
+      "truckPlate": "AFR-3432",
+      "driverName": "grgrg",
+      "driverPhone": "+639574562452",
+      "confirmedTruckLoads": [],
+      "items": [
+        {
+          "id": 21,
+          "presetId": null,
+          "poNumber": "4242342",
+          "materialCode": "123456789",
+          "materialName": "Big Bowl of Soup",
+          "materialType": "",
+          "quantity": 22,
+          "uom": "KG",
+          "palletCount": 0,
+          "dnNumber": "234324",
+          "batchNumber": "",
+          "sourceSheet": null,
+          "sourceRow": null,
+          "sourceFile": null,
+          "deliverySite": "DRESSINGS",
+          "deliveryWeek": null,
+          "poBalance": null,
+          "poQuantity": null,
+          "stillToBeDelivered": null,
+          "remarks": null,
+          "supplierApprovedAt": "2026-09-14T02:47:51.686Z",
+          "assignedTruckPlate": "AFR-3432",
+          "sourceAllocationItemId": 21
+        }
+      ],
+      "palletsScanned": 0,
+      "palletsTotal": 0,
+      "materialWeightKg": 22,
+      "scheduledEndTime": "11:00",
+      "scheduleDurationSource": "SAVED",
+      "availabilitySlotId": 13,
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "destinationEcosystemId": null,
+      "originWorkArea": null,
+      "deliveryCode": "DLV-20260914-014",
+      "timeSlot": "09:00 - 11:00",
+      "shift": "Flexible date",
+      "tripAt": null,
+      "gateInAt": null,
+      "unloadingAt": null,
+      "receivedAt": null,
+      "gateOutAt": null,
+      "estimatedTravelMinutes": null,
+      "estimatedTravelDistanceKm": null,
+      "estimatedTrafficDelayMinutes": null,
+      "etaTrafficAware": false,
+      "etaTrafficModel": "NONE",
+      "etaProvider": null,
+      "estimatedArrivalAt": null,
+      "supplierResponse": "ACCEPTED",
+      "supplierResponseReason": null,
+      "supplierRespondedAt": "2026-09-14T02:47:51.686Z",
+      "alternativeDate": null,
+      "alternativeTime": null,
+      "alternativeEndTime": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "loadConfirmedAt": "2026-09-14T02:47:51.686Z",
+      "finalDecisionAt": "2026-09-14T02:47:51.686Z",
+      "finalDecisionBy": "Ecosystem",
+      "sdsProposalId": 17,
+      "sdsImportIdentity": null,
+      "sdsImportFingerprint": null,
+      "scanHistory": [],
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null,
+      "lastProcessAt": null,
+      "helper1Name": "grgrg",
+      "helper2Name": "",
+      "poNumber": "4242342",
+      "drNumber": "234324"
     }
   ],
   "rdsRequests": [],
   "audit": [
+    {
+      "id": 120,
+      "at": "2026-09-14T02:47:51.689Z",
+      "actor": "Ecosystem",
+      "action": "SUPPLIER_BOOKING_CONFIRMED",
+      "shipmentNumber": "SHP-20260914-017",
+      "detail": "DLV-20260914-014 confirmed for AFR-3432"
+    },
+    {
+      "id": 119,
+      "at": "2026-09-14T02:47:51.688Z",
+      "actor": "Ecosystem",
+      "action": "SDS_TRUCK_CONFIRMED",
+      "shipmentNumber": "SHP-20260914-017",
+      "detail": "DLV-20260914-014 reserved for AFR-3432 with 1 material code(s)"
+    },
+    {
+      "id": 118,
+      "at": "2026-09-14T02:18:15.402Z",
+      "actor": "Planner",
+      "action": "ECOSYSTEM_DELIVERY_REQUEST",
+      "shipmentNumber": "SHP-20260914-017",
+      "detail": "Catalog materials requested"
+    },
+    {
+      "id": 117,
+      "at": "2026-09-14T02:16:38.591Z",
+      "actor": "Ajinomoto",
+      "action": "SUPPLIER_BOOKING_CONFIRMED",
+      "shipmentNumber": "SHP-20260914-016",
+      "detail": "DLV-20260914-013 confirmed for FEF-2313"
+    },
+    {
+      "id": 116,
+      "at": "2026-09-14T02:16:38.585Z",
+      "actor": "Ajinomoto",
+      "action": "SDS_TRUCK_CONFIRMED",
+      "shipmentNumber": "SHP-20260914-016",
+      "detail": "DLV-20260914-013 reserved for FEF-2313 with 3 material code(s)"
+    },
+    {
+      "id": 115,
+      "at": "2026-09-14T02:07:23.730Z",
+      "actor": "Planner",
+      "action": "SDS_IMPORT_COMPLETED",
+      "detail": "1 created, 0 updated, 0 unchanged after spreadsheet comparison"
+    },
+    {
+      "id": 114,
+      "at": "2026-09-14T02:07:23.730Z",
+      "actor": "Planner",
+      "action": "SDS_IMPORTED",
+      "shipmentNumber": "SHP-20260914-016",
+      "detail": "SHP-20260914-016 created and linked to Ajinomoto"
+    },
+    {
+      "id": 113,
+      "at": "2026-09-14T01:38:44.097Z",
+      "actor": "SAPAnalyst",
+      "action": "PASSWORD_CHANGED",
+      "detail": "Account password updated"
+    },
+    {
+      "id": 112,
+      "at": "2026-09-14T01:38:31.821Z",
+      "actor": "SAPAnalyst",
+      "action": "EMAIL_VERIFIED",
+      "detail": "sapanalyst email verified"
+    },
+    {
+      "id": 111,
+      "at": "2026-09-14T01:31:25.074Z",
+      "actor": "Ecosystem",
+      "action": "PASSWORD_CHANGED",
+      "detail": "Account password updated"
+    },
+    {
+      "id": 110,
+      "at": "2026-09-14T01:31:08.143Z",
+      "actor": "Ecosystem",
+      "action": "EMAIL_VERIFIED",
+      "detail": "ecosystem email verified"
+    },
+    {
+      "id": 109,
+      "at": "2026-09-14T01:30:50.018Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "ecosystem account @ecosystem created for ecosystem"
+    },
+    {
+      "id": 108,
+      "at": "2026-09-14T01:30:31.999Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_DELETED",
+      "detail": "Account @ecosystem was deleted; supplier and delivery records were retained"
+    },
+    {
+      "id": 107,
+      "at": "2026-09-14T01:28:36.719Z",
+      "actor": "Planner",
+      "action": "PASSWORD_CHANGED",
+      "detail": "Account password updated"
+    },
+    {
+      "id": 106,
+      "at": "2026-09-14T01:28:22.460Z",
+      "actor": "Planner",
+      "action": "EMAIL_VERIFIED",
+      "detail": "planner email verified"
+    },
+    {
+      "id": 105,
+      "at": "2026-09-14T01:28:06.248Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "planner account @planner created for dressings"
+    },
+    {
+      "id": 104,
+      "at": "2026-09-14T01:27:03.636Z",
+      "actor": "Security1",
+      "action": "PASSWORD_CHANGED",
+      "detail": "Account password updated"
+    },
+    {
+      "id": 103,
+      "at": "2026-09-14T01:26:51.560Z",
+      "actor": "Security1",
+      "action": "EMAIL_VERIFIED",
+      "detail": "security1 email verified"
+    },
+    {
+      "id": 102,
+      "at": "2026-09-14T01:26:26.062Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "security account @security1 created"
+    },
+    {
+      "id": 101,
+      "at": "2026-09-14T01:24:36.928Z",
+      "actor": "Warehouse",
+      "action": "PASSWORD_CHANGED",
+      "detail": "Account password updated"
+    },
+    {
+      "id": 100,
+      "at": "2026-09-14T01:24:26.994Z",
+      "actor": "Warehouse",
+      "action": "EMAIL_VERIFIED",
+      "detail": "warehouse email verified"
+    },
+    {
+      "id": 99,
+      "at": "2026-09-14T01:23:59.577Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "warehouse account @warehouse created for dressings"
+    },
+    {
+      "id": 98,
+      "at": "2026-09-14T01:23:47.352Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_DELETED",
+      "detail": "Account @warehouse1 was deleted; supplier and delivery records were retained"
+    },
+    {
+      "id": 97,
+      "at": "2026-09-14T01:23:44.048Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_DELETED",
+      "detail": "Account @warehouse was deleted; supplier and delivery records were retained"
+    },
+    {
+      "id": 96,
+      "at": "2026-09-14T01:22:39.902Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "warehouse account @warehouse1 created for dressings"
+    },
     {
       "id": 95,
       "at": "2026-09-13T09:47:57.766Z",
@@ -3248,6 +3800,45 @@
   ],
   "notifications": [
     {
+      "id": 41,
+      "userId": 12,
+      "type": "INFO",
+      "title": "Delivery request from ULI",
+      "message": "DRESSINGS · 2026-09-14 09:00 · 123456789: 22 KG",
+      "shipmentId": 17,
+      "shipmentNumber": "SHP-20260914-017",
+      "createdAt": "2026-09-14T02:18:15.402Z",
+      "readAt": "2026-09-14T02:48:07.414Z",
+      "requiresAction": true,
+      "resolvedAt": "2026-09-14T02:47:51.688Z"
+    },
+    {
+      "id": 40,
+      "userId": 5,
+      "type": "INFO",
+      "title": "New delivery schedule",
+      "message": "2026-09-14 at 08:00. Review the material codes and confirm the truck details.",
+      "shipmentId": 16,
+      "shipmentNumber": "SHP-20260914-016",
+      "createdAt": "2026-09-14T02:07:23.734Z",
+      "readAt": null,
+      "requiresAction": true,
+      "resolvedAt": "2026-09-14T02:16:38.587Z"
+    },
+    {
+      "id": 39,
+      "userId": 12,
+      "type": "INFO",
+      "title": "Incoming Ecosystem delivery",
+      "message": "Ajinomoto · 2026-09-14 08:00",
+      "shipmentId": 16,
+      "shipmentNumber": "SHP-20260914-016",
+      "createdAt": "2026-09-14T02:07:23.733Z",
+      "readAt": null,
+      "requiresAction": false,
+      "resolvedAt": null
+    },
+    {
       "id": 38,
       "userId": 5,
       "type": "INFO",
@@ -3744,6 +4335,24 @@
   ],
   "importBatches": [
     {
+      "id": 13,
+      "fileName": "08-all-cant-deliver.xlsx",
+      "status": "IMPORTED",
+      "totalRows": 3,
+      "importedRows": 3,
+      "unchangedRows": 0,
+      "skippedRows": 0,
+      "deliveryCount": 1,
+      "createdProposals": 1,
+      "updatedProposals": 0,
+      "unchangedProposals": 0,
+      "createdAt": "2026-09-14T02:07:23.730Z",
+      "completedAt": "2026-09-14T02:07:23.730Z",
+      "notificationStatus": "SENT",
+      "notificationsSent": 1,
+      "notificationsFailed": 0
+    },
+    {
       "id": 12,
       "fileName": "01-direct-accept-one-truck.xlsx",
       "status": "IMPORTED",
@@ -3960,8 +4569,19 @@
       "notificationsFailed": 0
     }
   ],
-  "ecosystemMaterials": [],
+  "ecosystemMaterials": [
+    {
+      "id": 1,
+      "ecosystemId": 2,
+      "materialCode": "123456789",
+      "description": "Big Bowl of Soup",
+      "uom": "KG"
+    }
+  ],
   "monthlyKpiSent": {
-    "2026-08:1:riemar53seruelas@gmail.com": "2026-09-13T08:19:55.050Z"
+    "2026-08:1:riemar53seruelas@gmail.com": "2026-09-13T08:19:55.050Z",
+    "2026-08:9:riemar53seruelas@gmail.com": "2026-09-14T01:25:11.259Z",
+    "2026-08:11:riemar53seruelas@gmail.com": "2026-09-14T01:29:11.508Z",
+    "2026-08:12:riemar53seruelas@gmail.com": "2026-09-14T01:32:11.179Z"
   }
 }

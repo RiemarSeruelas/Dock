@@ -69,12 +69,12 @@ The notification bell is in the top navigation. Opening an alert marks it read, 
 
 ## Scan flow
 
-`Booking → optional Trip → Gate in → Unloading → Gate out`
+`Booking → optional Trip → Gate in → Unloading → Received → Gate out`
 
 - Supplier can record Trip, but Trip may be skipped before Security records Gate in.
 - Security records Gate in and Gate out.
-- Authorized Warehouse, Ecosystem or Administrator users record Unloading.
-- Security or the receiving Ecosystem records Gate out after unloading is complete. Gate out also records the unloading-completion timestamp and releases the dock.
+- Authorized Warehouse, the receiving Ecosystem, or Administrator records Unloading and Received.
+- Security or the receiving Ecosystem records Gate out only after Received. Gate out releases the dock and completes the journey.
 - Warehouse enters Actual Quantity Received in SAP Analysis. On Time, In Full, and OTIF are calculated there instead of during QR scanning.
 - Over HTTP, use QR photos, hardware scanners or manual codes. Live camera scanning requires HTTPS.
 

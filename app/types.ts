@@ -12,7 +12,7 @@ export type ShipmentStatus =
   | "REJECTED";
 
 export type BookingStatus = "PENDING_SUPPLIER" | "PENDING_COMPANY" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
-export type ScanStage = "LOOKUP" | "TRIP" | "GATE" | "UNLOADING";
+export type ScanStage = "LOOKUP" | "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
 
 export interface AvailabilitySlot {
   id: number;
@@ -96,6 +96,7 @@ export interface Shipment {
   poNumber?: string;
   drNumber?: string;
   destinationEcosystemId?: number | null;
+  originWorkArea?: WorkArea | null;
   replacementForId?: number;
   replacementIds?: number[];
   isFollowUp?: boolean;

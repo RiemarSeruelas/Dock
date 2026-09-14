@@ -1,2 +1,16 @@
-For the filter:
-It looks so cramped that its on top of one another
+For the Ecosystem:
+We need to rechange a few things. 
+So Ecosystem's SDS can be sent by both the Dressings and Savoury right? So if Dressings sent the SDS, it's only Dressings that cna see see the delivery, except for Ecosystem who can see both since they are the ones receiving it haha.
+Also, we didnt take into account the Ecosystem's process flow. It both receives and sends right? So it's a supplier and a destination.
+
+So we'll add more feature.
+The overview is okay, it's basically the receiving
+For the monitoring, we'll add sub categories in the nav bar, receiving and sending
+For the receiving it's from supplier to ecosystem's ticket
+For the sending, it's from Ecosystem to Company's ticket.
+
+For the schedule, we'll just add a color coded feature to it. If it's receiving from a specific supplier, it has color coded right? But if it's sending, it has a specific color that's indicated to see which ones is which, you get me?
+
+Then I tried to put a schedule with the site of ecosystem, so it should ask the supplier the approval right? but it asked the ecosystem too? The ecosystem has no say in it, they should just receive it.
+
+Im also confused, whyd you remove the Received feature? Isnt it Unloading, Received, then Gate out? why is it just unloading now. Add this for all account
