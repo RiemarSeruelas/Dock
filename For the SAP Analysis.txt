@@ -1,16 +1,19 @@
-For the Ecosystem:
-We need to rechange a few things. 
-So Ecosystem's SDS can be sent by both the Dressings and Savoury right? So if Dressings sent the SDS, it's only Dressings that cna see see the delivery, except for Ecosystem who can see both since they are the ones receiving it haha.
-Also, we didnt take into account the Ecosystem's process flow. It both receives and sends right? So it's a supplier and a destination.
+Im confused? The ETA is 6:03PM, 26 mins, 12.9KM +11 mins estimated traffic, but the schedule is at 9:00am?
 
-So we'll add more feature.
-The overview is okay, it's basically the receiving
-For the monitoring, we'll add sub categories in the nav bar, receiving and sending
-For the receiving it's from supplier to ecosystem's ticket
-For the sending, it's from Ecosystem to Company's ticket.
+Remove this:
+1 schedules need a supplier account
+Ecosystem
 
-For the schedule, we'll just add a color coded feature to it. If it's receiving from a specific supplier, it has color coded right? But if it's sending, it has a specific color that's indicated to see which ones is which, you get me?
+Rename the SAP Analyst tab as Receiving Records
 
-Then I tried to put a schedule with the site of ecosystem, so it should ask the supplier the approval right? but it asked the ecosystem too? The ecosystem has no say in it, they should just receive it.
+For the question. So the SAP Analyst, if they input in the table, it'll be automatically written in the clearance right?
 
-Im also confused, whyd you remove the Received feature? Isnt it Unloading, Received, then Gate out? why is it just unloading now. Add this for all account
+Remove this in the clearance:
+Filter clearance records
+
+SAPAnalyst: 
+Give access to Encoded  by
+
+Also, separate the Security for Company, and Security for Ecosystem, so they see different things.
+
+Give access to Planner to Clearance, so they can see and download it.

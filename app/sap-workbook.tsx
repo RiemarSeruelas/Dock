@@ -431,7 +431,7 @@ export function SapPage({ token }: { token: string }) {
   return <div className="page-stack sap-page">
     {!available && message && <div className="sap-network-alert" role="alert">{message}</div>}
     <div className="hero-row">
-      <div><span className="eyebrow">SAP Analysis</span><h1>Unified receiving worksheet</h1></div>
+      <div><span className="eyebrow">Receiving Records</span><h1>Unified receiving worksheet</h1></div>
       <div className="sap-actions">
         {editable.includes("item") && <button className="button primary" disabled={busy || !available} onClick={() => void addRow()}>+ Add row</button>}
         <button className="button secondary" disabled={busy} onClick={() => void fetchRows(false, query)}>Refresh</button>

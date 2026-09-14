@@ -1570,8 +1570,7 @@ input[type=checkbox],input[type=radio] { width:16px; height:16px; min-height:16p
 .clearance-copy-note,.clearance-form .confirmation-footer small { display:none; }
 .clearance-form input,.clearance-form select { border:0; border-bottom:1px solid var(--line-strong); border-radius:0; background:transparent; box-shadow:none; }
 .clearance-list-panel { overflow:hidden; }
-.clearance-filter-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 18px 10px; }
-.clearance-filter-head > span:first-child { display:flex; align-items:center; gap:8px; color:var(--ink); font-size:12px; }
+.clearance-filter-head { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:16px 18px 10px; }
 .clearance-filter-grid { display:grid; grid-template-columns:minmax(300px,1.65fr) minmax(180px,1fr) minmax(170px,.9fr) minmax(150px,.75fr) minmax(150px,.75fr) auto; align-items:end; gap:12px; padding:10px 18px 18px; border-bottom:1px solid var(--line); }
 .clearance-filter-grid > label { min-width:0; display:grid; gap:6px; color:var(--muted); font-size:9px; font-weight:800; letter-spacing:.055em; text-transform:uppercase; }
 .clearance-filter-grid input,.clearance-filter-grid select { width:100%; min-width:0; min-height:42px; height:42px; margin:0; padding:8px 12px; border:1px solid var(--line); border-radius:9px; color:var(--ink); background:var(--surface); text-transform:none; letter-spacing:normal; }

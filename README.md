@@ -61,7 +61,7 @@ Choose one or two trucks and allocate every remaining material quantity. With tw
 
 ## Monitoring and history
 
-**Monitoring** displays confirmed trucks in process order. Use **See all** or the two-click date range. While a truck is In Transit, its calculated ETA appears immediately to the left of the status. Gate-in and Gate-out timestamps measure factory time.
+**Monitoring** displays confirmed trucks in process order. Use **See all** or the two-click date range. While a truck is In Transit, its Trip-based ETA appears beside the scheduled time and explicitly states how early or late it is. The displayed travel duration is the total estimate; any traffic delay shown is already included, not added a second time. Gate-in and Gate-out timestamps measure factory time.
 
 The notification bell is in the top navigation. Opening an alert marks it read, but an action-required count remains until the linked schedule confirmation or reschedule decision is actually completed.
 

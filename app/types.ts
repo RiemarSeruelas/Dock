@@ -1,5 +1,6 @@
 export type Role = "admin" | "planner" | "production" | "supplier" | "driver" | "security" | "warehouse" | "qa" | "ecosystem" | "sap";
 export type WorkArea = "DRESSINGS" | "SAVOURY" | "ECOSYSTEM";
+export type SecurityScope = "COMPANY" | "ECOSYSTEM";
 
 export type ShipmentStatus =
   | "PROPOSED"
@@ -31,6 +32,7 @@ export interface SessionUser {
   role: Role;
   supplierId?: number | null;
   workArea?: WorkArea | null;
+  securityScope?: SecurityScope | null;
   email?: string;
   emailVerifiedAt?: string | null;
   mustChangePassword?: boolean;

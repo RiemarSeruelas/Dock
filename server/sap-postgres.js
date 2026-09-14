@@ -43,7 +43,7 @@ export const sapColumns = [
   ['qaDisposition', 'QA DISPOSITION', 20, 'qa_disposition', 'warehouse'],
 ];
 
-const sapFields = ['destination', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks'];
+const sapFields = ['destination', 'encodedBy', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks'];
 const warehouseFields = ['inventoryController', 'receivingController', 'helperCount', 'truckType', 'actualReceived', 'palletCount', 'warehouseRemarks', 'qaStart', 'qaEnd', 'qaDisposition'];
 const adminFields = [...new Set([...sapFields, ...warehouseFields])];
 
@@ -233,7 +233,8 @@ export function createSapRepository() {
             args.push(String(row.values[key] ?? ''));
             assignments.push(`${identifier(db)}=$${args.length}`);
           }
-          if ((role === 'sap' || role === 'admin') && assignments.length) {
+          const encodedBySupplied = allowed.has('encodedBy') && Object.prototype.hasOwnProperty.call(row.values || {}, 'encodedBy');
+          if ((role === 'sap' || role === 'admin') && assignments.length && !encodedBySupplied) {
             args.push(encodedByName(name));
             assignments.push(`${identifier('encoded_by')}=$${args.length}`);
           }

@@ -56,7 +56,7 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
     try { sapData=sap.jsonTrial ? Object.entries(state.sapRows||{}).filter(([key])=>key.startsWith(`${shipment.id}:`)).map(([key,row])=>({key,values:row.values,revision:row.revision||0})) : await sap.forClearance(shipment); } catch {}
     return {shipment,sapData,records:shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},chooseSapRow(shipment,item,sapData)?.values,shipment.clearance?.[item.id])}))};
   };
-  app.get('/api/clearance',auth,allow('admin','warehouse','sap'),asyncRoute(async(req,res)=>{const state=await store.read();res.json({shipments:state.shipments.filter(row=>row.bookingStatus==='APPROVED'&&canAccessShipment(req.user,row)).map(supplierSafeShipment)});}));
+  app.get('/api/clearance',auth,allow('admin','planner','warehouse','sap'),asyncRoute(async(req,res)=>{const state=await store.read();res.json({shipments:state.shipments.filter(row=>row.bookingStatus==='APPROVED'&&canAccessShipment(req.user,row)).map(supplierSafeShipment)});}));
   app.get('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{const {shipment,records}=await load(req);res.json({shipment,records});}));
   app.put('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem'),asyncRoute(async(req,res)=>{
     const {shipment,sapData}=await load(req);const input=req.body.records;
@@ -89,7 +89,7 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
     }
     await store.update(state=>{const row=state.shipments.find(row=>row.id===shipment.id);row.clearance=sanitized;row.clearanceUpdatedBy=req.user.name;row.clearanceUpdatedAt=new Date().toISOString();});res.json({ok:true,sapUpdated});
   }));
-  app.get('/api/shipments/:id/clearance.pdf',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{
+  app.get('/api/shipments/:id/clearance.pdf',auth,allow('admin','planner','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{
     const {shipment,records}=await load(req);res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`attachment; filename="inbound-clearance-${shipment.shipmentNumber}.pdf"`);const document=makeClearancePdf(shipment,records);document.pipe(res);document.end();
   }));
 }

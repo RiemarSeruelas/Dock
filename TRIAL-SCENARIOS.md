@@ -14,7 +14,8 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | Supplier A | Dressings | Confirmation, alternatives, own entries |
 | Supplier A | Savoury | Same supplier name, separate area access |
 | Supplier B | Dressings | Confidentiality between suppliers |
-| Security | Both | Gate review and Gate in |
+| Security | Company | Dressings/Savoury Gate review only |
+| Security | Ecosystem | Ecosystem-destination Gate review only |
 | Warehouse | Dressings | Unloading, clearance, SAP receiving fields |
 | Warehouse | Savoury | Area isolation |
 | SAP Analyst | Dressings | PostgreSQL rows and SAP editing |
@@ -66,7 +67,8 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | ID | Scenario | Expected result |
 |---|---|---|
 | AREA-01 | Both-area admin switches Dressings/Savoury | Overview, Monitoring, Schedule, docks, and counts change together |
-| AREA-02 | Security switches Dressings/Savoury | Both areas are available |
+| AREA-02 | Company Security switches Dressings/Savoury | Both company areas are available; Ecosystem deliveries stay hidden |
+| AREA-02A | Ecosystem Security opens Monitoring/Schedule | Both originating areas are combined; company-destination deliveries stay hidden |
 | AREA-03 | Dressings planner signs in | Only Dressings operational records are available |
 | AREA-04 | Savoury planner signs in | Only Savoury operational records are available |
 | AREA-05 | Dressings Warehouse opens a Savoury delivery URL directly | Server denies access |
@@ -245,6 +247,7 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | SAP-07 | Change sort newest/oldest | Order changes without loading all rows at once |
 | SAP-08 | SAP Analyst adds a row | Row is saved; Encoded by uses the current analyst |
 | SAP-09 | SAP Analyst edits allowed fields | Revision increments and changes persist |
+| SAP-09A | SAP Analyst edits Encoded By | The supplied value persists instead of being replaced automatically |
 | SAP-10 | Planner edits Destination | Destination saves; SAP-only fields remain protected |
 | SAP-11 | Warehouse edits receiving fields | Allowed fields save; SAP-only fields remain protected |
 | SAP-12 | Two users edit same revision | Stale save receives a conflict instead of overwriting silently |
@@ -266,8 +269,10 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 |---|---|---|
 | CLR-01 | Warehouse opens Clearance | Searchable allowed deliveries appear |
 | CLR-02 | SAP Analyst opens Clearance | View/download works; editing follows role rules |
+| CLR-02A | Planner opens Clearance | Scoped entries are visible and downloadable; edit controls are absent |
 | CLR-03 | Supplier tries Clearance endpoint | Access is denied |
 | CLR-04 | Open a delivery with matching SAP DR/PO/material | Supplier, truck, quantity, batch/lot, and timestamps autofill |
+| CLR-04A | Add an unrelated manual Receiving Records row | It remains in the worksheet and does not attach to an unrelated clearance |
 | CLR-05 | Enter Warehouse/QA fields and download | One A4 landscape page contains matching left/right copies |
 | CLR-06 | Delivery has multiple materials | Values are combined on one delivery page as designed |
 | CLR-07 | Filter by supplier and status | Only matching clearance entries remain |

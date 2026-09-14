@@ -104,6 +104,7 @@ const matchingAvailability = (state, date, startTime, endTime) => (state.setting
 const planningRoles = ["admin", "planner"];
 const AREA_SCOPED_ROLES = new Set(["admin", "planner", "production", "supplier", "driver", "warehouse", "sap"]);
 const AREA_REQUIRED_ROLES = new Set(["planner", "production", "supplier", "driver", "warehouse", "sap"]);
+const normalizeSecurityScope = (value) => String(value || "").trim().toUpperCase() === "ECOSYSTEM" ? "ECOSYSTEM" : "COMPANY";
 const normalizeWorkArea = (value) => {
   const normalized = String(value || "").trim().toUpperCase();
   if (/ECOSYSTEM/.test(normalized)) return "ECOSYSTEM";
@@ -348,7 +349,7 @@ const resolveShipmentNotifications = (state, shipment, userIds = null) => {
   }
 };
 const hiddenEmailRoles = new Set();
-const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: hiddenEmailRoles.has(user.role) ? "" : user.email || "", emailVerifiedAt: hiddenEmailRoles.has(user.role) ? null : user.emailVerifiedAt || null, mustChangePassword: Boolean(user.mustChangePassword), onboardingRequired: Boolean(user.onboardingRequired), verificationCodeSentAt: user.verificationCodeSentAt || null, role: user.role, supplierId: user.supplierId ?? null, workArea: normalizeWorkArea(user.workArea) });
+const publicUser = (user) => ({ id: user.id, name: user.name, username: user.username, email: hiddenEmailRoles.has(user.role) ? "" : user.email || "", emailVerifiedAt: hiddenEmailRoles.has(user.role) ? null : user.emailVerifiedAt || null, mustChangePassword: Boolean(user.mustChangePassword), onboardingRequired: Boolean(user.onboardingRequired), verificationCodeSentAt: user.verificationCodeSentAt || null, role: user.role, supplierId: user.supplierId ?? null, workArea: normalizeWorkArea(user.workArea), securityScope: user.role === "security" ? normalizeSecurityScope(user.securityScope) : null });
 const supplierForClient = (supplier, includeAddress = false) => {
   const output = { ...supplier };
   delete output.originCoordinates;
@@ -358,6 +359,7 @@ const supplierForClient = (supplier, includeAddress = false) => {
 const companyScopedRoles = new Set(["supplier", "driver"]);
 const ecosystemReceivesShipment = (user, shipment) => Number(user.supplierId) === Number(shipment.destinationEcosystemId) || (!shipment.destinationEcosystemId && shipmentWorkArea(shipment) === "ECOSYSTEM");
 const canAccessShipment = (user, shipment) => {
+  if (user.role === "security") return normalizeSecurityScope(user.securityScope) === "ECOSYSTEM" ? shipmentWorkArea(shipment) === "ECOSYSTEM" : shipmentWorkArea(shipment) !== "ECOSYSTEM";
   if (user.role === "ecosystem") return Number(user.supplierId) === Number(shipment.supplierId) || ecosystemReceivesShipment(user, shipment);
   if (companyScopedRoles.has(user.role) && Number(user.supplierId) !== Number(shipment.supplierId)) return false;
   if (companyScopedRoles.has(user.role) && shipmentWorkArea(shipment) === "ECOSYSTEM") return true;
@@ -486,7 +488,7 @@ await store.update(async (state) => {
     user.role = ["admin", "planner", "production", "supplier", "driver", "security", "warehouse", "ecosystem", "sap"].includes(user.role) ? user.role : "admin";
     if (user.role === "driver" && !user.supplierId) user.supplierId = state.suppliers[0]?.id || 1;
     if (user.role === "ecosystem") user.workArea = "ECOSYSTEM";
-    else if (user.role === "security") user.workArea = null;
+    else if (user.role === "security") { user.workArea = null; user.securityScope = normalizeSecurityScope(user.securityScope); }
     else if (user.role === "admin") user.workArea = user === systemAdministrator ? null : normalizeWorkArea(user.workArea);
     else if (AREA_REQUIRED_ROLES.has(user.role)) user.workArea = normalizeWorkArea(user.workArea) || "DRESSINGS";
     else user.workArea = null;
@@ -721,11 +723,11 @@ app.use("/api", apiLimiter);
 
 const parseCookies = (request) => Object.fromEntries(String(request.headers.cookie || "").split(";").map((item) => item.trim()).filter(Boolean).map((item) => { const index = item.indexOf("="); return [decodeURIComponent(index >= 0 ? item.slice(0, index) : item), decodeURIComponent(index >= 0 ? item.slice(index + 1) : "")]; }));
 const refreshCookieOptions = { httpOnly: true, sameSite: "strict", secure: COOKIE_SECURE, path: "/api/auth", maxAge: REFRESH_TOKEN_DAYS * 86400000 };
-const signAccessToken = (user, sessionId) => jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, workArea: normalizeWorkArea(user.workArea), name: user.name, sid: sessionId, type: "access" }, ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_TTL, jwtid: randomUUID() });
+const signAccessToken = (user, sessionId) => jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, workArea: normalizeWorkArea(user.workArea), securityScope: user.role === "security" ? normalizeSecurityScope(user.securityScope) : null, name: user.name, sid: sessionId, type: "access" }, ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_TTL, jwtid: randomUUID() });
 const issueSession = async (user, request, response, existingSessionId = null) => {
   const sessionId = existingSessionId || randomUUID();
   const tokenId = randomUUID();
-  const refreshToken = jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, workArea: normalizeWorkArea(user.workArea), sid: sessionId, type: "refresh" }, REFRESH_TOKEN_SECRET, { expiresIn: `${REFRESH_TOKEN_DAYS}d`, jwtid: tokenId });
+  const refreshToken = jwt.sign({ id: user.id, role: user.role, supplierId: user.supplierId, workArea: normalizeWorkArea(user.workArea), securityScope: user.role === "security" ? normalizeSecurityScope(user.securityScope) : null, sid: sessionId, type: "refresh" }, REFRESH_TOKEN_SECRET, { expiresIn: `${REFRESH_TOKEN_DAYS}d`, jwtid: tokenId });
   await database.saveRefreshToken({ tokenId, tokenHash: hashToken(refreshToken), userId: user.id, expiresAt: new Date(Date.now() + REFRESH_TOKEN_DAYS * 86400000).toISOString(), ipAddress: request.ip, userAgent: request.get("user-agent") });
   response.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions);
   request.sessionId = sessionId;
@@ -744,7 +746,7 @@ const auth = async (request, response, next) => {
     const onboarding = account.onboardingRequired && (account.mustChangePassword || !account.emailVerifiedAt);
     if (onboarding && !request.path.startsWith("/api/auth/") && !new RegExp(`^/api/users/${account.id}/email(?:/|$)`).test(request.path) && request.path !== "/api/bootstrap") return response.status(403).json({ message: "Verify your email and change the initial password to activate your account" });
     request.user = payload;
-    if (payload.role === "sap" && !["/api/bootstrap", "/api/auth/logout", "/api/auth/change-password"].includes(request.path) && !new RegExp(`^/api/users/${payload.id}/email(?:/|$)`).test(request.path) && !request.path.startsWith("/api/sap/") && !request.path.startsWith("/api/clearance") && !/^\/api\/shipments\/\d+\/clearance(?:\.pdf)?$/.test(request.path)) return response.status(403).json({ message: "SAP accounts can access SAP Analysis and Clearance only" });
+    if (payload.role === "sap" && !["/api/bootstrap", "/api/auth/logout", "/api/auth/change-password"].includes(request.path) && !new RegExp(`^/api/users/${payload.id}/email(?:/|$)`).test(request.path) && !request.path.startsWith("/api/sap/") && !request.path.startsWith("/api/clearance") && !/^\/api\/shipments\/\d+\/clearance(?:\.pdf)?$/.test(request.path)) return response.status(403).json({ message: "SAP accounts can access Receiving Records and Clearance only" });
     request.sessionId = payload.sid || payload.jti;
     next();
   } catch { response.status(401).json({ message: "Session expired" }); }
@@ -1632,6 +1634,7 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
   if (!String(request.body?.name || "").trim() || !String(request.body?.username || "").trim() || String(request.body?.password || "").length < 8 || !roles.includes(role) || (emailRequired && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return response.status(400).json({ message: `Name, username, valid role, and an 8-character password are required${emailRequired ? "; every new account requires a valid email" : ""}` });
   const actorArea = normalizeWorkArea(request.user.workArea);
   const requestedArea = normalizeWorkArea(request.body?.workArea);
+  const securityScope = role === "security" ? normalizeSecurityScope(request.body?.securityScope) : null;
   if (actorArea && ["security", "ecosystem"].includes(role)) return response.status(403).json({ message: "Only the Both-areas administrator can create site-wide Security or Ecosystem accounts" });
   const workArea = role === "ecosystem" ? "ECOSYSTEM" : role === "security" ? null : actorArea || requestedArea || (AREA_REQUIRED_ROLES.has(role) ? "DRESSINGS" : null);
   if (AREA_REQUIRED_ROLES.has(role) && !["DRESSINGS", "SAVOURY"].includes(workArea)) return response.status(400).json({ message: `${role} accounts must be assigned to Dressings or Savoury` });
@@ -1648,9 +1651,9 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
       supplierId = supplier.id;
     }
     const id = nextId(state.users);
-    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, emailVerifiedAt: null, emailVerificationHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0, verificationCodeSentAt: null, passwordHash, mustChangePassword: true, onboardingRequired: true, role, supplierId, workArea });
+    state.users.push({ id, name: String(request.body.name).trim(), username: String(request.body.username).trim().toLowerCase(), email, emailVerifiedAt: null, emailVerificationHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0, verificationCodeSentAt: null, passwordHash, mustChangePassword: true, onboardingRequired: true, role, supplierId, workArea, securityScope });
     addAudit(state, request.user, "ACCOUNT_CREATED", `${request.body.role === "supplier" ? "Supplier" : request.body.role} account @${String(request.body.username).trim().toLowerCase()} created${workArea ? ` for ${workArea.toLowerCase()}` : ""}`);
-    return { id, supplierId, workArea };
+    return { id, supplierId, workArea, securityScope };
   });
   if (result.duplicate) return response.status(409).json({ message: "That username already exists" });
   if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active account for this receiving area" });
