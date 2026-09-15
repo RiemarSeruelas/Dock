@@ -57,7 +57,7 @@ An imported row is only a proposed schedule. It is not a booking, does not appea
 
 Accept the proposed time or propose an alternative date, time or quantity split. Split quantities must total the original amount for each material. Administrator or Planner/Production approval is required for alternatives; while waiting, the request is read-only and cannot be submitted again. Approval returns the new schedule for truck confirmation; rejection requires a reason. Both decisions email verified supplier recipients.
 
-Choose one or two trucks and allocate every remaining material quantity. With two trucks, editing one truck's amount automatically balances the other so the total always matches the request. Provide each truck's `AAA-1111` plate, driver, phone prefix and ten mobile digits, PO and DR numbers; helper names are optional. Each fully confirmed truck receives a unique delivery code, QR, monitoring card and report entry.
+Choose one or two trucks and allocate every remaining material quantity. With two trucks, editing one truck's amount automatically balances the other so the total always matches the request. Provide each truck's `AAA-1111` plate, driver, phone prefix and ten mobile digits, PO and DR numbers; helper names are optional. For each material on the truck, enter one or more complete batch lines with batch number, supplier lot, batch quantity, production date, and expiration date. Batch quantities must exactly total the assigned material quantity. Each fully confirmed truck receives a unique delivery code, QR, monitoring card and report entry.
 
 ## Monitoring and history
 
@@ -72,7 +72,7 @@ The notification bell is in the top navigation. Opening an alert marks it read, 
 `Booking → optional Trip → Gate in → Unloading → Received → Gate out`
 
 - Supplier can record Trip, but Trip may be skipped before Security records Gate in.
-- Security records Gate in and Gate out.
+- Security records Gate in and Gate out. Early Gate In is allowed: more than 30 minutes early is Advanced, 30 minutes early through 15 minutes late is On Time, and anything later is Late.
 - Authorized Warehouse, the receiving Ecosystem, or Administrator records Unloading and Received.
 - Security or the receiving Ecosystem records Gate out only after Received. Gate out releases the dock and completes the journey.
 - Warehouse enters Actual Quantity Received in SAP Analysis. On Time, In Full, and OTIF are calculated there instead of during QR scanning.

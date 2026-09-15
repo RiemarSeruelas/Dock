@@ -16,7 +16,7 @@ The npm web commands now use `server/web.js`. Use these commands rather than inv
 
 - Overview, Monitoring and Schedule respect the signed-in account's receiving scope. **Admin · Both areas** and **Security · Company** may switch between Dressings and Savoury. **Security · Ecosystem** sees only deliveries whose destination is Ecosystem, across both originating work areas. Each company area has its own independent **Dock 1 - PM**, **Dock 2 - PM** and **Dock 3 - RM** view. Empty docks use a neutral border/background instead of the old green surround; occupied docks use the supplied truck image.
 - The split-screen login uses `public/images/dockflow-background.jpg` as its real facility/truck background and `public/uploads/dockflow-logo.png` as its logo. A missing logo falls back cleanly to the DockFlow route mark.
-- Administration groups accounts into **Shared services**, **Dressings**, and **Savoury**, then separates each group by role with Suppliers first. A scoped administrator sees only their own area and creates accounts with a visibly locked Access area. The system administrator is **Admin · Both areas**. Planner, Supplier, Warehouse, and SAP accounts are assigned to an area. Every Security account is explicitly assigned to either **Company deliveries** or **Ecosystem deliveries**; existing Security accounts migrate to Company access.
+- Administration groups accounts into **Suppliers**, **Shared services**, **Dressings**, and **Savoury**. A supplier has one account linked to its supplier company and is not split between Dressings and Savoury. A scoped administrator sees only their own company-area accounts and creates area-bound staff with a visibly locked Access area. The system administrator is **Admin · Both areas**. Planner, Warehouse, and SAP staff remain area-scoped where applicable. Every Security account is explicitly assigned to either **Company deliveries** or **Ecosystem deliveries**; existing Security accounts migrate to Company access.
 - Schedule keeps Approved Deliveries, Rescheduling, Day/Week, and the date selector in the calendar header. The Dressings/Savoury control is at the top of the page. **Updated SDS** and **Import SDS** are at the bottom. Imported and rescheduled rows without a manually selected End Time receive a two-hour delivery window. Administrator and Planner can click any unlocked delivery ticket to edit its date, start/end time, and material quantities. Each change updates DockFlow, creates an in-app supplier notification, and emails verified supplier recipients when SMTP is configured.
 - **Updated SDS** keeps only the newest imported revision for each matching schedule identity, so a replaced import is not exported beside its older version. Generated trial-placeholder warnings are removed from Remarks; manually entered remarks remain.
 - The notification bell sits beside the theme button. Planner is labelled **Planner/Production**.
@@ -26,6 +26,8 @@ The npm web commands now use `server/web.js`. Use these commands rather than inv
 ## Supplier confirmation and alternatives
 
 Choose one or two trucks. Each needs plate, driver, phone, PO, DR and a positive assigned quantity; helper names are optional. Plates are normalized to `AAA-1111`: the first three characters are letters and the final four are numbers. Select `+63` or local `0`, then enter exactly ten mobile digits beginning in 9. With one truck, every requested quantity is assigned automatically and shown as a locked value. With two trucks, the quantity controls become editable; changing either truck automatically balances the other, and the combined amount must remain exactly equal to the SDS request.
+
+For every material assigned to a truck, the supplier enters one or more batch lines. Each line requires Batch number, Supplier lot, Quantity, Production date, and Expiration date. The batch quantities for that material must total its truck-assigned quantity exactly, and expiration cannot precede production. One DR may therefore contain several materials, while one material may produce several PostgreSQL rows—one row per batch—with the DR repeated as the shared document reference.
 
 Alternative reasons are Reschedule Time and Date, Change in quantities, and Other. Notes are optional. Blank date/time fields keep the existing schedule. Quantity splits add the remaining amount when you leave the quantity field, rather than on every keystroke. Each material must either be fully allocated across the proposed schedules or marked **Can't deliver** with a reason.
 
@@ -39,13 +41,13 @@ For a complete manual regression plan, use `TRIAL-SCENARIOS.md` in this project.
 
 ## Receiving and clearance
 
-The scan sequence is Booking → optional Trip → Gate in → Unloading → Received → Gate out. At Gate in, Security first scans and reviews the booking, then explicitly accepts or rejects it. Entry may begin 15 minutes before the scheduled time. Rejection requires a categorized reason (or written Other reason), leaves the booking available for correction, and notifies the supplier. After unloading, an authorized receiving account records **Received** before Gate out can be completed. Ecosystem can record Unloading, Received and Gate out for deliveries it receives.
+The scan sequence is Booking → optional Trip → Gate in → Unloading → Received → Gate out. At Gate in, Security first scans and reviews the booking, then explicitly accepts or rejects it. Early arrival is no longer blocked. DockFlow classifies Gate In as **Advanced** when more than 30 minutes early, **On Time** from 30 minutes early through 15 minutes late, and **Late** after that. Rejection requires a categorized reason (or written Other reason), leaves the booking available for correction, and notifies the supplier. After unloading, an authorized receiving account records **Received** before Gate out can be completed. Ecosystem can record Unloading, Received and Gate out for deliveries it receives.
 
 Before unloading begins, the supplier can correct the plate, driver, phone, helper names, and comma-separated PO/DR values. Delivery date and time remain planner-controlled.
 
-Received is an operational QR stage and does not replace the quantity controls in SAP Analysis. Warehouse enters **Actual Quantity Received** in SAP Analysis; **On Time**, **In Full**, and **OTIF** are read-only calculated columns there. On Time uses Gate in plus the configured grace period, In Full compares Actual Quantity Received with DR Quantity, and OTIF is Yes only when both are Yes.
+Received is an operational QR stage and does not replace the quantity controls in SAP Analysis. Warehouse enters **Actual Quantity Received** in SAP Analysis; **On Time**, **In Full**, and **OTIF** are read-only calculated columns there. On Time uses the fixed Gate In classification above, In Full compares Actual Quantity Received with DR Quantity, and OTIF is Yes only when both are Yes.
 
-Administrator, Planner, Warehouse and SAP Analyst accounts have a searchable **Clearance** sidebar page with supplier, status, From-date, and To-date filters. Administrator and Warehouse can open an entry to complete it; Planner and SAP Analyst are view/download-only. Available supplier, material, truck, driver, helper, DR/PO, quantity, batch/lot and scan timestamps autofill from DockFlow and Receiving Records. Matching uses the shipment ID first, then material code with DR or PO. A standalone row without a matching delivery does not appear on a clearance form. SAP Actual Received is used when available. Both left/right copies use the same entered values and download as one A4 landscape page per delivery; multiple material values are combined on that page.
+Administrator, Planner, Warehouse and SAP Analyst accounts have a searchable **Clearance** sidebar page with supplier, status, From-date, and To-date filters. Administrator and Warehouse can open an entry to complete it; Planner and SAP Analyst are view/download-only. Available supplier, material, truck, driver, helper, DR/PO, quantity, batch/lot and scan timestamps autofill from DockFlow and Receiving Records. Matching uses the shipment ID first, then material code with DR or PO. A standalone row without a matching delivery does not appear on a clearance form. SAP Actual Received is used when available. Each material under a DR has its own clearance record and its own A4 landscape PDF page; that page still contains matching left/right copies. All batches for the material are shown together.
 
 ## Ecosystem
 
@@ -77,6 +79,7 @@ POSTGRES_PASSWORD=password
 POSTGRES_SCHEMA=Analysis
 POSTGRES_SESSION_LOGS_TABLE=SAPAnalysis
 POSTGRES_SSL=false
+SAP_NETWORK_RESTRICTION_ENABLED=false
 SAP_ALLOWED_CIDRS=
 SAP_TRUSTED_PROXY_CIDRS=
 WEB_TRUSTED_PROXY_CIDRS=
@@ -86,18 +89,19 @@ The values above are placeholders, not credentials. Use `POSTGRES_SSL=true` when
 
 The API creates schema `"Analysis"` and table `"SAPAnalysis"` on the first authorized request, if absent. It also adds missing unified-data and formatting columns to an existing importer-created DockFlow table without deleting or replacing its rows. Give the configured database user schema and table privileges. Back up and reconcile an unrelated or incompatible table before starting DockFlow.
 
-- `SAP_ALLOWED_CIDRS`: the actual approved client/VPN address ranges as observed by the web/API path. Empty means nobody can see SAP data.
-- `SAP_TRUSTED_PROXY_CIDRS`: only the web server's actual address/range on the private API connection. The API trusts client addresses from those proxies only. Keep the API private; do not publish its Docker port to public clients.
+- `SAP_NETWORK_RESTRICTION_ENABLED=false` keeps Receiving Records protected by account roles without rejecting a workstation because Windows selected AgileWifi instead of RBWifi_Optimized. SAP Analyst and Administrator can add/edit, while Planner and Warehouse retain their assigned column permissions.
+- Set `SAP_NETWORK_RESTRICTION_ENABLED=true` only when client-network filtering is required in addition to account roles. In that mode, `SAP_ALLOWED_CIDRS` contains the actual approved client/VPN ranges observed by the web/API path; an empty value allows nobody to see SAP data.
+- When the optional restriction is enabled, `SAP_TRUSTED_PROXY_CIDRS` contains only the web server's actual address/range on the private API connection. The API trusts client addresses from those proxies only. Keep the API private; do not publish its Docker port to public clients.
 - `WEB_TRUSTED_PROXY_CIDRS`: only a trusted ingress/reverse proxy in front of the web server. Leave empty when clients connect directly to the DockFlow web server. A proxy must append the observed peer or overwrite the forwarded chain; do not trust arbitrary public clients.
 - Behind Docker or a VPN, confirm the observed source addresses before choosing ranges. Do not allow the entire Docker/private address space merely to make the worksheet load. An IP/network check is not a browser connection to PostgreSQL: the API connects to the database and separately enforces approved client-network access.
 
 The sidebar labels the PostgreSQL worksheet **Receiving Records**. SAP Analyst and Administrator can add worksheet rows, edit SAP fields—including **Encoded By**—and apply cell formatting. New rows still initialize Encoded By from the current account, while an explicitly edited value is preserved. Planner/Production can view the register and edit Destination. Warehouse can view the register and edit receiving and clearance fields. Supplier booking inputs remain in Scheduling, and suppliers do not receive access to the internal historical register. The API enforces these permissions even if someone manipulates the browser.
 
-The register searches PostgreSQL server-side and loads 50 rows at a time. Scrolling near the bottom automatically requests the next page; 27,000 rows are not fetched in one request. It supports newest-first/oldest-first sorting and returns every SAP row. It refreshes only the newest page every 10 seconds while the tab is visible, preserves the current pagination position, and keeps unsaved edits. The rest of DockFlow refreshes its JSON-backed operational snapshot every 30 seconds. The default general API allowance is 1,200 requests per minute per client, while login and refresh keep separate limits. Outside the allowed network, or when the database is unavailable, SAP displays no data.
+The register searches PostgreSQL server-side and loads 50 rows at a time. Scrolling near the bottom automatically requests the next page; 27,000 rows are not fetched in one request. It supports newest-first/oldest-first sorting and returns every SAP row. It refreshes only the newest page every 10 seconds while the tab is visible, preserves the current pagination position, and keeps unsaved edits. The rest of DockFlow refreshes its JSON-backed operational snapshot every 30 seconds. The default general API allowance is 1,200 requests per minute per client, while login and refresh keep separate limits. When the optional network restriction is enabled, clients outside the allowed ranges see no data. When it is disabled, Receiving Records is available to its authorized roles from either company Wi-Fi as long as the API can reach PostgreSQL. A database outage still displays no data.
 
 The worksheet supports multi-cell, whole-row, and whole-column selection with one continuous outer selection border and the appropriate axis header highlighted; undo, redo, font, emphasis, color, fill, alignment, wrap, indent, borders, row height, and column width. The unused toolbar controls for thousands formatting, delete contents, clear formatting, fill selected, hide rows, and show rows were removed. Copy, cut, paste, copy formatting, paste formatting, and Delete remain available through keyboard shortcuts. Cell formatting and row height are stored in PostgreSQL. Hidden columns and column widths are browser layout preferences. Record cells are deliberately not mergeable because each database row must retain its own field boundaries.
 
-Rows imported by the standalone Python importer appear immediately; their blank SAP fields are editable according to the signed-in role. New application rows appear after Gate in. Existing SAP edits are preserved when application rows synchronize, while scheduling and scan timestamps continue to refresh from DockFlow. Saves use optimistic revision checks; stale application saves return a conflict. Direct SQL writers must increment `revision` on each update to participate in conflict detection. No user deletion or application resync deletes SAP records.
+Rows imported by the standalone Python importer appear immediately; their blank SAP fields are editable according to the signed-in role. New application rows appear after the supplier confirms the truck and all required batch details, on the next Receiving Records refresh. Gate and warehouse values update those same rows later. Existing SAP edits are preserved when application rows synchronize, while scheduling and scan timestamps continue to refresh from DockFlow. Saves use optimistic revision checks; stale application saves return a conflict. Direct SQL writers must increment `revision` on each update to participate in conflict detection. No user deletion or application resync deletes SAP records.
 
 | Display column | PostgreSQL column | Initial source |
 |---|---|---|
@@ -108,26 +112,26 @@ Rows imported by the standalone Python importer appear immediately; their blank 
 | DR No | dr_number | Truck/item DR |
 | Quantity | quantity | Original DR/scheduled quantity |
 | PO Number | po_number | Truck/item PO |
-| Batch | batch | Available application batch |
+| Batch | batch | Supplier-confirmed material batch |
 | Breakdown | breakdown | Blank |
-| Mfg. Date | mfg_date | Available application value |
-| Exp Date | exp_date | Available application value |
+| Mfg. Date | mfg_date | Supplier-confirmed production date |
+| Exp Date | exp_date | Supplier-confirmed expiration date |
 | MATDOC | matdoc | Blank |
-| Supplier's Lot | supplier_lot | Blank |
+| Supplier's Lot | supplier_lot | Supplier-confirmed lot |
 | Remarks | remarks | Blank |
 
 After those 14 SAP columns, the unified register adds supplier, plate, driver, Gate in/out, destination and gatepass; then the Warehouse fields. Immediately after Actual Quantity Received are the read-only `on_time`, `in_full`, and `otif` columns. Missing columns are added automatically to the existing table without deleting rows. The incorrect vehicle-log columns are not part of this schema.
 
-Cell columns are TEXT to preserve leading zeros and source formatting. Internal metadata is `id`, `record_key`, `shipment_id`, `supplier`, `revision`, `verified`, and `updated_at`. `record_key` is `shipmentId:itemId`. Excel exports the same 14 SAP columns first and then the app/Warehouse columns. Configure visible columns in the compact disclosure. Save before downloading.
+Cell columns are TEXT to preserve leading zeros and source formatting. Internal metadata is `id`, `record_key`, `shipment_id`, `supplier`, `revision`, `verified`, and `updated_at`. New batch-backed keys include shipment, material, and batch identity, so several rows may intentionally share the same DR. Legacy material-only keys remain readable. Excel exports the same 14 SAP columns first and then the app/Warehouse columns. Configure visible columns in the compact disclosure. Save before downloading.
 
-Cell formatting metadata is stored in `cell_formats`; row sizing and visibility use `row_height` and `row_hidden`. App-created keys use `shipmentId:itemId`.
+Cell formatting metadata is stored in `cell_formats`; row sizing and visibility use `row_height` and `row_hidden`.
 
 `SAP_STORAGE=json` remains available only as an explicit local trial option; network checks still apply. Production defaults to PostgreSQL, with no silent JSON fallback.
 
 ## Verification and limits
 
-- Automated checks cover workflow, Excel time zones, import/work-area rules, two-hour reschedules, scan-to-Gate-out completion, SAP OTIF calculations, permissions/conflicts/pagination/manual rows/network spoofing, Ecosystem email formatting and single-page clearance. See the handoff message for the final test/build result for this package.
-- The clearance PDF generation and single-page count were checked automatically; live printer output was not tested in this environment.
+- Automated checks cover workflow, Excel time zones, import/work-area rules, two-hour reschedules, supplier multi-batch conservation, pre-Gate SAP synchronization, scan-to-Gate-out completion, SAP OTIF calculations, permissions/conflicts/pagination/manual rows/network spoofing, Ecosystem email formatting, and per-material clearance pages. See the handoff message for the final test/build result for this package.
+- Clearance PDF generation and per-material page counts were checked automatically; live printer output was not tested in this environment.
 - Live PostgreSQL credentials/network were not supplied. Connection to your database, live SMTP delivery and Docker image execution remain unverified.
 - Browser-preview permission was unavailable. Desktop/mobile/fullscreen layout changes were checked in source against your screenshots, not in a live browser.
 - Business records remain in the single-instance JSON trial store. This update does not migrate the entire application to PostgreSQL.

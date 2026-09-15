@@ -169,7 +169,7 @@ export type SupplierResponsePayload = {
   alternativeEndTime?: string;
   quantityAllocations?: import("./types").QuantityAllocation[];
   loadConfirmed?: boolean;
-  trucks?: { truckPlate: string; driverName: string; driverPhone: string; helper1Name?: string; helper2Name?: string; poNumber?: string; drNumber?: string; itemIds: number[]; itemQuantities?: { itemId: number; quantity: number }[] }[];
+  trucks?: { truckPlate: string; driverName: string; driverPhone: string; helper1Name?: string; helper2Name?: string; poNumber?: string; drNumber?: string; itemIds: number[]; itemQuantities?: { itemId: number; quantity: number }[]; itemBatches?: { itemId: number; batches: import("./types").ShipmentBatch[] }[] }[];
 };
 
 export const SupplierSdsModal = SupplierConfirmation;

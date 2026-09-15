@@ -1,5 +1,6 @@
 import { normalizePhone } from "./booking.js";
-import { normalizeSplits, applySplits, defaultScheduleEnd } from "./receiving.js";
+import { normalizeSplits, applySplits, classifyArrival, defaultScheduleEnd } from "./receiving.js";
+import { normalizeSupplierBatches } from "./delivery-batches.js";
 import { registerExtensions } from "./extensions.js";
 import bcrypt from "bcryptjs";
 import cors from "cors";
@@ -103,7 +104,7 @@ const slotContains = (slot, date, startTime, endTime = null) => slot?.date === d
 const matchingAvailability = (state, date, startTime, endTime) => (state.settings.availableSlots || []).find((slot) => slotContains(slot, date, startTime, endTime));
 const planningRoles = ["admin", "planner"];
 const AREA_SCOPED_ROLES = new Set(["admin", "planner", "production", "supplier", "driver", "warehouse", "sap"]);
-const AREA_REQUIRED_ROLES = new Set(["planner", "production", "supplier", "driver", "warehouse", "sap"]);
+const AREA_REQUIRED_ROLES = new Set(["planner", "production", "driver", "warehouse", "sap"]);
 const normalizeSecurityScope = (value) => String(value || "").trim().toUpperCase() === "ECOSYSTEM" ? "ECOSYSTEM" : "COMPANY";
 const normalizeWorkArea = (value) => {
   const normalized = String(value || "").trim().toUpperCase();
@@ -362,6 +363,7 @@ const canAccessShipment = (user, shipment) => {
   if (user.role === "security") return normalizeSecurityScope(user.securityScope) === "ECOSYSTEM" ? shipmentWorkArea(shipment) === "ECOSYSTEM" : shipmentWorkArea(shipment) !== "ECOSYSTEM";
   if (user.role === "ecosystem") return Number(user.supplierId) === Number(shipment.supplierId) || ecosystemReceivesShipment(user, shipment);
   if (companyScopedRoles.has(user.role) && Number(user.supplierId) !== Number(shipment.supplierId)) return false;
+  if (user.role === "supplier") return true;
   if (companyScopedRoles.has(user.role) && shipmentWorkArea(shipment) === "ECOSYSTEM") return true;
   const scope = AREA_SCOPED_ROLES.has(user.role) ? normalizeWorkArea(user.workArea) : null;
   if (!scope) return true;
@@ -370,7 +372,7 @@ const canAccessShipment = (user, shipment) => {
   if (area === "ECOSYSTEM" && normalizeWorkArea(shipment.originWorkArea) === scope) return true;
   return false;
 };
-const supplierHasAccount = (state, supplierId, area = null) => state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplierId) && (!area || area === "ECOSYSTEM" || !normalizeWorkArea(user.workArea) || normalizeWorkArea(user.workArea) === area));
+const supplierHasAccount = (state, supplierId, area = null) => state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplierId) && (user.role === "supplier" || !area || area === "ECOSYSTEM" || !normalizeWorkArea(user.workArea) || normalizeWorkArea(user.workArea) === area));
 const supplierSafeShipment = (shipment, includeMaterialName = false) => ({
   ...shipment,
   dppNumber: undefined,
@@ -382,6 +384,11 @@ const supplierSafeShipment = (shipment, includeMaterialName = false) => ({
     materialType: item.materialType || "",
     poNumber: item.poNumber || "",
     dnNumber: item.dnNumber || "",
+    batchNumber: item.batchNumber || "",
+    supplierLot: item.supplierLot || "",
+    productionDate: item.productionDate || "",
+    expiryDate: item.expiryDate || "",
+    batches: Array.isArray(item.batches) ? item.batches.map(batch => ({ ...batch })) : [],
     quantity: item.quantity,
     uom: item.uom,
     palletCount: item.palletCount,
@@ -412,6 +419,10 @@ const makeItem = (id, data) => ({
   palletCount: Number(data.palletCount || 0),
   dnNumber: String(data.dnNumber || ""),
   batchNumber: String(data.batchNumber || ""),
+  supplierLot: String(data.supplierLot || ""),
+  productionDate: String(data.productionDate || ""),
+  expiryDate: String(data.expiryDate || ""),
+  batches: Array.isArray(data.batches) ? data.batches.map((batch, index) => ({ id: Number(batch?.id) || index + 1, batchNumber: String(batch?.batchNumber || "").trim().slice(0, 120), supplierLot: String(batch?.supplierLot || "").trim().slice(0, 120), quantity: Math.max(0, Number(batch?.quantity || 0)), productionDate: String(batch?.productionDate || "").slice(0, 10), expiryDate: String(batch?.expiryDate || "").slice(0, 10) })).filter(batch => batch.quantity > 0) : [],
   sourceSheet: data.sourceSheet || null,
   sourceRow: data.sourceRow || null,
   sourceFile: data.sourceFile || null,
@@ -430,8 +441,8 @@ async function createInitialState() {
   const adminPassword = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "admin123");
   const adminEmail = String(process.env.SMTP_USER || "").trim().toLowerCase();
   return {
-    version: 11,
-    settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 30, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
+    version: 12,
+    settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 15, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
     users: [{ id: 1, name: "System Administrator", username: adminUsername, passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin", supplierId: null, workArea: null, email: adminEmail, emailVerifiedAt: adminEmail ? new Date().toISOString() : null }],
     suppliers: [],
     materials: [],
@@ -490,6 +501,7 @@ await store.update(async (state) => {
     if (user.role === "ecosystem") user.workArea = "ECOSYSTEM";
     else if (user.role === "security") { user.workArea = null; user.securityScope = normalizeSecurityScope(user.securityScope); }
     else if (user.role === "admin") user.workArea = user === systemAdministrator ? null : normalizeWorkArea(user.workArea);
+    else if (user.role === "supplier") user.workArea = null;
     else if (AREA_REQUIRED_ROLES.has(user.role)) user.workArea = normalizeWorkArea(user.workArea) || "DRESSINGS";
     else user.workArea = null;
     user.email = hiddenEmailRoles.has(user.role) ? (user.role === "admin" && user === systemAdministrator ? bootstrapAdminEmail : "") : String(user.email || "").trim().toLowerCase();
@@ -504,7 +516,7 @@ await store.update(async (state) => {
   }
   state.settings.dockCount = 3;
   state.settings.flexibleScheduling = true;
-  state.settings.graceMinutes = Number(state.settings.graceMinutes ?? 30);
+  state.settings.graceMinutes = 15;
   state.settings.deliveryCodeSequence = Number(state.settings.deliveryCodeSequence || Math.max(0, ...state.shipments.map((shipment) => Number(String(shipment.deliveryCode || "").split("-").at(-1)) || 0)));
   state.settings.siteName = String(state.settings.siteName || "Cavite Foods Receiving");
   state.settings.siteAddress = String(state.settings.siteAddress || "");
@@ -600,6 +612,7 @@ await store.update(async (state) => {
     shipment.shift = "Flexible date";
     shipment.tripAt ||= legacyStatus !== "PLANNED" && legacyStatus !== "BOOKED" ? shipment.startedAt || null : null;
     shipment.gateInAt ||= ["ARRIVED", "VERIFIED", "PARKING", "AT_DOCK", "UNLOADING", "RECEIVED", "GATE_IN", "GATE_OUT"].includes(legacyStatus) ? shipment.arrivalTime || shipment.startedAt || null : null;
+    shipment.arrivalClassification = classifyArrival(shipment.scheduledDate, shipment.scheduledTime, shipment.gateInAt);
     shipment.unloadingAt ||= ["AT_DOCK", "UNLOADING", "RECEIVED", "GATE_OUT"].includes(legacyStatus) ? shipment.startedAt || shipment.arrivalTime || null : null;
     shipment.receivedAt ||= ["RECEIVED", "GATE_OUT"].includes(legacyStatus) ? shipment.completedAt || null : null;
     shipment.gateOutAt ||= legacyStatus === "RECEIVED" && shipment.completedAt ? shipment.completedAt : null;
@@ -829,7 +842,7 @@ app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
   const requestArea = normalizeWorkArea(_request.user.workArea);
   const scopedSuppliers = _request.user.role === "ecosystem" ? state.suppliers.filter(supplier => visibleSupplierIds.has(Number(supplier.id)) || Number(supplier.id) === Number(_request.user.supplierId)) : companyScoped ? state.suppliers.filter((supplier) => Number(supplier.id) === Number(_request.user.supplierId)) : requestArea ? state.suppliers.filter((supplier) => visibleSupplierIds.has(Number(supplier.id))) : state.suppliers;
   const scopedUsers = _request.user.role === "admin"
-    ? requestArea ? state.users.filter(user => normalizeWorkArea(user.workArea) === requestArea) : state.users
+    ? requestArea ? state.users.filter(user => user.role === "supplier" || normalizeWorkArea(user.workArea) === requestArea) : state.users
     : [];
   const publicSettings = { ...state.settings, siteAddressConfigured: Boolean(state.settings.siteAddress && validCoordinates(state.settings.siteCoordinates)), availableDates: shipmentDates, availableSlots: [], emailNotifications: publicEmailSettings(), dockCount: 3 };
   delete publicSettings.siteCoordinates;
@@ -934,6 +947,7 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
     poNumber: String(truck?.poNumber || "").trim().slice(0, 100),
     drNumber: String(truck?.drNumber || "").trim().slice(0, 100),
     itemQuantities: (Array.isArray(truck?.itemQuantities) ? truck.itemQuantities : []).map((item) => ({ itemId: Number(item?.itemId), quantity: Number(item?.quantity) })).filter((item) => Number.isFinite(item.itemId) && Number.isFinite(item.quantity) && item.quantity > 0),
+    itemBatches: (Array.isArray(truck?.itemBatches) ? truck.itemBatches : []).map(row => ({ itemId: Number(row?.itemId), batches: Array.isArray(row?.batches) ? row.batches : [] })).filter(row => Number.isFinite(row.itemId)),
     itemIds: [...new Set([...(Array.isArray(truck?.itemIds) ? truck.itemIds : []), ...(Array.isArray(truck?.itemQuantities) ? truck.itemQuantities.map((item) => item?.itemId) : [])].map(Number).filter(Number.isFinite))],
   }));
   if (decision === "ACCEPT") {
@@ -994,6 +1008,14 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
     const assignedQuantities = (itemId) => normalizedTrucks.reduce((sum, truck) => sum + (truck.itemQuantities.length ? Number(truck.itemQuantities.find((item) => item.itemId === itemId)?.quantity || 0) : truck.itemIds.includes(itemId) ? Number(proposal.items.find((item) => Number(item.id) === itemId)?.quantity || 0) : 0), 0);
     const incorrectQuantity = proposal.items.find((item) => assignedIds.includes(Number(item.id)) && !alreadyAssignedIds.has(Number(item.id)) && Math.abs(assignedQuantities(Number(item.id)) - Number(item.quantity)) > 0.000001);
     if (assignedIds.some((id) => !expectedIds.has(id) || alreadyAssignedIds.has(id)) || incorrectQuantity) return { invalidAssignment: true, invalidMaterial: incorrectQuantity?.materialCode };
+    for (const truck of normalizedTrucks) {
+      truck.itemBatches = truck.itemIds.map(itemId => {
+        const item = proposal.items.find(row => Number(row.id) === Number(itemId));
+        const allocated = truck.itemQuantities.length ? Number(truck.itemQuantities.find(row => Number(row.itemId) === Number(itemId))?.quantity || 0) : Number(item?.quantity || 0);
+        const supplied = truck.itemBatches.find(row => Number(row.itemId) === Number(itemId));
+        return { itemId: Number(itemId), batches: normalizeSupplierBatches(item, supplied?.batches, allocated) };
+      });
+    }
     if (normalizedTrucks.some((truck) => existingLoads.some((saved) => saved.truckPlate === truck.truckPlate))) return { duplicatePlate: true };
     const respondedAt = new Date().toISOString();
     const proposalId = proposal.id;
@@ -1027,7 +1049,9 @@ app.patch("/api/shipments/:id/supplier-response", auth, allow("supplier", "ecosy
       const delivery = index === 0 ? proposal : { ...proposal, id: nextId(state.shipments), items: [], palletIds: [] };
       delivery.items = baseItems.flatMap((item) => {
         const allocated = load.itemQuantities?.length ? Number(load.itemQuantities.find((value) => Number(value.itemId) === Number(item.id))?.quantity || 0) : load.itemIds.includes(Number(item.id)) ? Number(item.quantity) : 0;
-        return allocated > 0 ? [{ ...item, quantity: allocated, sourceAllocationItemId: item.id }] : [];
+        if (allocated <= 0) return [];
+        const batches = load.itemBatches?.find(value => Number(value.itemId) === Number(item.id))?.batches || [];
+        return [{ ...item, quantity: allocated, sourceAllocationItemId: item.id, batches, batchNumber: batches[0]?.batchNumber || '', supplierLot: batches[0]?.supplierLot || '', productionDate: batches[0]?.productionDate || '', expiryDate: batches[0]?.expiryDate || '' }];
       });
       delivery.shipmentNumber = nextCode("SHP", delivery.id, proposal.scheduledDate);
       delivery.bookingReceipt = nextCode("BKG", delivery.id, proposal.scheduledDate);
@@ -1322,10 +1346,6 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     if (shipment.bookingStatus !== "APPROVED") return { approvalRequired: true };
     const targetStatus = stage === "GATE" ? (["RECEIVED", "GATE_OUT"].includes(shipment.status) ? "GATE_OUT" : "GATE_IN") : configuration.status;
     if (targetStatus === "GATE_IN" && String(request.body?.gateDecision || "").toUpperCase() !== "ACCEPT") return { gateDecisionRequired: true };
-    if (targetStatus === "GATE_IN") {
-      const scheduledAt = Date.parse(`${shipment.scheduledDate}T${shipment.scheduledTime}:00+08:00`);
-      if (Number.isFinite(scheduledAt) && Date.now() < scheduledAt - 15 * 60_000) return { tooEarly: true, earliestAt: new Date(scheduledAt - 15 * 60_000).toISOString() };
-    }
     const alreadyRecorded = shipment.status === targetStatus || (stage === "TRIP" && Boolean(shipment.tripAt)) || (stage === "UNLOADING" && Boolean(shipment.unloadingAt)) || (stage === "RECEIVED" && Boolean(shipment.receivedAt));
     if (alreadyRecorded) return { shipment: supplierSafeShipment(shipment), alreadyRecorded: true, stageLabel: configuration.label };
     if (!alreadyRecorded && !configuration.from.includes(shipment.status)) return { wrongStage: true, currentStatus: shipment.status };
@@ -1335,7 +1355,7 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
     const scannedAt = new Date().toISOString();
     shipment.lastProcessAt = scannedAt;
     if (stage === "TRIP") { shipment.tripAt ||= scannedAt; shipment.startedAt ||= scannedAt; applyShipmentEta(state, shipment, shipment.tripAt); }
-    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; shipment.gateDecision = "ACCEPTED"; shipment.gateDecisionAt = scannedAt; shipment.gateDecisionBy = request.user.name; shipment.gateRejectionReason = null; clearShipmentEta(shipment); resolveShipmentNotifications(state, shipment); }
+    if (stage === "GATE" && targetStatus === "GATE_IN") { shipment.gateInAt ||= scannedAt; shipment.startedAt ||= scannedAt; shipment.arrivalTime ||= scannedAt; shipment.arrivalClassification = classifyArrival(shipment.scheduledDate, shipment.scheduledTime, shipment.gateInAt); shipment.gateDecision = "ACCEPTED"; shipment.gateDecisionAt = scannedAt; shipment.gateDecisionBy = request.user.name; shipment.gateRejectionReason = null; clearShipmentEta(shipment); resolveShipmentNotifications(state, shipment); }
     if (stage === "UNLOADING") shipment.unloadingAt ||= scannedAt;
     if (stage === "RECEIVED") shipment.receivedAt ||= scannedAt;
     if (stage === "GATE" && targetStatus === "GATE_OUT") { shipment.gateOutAt ||= scannedAt; shipment.completedAt ||= scannedAt; shipment.dock = null; }
@@ -1351,7 +1371,6 @@ app.post("/api/shipments/scan-stage", auth, asyncRoute(async (request, response)
   if (result.approvalRequired) return response.status(409).json({ message: "This booking must be approved before it can be scanned" });
   if (result.forbidden) return response.status(403).json({ message: "This supplier account cannot access that shipment" });
   if (result.gateDecisionRequired) return response.status(400).json({ message: "Review the scanned booking, then choose Accept or Reject" });
-  if (result.tooEarly) return response.status(409).json({ message: `Entry opens 15 minutes before the schedule. Earliest Gate In: ${new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: TIME_ZONE }).format(new Date(result.earliestAt))}` });
   if (result.wrongStage) return response.status(409).json({ message: `This delivery is currently ${String(result.currentStatus).replaceAll("_", " ").toLowerCase()}. Complete the earlier scan stage first.` });
   if (result.noDock) return response.status(409).json({ message: "The receiving dock for this work area is occupied. Complete Gate out before starting another unloading." });
   response.json({ ...result, message: result.alreadyRecorded ? `${result.stageLabel} was already recorded for ${result.shipment.shipmentNumber}` : `${result.shipment.shipmentNumber} updated to ${result.stageLabel}` });
@@ -1573,10 +1592,10 @@ app.post("/api/imports/excel/commit", auth, allow(...planningRoles), asyncRoute(
     addAudit(state, request.user, "SDS_IMPORT_COMPLETED", `${createdProposals} created, ${updatedProposals} updated, ${unchangedProposals} unchanged after spreadsheet comparison`);
     const notifications = [...supplierChanges.values()].map((entry) => ({
       ...entry,
-      recipients: state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && user.emailVerifiedAt && Number(user.supplierId) === Number(entry.supplierId) && (!entry.area || entry.area === "ECOSYSTEM" || normalizeWorkArea(user.workArea) === entry.area)).map((user) => user.email).filter(Boolean),
+      recipients: state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && user.emailVerifiedAt && Number(user.supplierId) === Number(entry.supplierId) && (user.role === "supplier" || !entry.area || entry.area === "ECOSYSTEM" || normalizeWorkArea(user.workArea) === entry.area)).map((user) => user.email).filter(Boolean),
     }));
     for (const entry of supplierChanges.values()) {
-      const supplierUsers = state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(entry.supplierId) && (!entry.area || entry.area === "ECOSYSTEM" || normalizeWorkArea(user.workArea) === entry.area));
+      const supplierUsers = state.users.filter((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(entry.supplierId) && (user.role === "supplier" || !entry.area || entry.area === "ECOSYSTEM" || normalizeWorkArea(user.workArea) === entry.area));
       for (const change of entry.changes) {
         const shipment = state.shipments.find((row) => row.shipmentNumber === change.shipmentNumber);
         if (!shipment) continue;
@@ -1636,7 +1655,7 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
   const requestedArea = normalizeWorkArea(request.body?.workArea);
   const securityScope = role === "security" ? normalizeSecurityScope(request.body?.securityScope) : null;
   if (actorArea && ["security", "ecosystem"].includes(role)) return response.status(403).json({ message: "Only the Both-areas administrator can create site-wide Security or Ecosystem accounts" });
-  const workArea = role === "ecosystem" ? "ECOSYSTEM" : role === "security" ? null : actorArea || requestedArea || (AREA_REQUIRED_ROLES.has(role) ? "DRESSINGS" : null);
+  const workArea = role === "ecosystem" ? "ECOSYSTEM" : role === "security" || role === "supplier" ? null : actorArea || requestedArea || (AREA_REQUIRED_ROLES.has(role) ? "DRESSINGS" : null);
   if (AREA_REQUIRED_ROLES.has(role) && !["DRESSINGS", "SAVOURY"].includes(workArea)) return response.status(400).json({ message: `${role} accounts must be assigned to Dressings or Savoury` });
   if (role === "admin" && workArea && !["DRESSINGS", "SAVOURY"].includes(workArea)) return response.status(400).json({ message: "Administrator access must be Both areas, Dressings, or Savoury" });
   const passwordHash = await bcrypt.hash(String(request.body.password), 10);
@@ -1646,7 +1665,7 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
     if (["supplier", "ecosystem"].includes(request.body.role)) {
       const existing = state.suppliers.find((supplier) => supplier.id === Number(request.body.supplierId));
       const supplier = existing || ensureSupplier(state, request.body.supplierName || request.body.name);
-      if (state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplier.id) && normalizeWorkArea(user.workArea) === workArea)) return { supplierAlreadyLinked: true };
+      if (state.users.some((user) => ["supplier", "ecosystem"].includes(user.role) && Number(user.supplierId) === Number(supplier.id) && (role === "supplier" ? user.role === "supplier" : normalizeWorkArea(user.workArea) === workArea))) return { supplierAlreadyLinked: true };
       supplier.productPresets ||= [];
       supplierId = supplier.id;
     }
@@ -1656,7 +1675,7 @@ app.post("/api/users", auth, allow("admin"), asyncRoute(async (request, response
     return { id, supplierId, workArea, securityScope };
   });
   if (result.duplicate) return response.status(409).json({ message: "That username already exists" });
-  if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active account for this receiving area" });
+  if (result.supplierAlreadyLinked) return response.status(409).json({ message: "That supplier already has an active account" });
   activeAccountRoles.set(Number(result.id), role);
   response.status(201).json({...result,notification:{status:"DEFERRED"}});
 }));
@@ -1875,7 +1894,7 @@ app.patch("/api/settings", auth, allow("admin"), asyncRoute(async (request, resp
       ...state.settings,
       flexibleScheduling: true,
       dockCount: 3,
-      graceMinutes: Number(request.body?.graceMinutes ?? state.settings.graceMinutes),
+      graceMinutes: 15,
       siteName: String(request.body?.siteName || state.settings.siteName),
       availableSlots,
     };

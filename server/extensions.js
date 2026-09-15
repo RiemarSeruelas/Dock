@@ -5,34 +5,42 @@ import ExcelJS from 'exceljs';
 import { randomUUID } from 'node:crypto';
 import { calculateKpi, fail } from './receiving.js';
 import { encodedByName } from './sap-postgres.js';
+import { classifyArrival } from './receiving.js';
+import { batchRecordKey, distributeActualReceived, storedBatchRows } from './delivery-batches.js';
 
 const columns = sapColumns;
 const manila = date => date ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(date)) : '';
-export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus === 'APPROVED' && s.gateInAt).flatMap(s => s.items.map(item => {
-  const key = `${s.id}:${item.id}`;
-  const saved = state.sapRows?.[key];
+export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus === 'APPROVED').flatMap(s => s.items.flatMap(item => {
   const clearance = s.clearance?.[item.id] || {};
   const accepted = s.receipt?.items?.find(row => Number(row.itemId) === Number(item.id))?.acceptedQuantity;
-  const scheduledAt = Date.parse(`${s.scheduledDate}T${s.scheduledTime}:00+08:00`);
-  const gateInAt = Date.parse(s.gateInAt);
-  const onTime = Number.isFinite(scheduledAt) && Number.isFinite(gateInAt) ? gateInAt <= scheduledAt + Number(state.settings?.graceMinutes || 0) * 60000 : null;
-  const actualReceived = clearance.actualReceived ?? accepted ?? '';
-  const defaults = {
-    supplierName: s.supplier || '', plateNumber: s.truckPlate || '', driverName: s.driverName || '',
-    gateIn: manila(s.gateInAt), gateOut: manila(s.gateOutAt), destination: item.deliverySite || s.originWorkArea || '',
-    deliveryDate: `${s.scheduledDate} ${s.scheduledTime}`, encodedBy: '', item: item.materialCode, description: item.materialName || '',
-    drNumber: s.drNumber || item.dnNumber || '', gatepassNumber: '', quantity: item.quantity,
-    poNumber: s.poNumber || item.poNumber || '', batch: item.batchNumber || '', breakdown: '',
-    mfgDate: item.productionDate || '', expDate: item.expiryDate || '', matdoc: '', supplierLot: '', remarks: '',
-    inventoryController: clearance.inventoryController || '', receivingController: clearance.receivingController || '',
-    helperCount: clearance.helperCount ?? ([s.helper1Name,s.helper2Name].filter(Boolean).length || ''), truckType: clearance.truckType || '',
-    actualReceived, ...calculateOtifValues(onTime, item.quantity, actualReceived), palletCount: clearance.palletCount || '',
-    warehouseRemarks: clearance.remarks || '', startUnloading: manila(s.unloadingAt), endUnloading: manila(s.gateOutAt || s.receivedAt),
-    qaStart: clearance.qaStart || '', qaEnd: clearance.qaEnd || '', qaDisposition: clearance.disposition || '',
-  };
-  const values = { ...defaults, ...saved?.values };
-  Object.assign(values, calculateOtifValues(onTime, values.quantity, values.actualReceived));
-  return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
+  const actualTotal = clearance.actualReceived ?? accepted ?? '';
+  const arrivalClassification = classifyArrival(s.scheduledDate, s.scheduledTime, s.gateInAt);
+  const onTime = arrivalClassification ? arrivalClassification !== 'LATE' : null;
+  const hasStoredBatches = Array.isArray(item.batches) && item.batches.length > 0;
+  const batches = storedBatchRows(item);
+  const receivedByBatch = distributeActualReceived(batches, actualTotal);
+  return batches.map((batch, index) => {
+    const key = batchRecordKey(s.id, item.id, batch, index, hasStoredBatches);
+    const saved = state.sapRows?.[key];
+    const quantity = Number(batch.quantity || 0);
+    const actualReceived = receivedByBatch[index];
+    const defaults = {
+      supplierName: s.supplier || '', plateNumber: s.truckPlate || '', driverName: s.driverName || '',
+      gateIn: manila(s.gateInAt), gateOut: manila(s.gateOutAt), destination: item.deliverySite || s.originWorkArea || '',
+      deliveryDate: `${s.scheduledDate} ${s.scheduledTime}`, encodedBy: '', item: item.materialCode, description: item.materialName || '',
+      drNumber: s.drNumber || item.dnNumber || '', gatepassNumber: '', quantity,
+      poNumber: s.poNumber || item.poNumber || '', batch: batch.batchNumber || '', breakdown: '',
+      mfgDate: batch.productionDate || '', expDate: batch.expiryDate || '', matdoc: '', supplierLot: batch.supplierLot || '', remarks: '',
+      inventoryController: clearance.inventoryController || '', receivingController: clearance.receivingController || '',
+      helperCount: clearance.helperCount ?? ([s.helper1Name,s.helper2Name].filter(Boolean).length || ''), truckType: clearance.truckType || '',
+      actualReceived, ...calculateOtifValues(onTime, quantity, actualReceived), palletCount: clearance.palletCount || '',
+      warehouseRemarks: clearance.remarks || '', startUnloading: manila(s.unloadingAt), endUnloading: manila(s.gateOutAt || s.receivedAt),
+      qaStart: clearance.qaStart || '', qaEnd: clearance.qaEnd || '', qaDisposition: clearance.disposition || '',
+    };
+    const values = { ...defaults, ...saved?.values };
+    Object.assign(values, calculateOtifValues(onTime, values.quantity, values.actualReceived));
+    return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
+  });
 })), ...(state.sapManualRows || []).map(row=>{const saved=state.sapRows?.[row.key];const merged=saved?{...row,...saved,values:{...row.values,...saved.values}}:row;const values={...merged.values,...calculateOtifValues(merged.values?.onTime,merged.values?.quantity,merged.values?.actualReceived)};return{...merged,values};})];
 export function registerExtensions({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database }) {
   registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database });

@@ -4,6 +4,15 @@ export const fail = (message, status = 400) => { const error = new Error(message
 export const validDay = value => { if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false; const date = new Date(`${value}T00:00:00Z`); return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value; };
 export const validClock = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value || '');
 export const roundQuantity = n => Math.round(n * 1e6) / 1e6;
+export function classifyArrival(scheduledDate, scheduledTime, gateInAt) {
+  const scheduled = Date.parse(`${scheduledDate}T${scheduledTime}:00+08:00`);
+  const arrived = Date.parse(gateInAt);
+  if (!Number.isFinite(scheduled) || !Number.isFinite(arrived)) return null;
+  const varianceMinutes = (arrived - scheduled) / 60000;
+  if (varianceMinutes < -30) return 'ADVANCED';
+  if (varianceMinutes <= 15) return 'ON_TIME';
+  return 'LATE';
+}
 export const defaultScheduleEnd = (start, duration = 120) => {
   if (!validClock(start)) return null;
   const [hour, minute] = start.split(':').map(Number);
@@ -75,7 +84,7 @@ export function applySplits(state, proposal, nextId, nextCode) {
   }
   return created;
 }
-export function inspectReceipt(shipment, input, graceMinutes = 0) {
+export function inspectReceipt(shipment, input) {
   if (!input || !['FULL', 'NOT_IN_FULL', 'NOT_OTIF'].includes(input.outcome)) fail('Choose Received or Received – Not in Full after inspection');
   const submitted = input.items;
   if (!Array.isArray(submitted) || submitted.length !== shipment.items.length || new Set(submitted.map(row => Number(row.itemId))).size !== submitted.length) fail('Inspect every material exactly once');
@@ -91,8 +100,8 @@ export function inspectReceipt(shipment, input, graceMinutes = 0) {
   const inFull = items.every(row => row.remainingQuantity === 0);
   if (input.outcome !== 'NOT_OTIF' && (input.outcome === 'FULL') !== inFull) fail('Receipt outcome must match the inspected quantities');
   if(input.outcome === 'NOT_OTIF' && !String(input.reason || '').trim()) fail('Choose a reason for Not OTIF');
-  const scheduled = new Date(`${shipment.scheduledDate}T${shipment.scheduledTime}:00+08:00`).getTime();
-  const onTime = shipment.gateInAt ? new Date(shipment.gateInAt).getTime() <= scheduled + Number(graceMinutes) * 60000 : null;
+  const arrivalClassification = classifyArrival(shipment.scheduledDate, shipment.scheduledTime, shipment.gateInAt);
+  const onTime = arrivalClassification ? arrivalClassification !== 'LATE' : null;
   return { outcome: input.outcome, reason: String(input.reason || '').trim().slice(0,1000), inFull, onTime, otif: onTime === null ? null : onTime && inFull && input.outcome !== 'NOT_OTIF', items };
 }
 export function createReplacements(state, shipment, nextId, nextCode) {
@@ -106,7 +115,7 @@ export function createReplacements(state, shipment, nextId, nextCode) {
   return [...groups.values()].map(rows => {
     const id = nextId(state.shipments);
     const scheduledEndTime = defaultScheduleEnd(rows[0].time);
-    const replacement = { id, shipmentNumber: nextCode('SHP', id, rows[0].date), bookingReceipt: nextCode('BKG', id, rows[0].date), supplier: shipment.supplier, supplierId: shipment.supplierId, vendorCode: shipment.vendorCode, destinationEcosystemId: shipment.destinationEcosystemId || null, replacementForId: shipment.id, isFollowUp: true, followUpLabel: 'Follow up', scheduledDate: rows[0].date, scheduledTime: rows[0].time, scheduledEndTime, expectedDurationMinutes: 120, timeSlot: `${rows[0].time} - ${scheduledEndTime}`, status: 'PROPOSED', bookingStatus: 'PENDING_SUPPLIER', truckPlate: '', driverName: '', driverPhone: '', confirmedTruckLoads: [], palletsScanned: 0, palletsTotal: 0, materialWeightKg: 0, items: rows.map(row => ({ ...shipment.items.find(item => item.id === row.itemId), id: nextItem++, quantity: row.remainingQuantity, supplierApprovedAt: null, assignedTruckPlate: null, remarks: row.reason })) };
+    const replacement = { id, shipmentNumber: nextCode('SHP', id, rows[0].date), bookingReceipt: nextCode('BKG', id, rows[0].date), supplier: shipment.supplier, supplierId: shipment.supplierId, vendorCode: shipment.vendorCode, destinationEcosystemId: shipment.destinationEcosystemId || null, replacementForId: shipment.id, isFollowUp: true, followUpLabel: 'Follow up', scheduledDate: rows[0].date, scheduledTime: rows[0].time, scheduledEndTime, expectedDurationMinutes: 120, timeSlot: `${rows[0].time} - ${scheduledEndTime}`, status: 'PROPOSED', bookingStatus: 'PENDING_SUPPLIER', truckPlate: '', driverName: '', driverPhone: '', confirmedTruckLoads: [], palletsScanned: 0, palletsTotal: 0, materialWeightKg: 0, items: rows.map(row => ({ ...shipment.items.find(item => item.id === row.itemId), id: nextItem++, quantity: row.remainingQuantity, batchNumber: '', supplierLot: '', productionDate: '', expiryDate: '', batches: [], supplierApprovedAt: null, assignedTruckPlate: null, remarks: row.reason })) };
     state.shipments.push(replacement);
     return replacement;
   });

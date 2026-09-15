@@ -241,7 +241,7 @@ Use this checklist on a copy of the trial data. Back up `.env` and `data/trial-d
 | SAP-01 | Allowed network + correct DB | Existing imported rows appear newest first |
 | SAP-02 | Wrong database name | Clear unavailable response; no JSON fallback |
 | SAP-03 | Correct DB but wrong schema/table case | Clear unavailable response explaining the connection/table issue in logs |
-| SAP-04 | Network outside `SAP_ALLOWED_CIDRS` | No rows are returned |
+| SAP-04 | Enable `SAP_NETWORK_RESTRICTION_ENABLED`, then use a network outside `SAP_ALLOWED_CIDRS` | No rows are returned |
 | SAP-05 | Scroll through 27,000 rows | Rows load in pages; browser/API remain responsive |
 | SAP-06 | Search DR, batch, item, supplier | Server returns matching PostgreSQL rows |
 | SAP-07 | Change sort newest/oldest | Order changes without loading all rows at once |

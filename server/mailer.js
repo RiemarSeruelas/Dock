@@ -88,7 +88,7 @@ export const emailNotifications = {
   },
   async sendKpi({ sender, recipient, report, name }) {
     const value = n => n === null ? 'Not evaluated' : `${n}%`;
-    return send({ sender, recipients: [recipient], subject: `DockFlow monthly KPI – ${name} – ${report.month}`, text: `Monthly performance: ${name}\nMonth: ${report.month}\nConfirmed: ${report.confirmed}\nInspected: ${report.evaluated}\nAwaiting inspection: ${report.awaitingInspection}\nOn time: ${value(report.onTimePercent)}\nIn full: ${value(report.inFullPercent)}\nOTIF: ${value(report.otifPercent)}\nGate out completed: ${report.completed}\nAverage site minutes: ${report.averageSiteMinutes ?? 'Not available'}\n\nOn time uses Gate in and the configured grace period. OTIF uses inspected original deliveries scheduled in this month; replacements are excluded.` });
+    return send({ sender, recipients: [recipient], subject: `DockFlow monthly KPI – ${name} – ${report.month}`, text: `Monthly performance: ${name}\nMonth: ${report.month}\nConfirmed: ${report.confirmed}\nInspected: ${report.evaluated}\nAwaiting inspection: ${report.awaitingInspection}\nOn time: ${value(report.onTimePercent)}\nIn full: ${value(report.inFullPercent)}\nOTIF: ${value(report.otifPercent)}\nGate out completed: ${report.completed}\nAverage site minutes: ${report.averageSiteMinutes ?? 'Not available'}\n\nArrival status uses Gate in: Advanced is more than 30 minutes early, On time is from 30 minutes early through 15 minutes late, and Late is more than 15 minutes late. OTIF uses inspected original deliveries scheduled in this month; replacements are excluded.` });
   },
   async verifySender(sender) {
     if (testMode) return true;

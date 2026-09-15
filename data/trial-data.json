@@ -6,8 +6,8 @@
     "graceMinutes": 30,
     "deliveryCodeSequence": 18,
     "siteName": "Cavite Foods Receiving",
-    "siteAddress": "enc:v1:ifdu-0YcFNm5ihO_:szh8HDXFOvhSgdXeqaI3BA:7DKuyTrkq76MRU7tLlfak3kPBWMwyPq-7FhMlCZuMSgtZPhi6C-o_g",
-    "siteCoordinates": "enc:v1:AaaoX_1c8_jMRfEq:RjghqrEcI3tqSbbFUatt9A:yi7-ddxjrhvQfKhClV4BMgnFpMtUeXZKatnhU3Y7MooS1IEJ",
+    "siteAddress": "enc:v1:wRwKv7oKl3mXcpkb:UdbBG5K2Y2OcwJUEpCGR3Q:FtRSph7NB0_VcB9VFR-li95Fjyzpl8subdb97dcO0srDirJMtw6wHA",
+    "siteCoordinates": "enc:v1:jHxfXGBtFWAata02:oq-ueFrumcrvb09-ZEKtOw:cCXTkMq1gC7lEGTrV8zrEz1g0q0Yhj-XJ83EeKpy7PPWHoEY",
     "availableDates": [
       "2026-09-13",
       "2026-09-14",
@@ -135,12 +135,12 @@
       "id": 1,
       "name": "System Administrator",
       "username": "admin",
-      "passwordHash": "$2b$10$/KmlxHd.lemBwCr8SO3z..8dDjmpJ2EIDjcoWyL/xGbkZLeIN5l5C",
+      "passwordHash": "$2b$10$P6TB0f6q/ZkDvi7KbSEhzOwOxCmN48ZTFetsYsWyvdhKWhcAMfbei",
       "role": "admin",
       "supplierId": null,
       "workArea": null,
       "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": "2026-09-14T05:52:50.175Z",
+      "emailVerifiedAt": "2026-09-15T00:52:33.733Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
@@ -318,6 +318,25 @@
       "supplierId": null,
       "workArea": null,
       "securityScope": "COMPANY"
+    },
+    {
+      "id": 15,
+      "name": "analyst",
+      "username": "analyst",
+      "email": "riemar53seruelas@gmail.com",
+      "emailVerifiedAt": "2026-09-15T01:29:59.133Z",
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": "2026-09-15T01:29:49.394Z",
+      "passwordHash": "$2b$10$Yy2aEL7bsZurXnJn6hFqXOub6zyhN53Mb.rrXkjScwHpxBq2FUc7q",
+      "mustChangePassword": false,
+      "onboardingRequired": false,
+      "role": "sap",
+      "supplierId": null,
+      "workArea": "DRESSINGS",
+      "securityScope": null,
+      "passwordChangedAt": "2026-09-15T01:30:17.357Z"
     }
   ],
   "suppliers": [
@@ -441,8 +460,8 @@
           "defaultAmount": 61
         }
       ],
-      "originAddress": "enc:v1:wC6C4e6A1Z6sfoCF:lBtIezdhlHZWdf9wAWkwUw:qFP0MXX-BFtRMC3KvnL3h4E5oCdRzdYeFLX7Q5nbi2csmiwUA5AsD_8Vwl3D",
-      "originCoordinates": "enc:v1:UNkxRSqmj0TMfNV4:BGSKT5PNe0RhUB0Vvmp5AQ:umSseM-bBF_mAQgOQJel2T1hvULjiSU7FqyPwIWbVCLALnQ2",
+      "originAddress": "enc:v1:UIE6nCtbOPSVyqF1:1J97PyeTUazSefi0LkY0tg:00wkr8DYDHzeBboQnAnhErxTqYnqbNqXIK0-ptS4cCgKvhHt_CY-EHLWN8dr",
+      "originCoordinates": "enc:v1:HWTCVN5HtGEpMpdS:tsJ8DHm831ELLJYybRLKNQ:H4Xf97ko8mXHymaW1p0N3CUVI4N4Wy_oBHWflM_QwvKeKz9X",
       "routeDistanceKm": 12.9,
       "routeDurationMinutes": 26,
       "routeCalculatedAt": "2026-09-13T09:43:30.345Z",
@@ -2700,7 +2719,7 @@
       "startedAt": "2026-09-14T06:27:20.970Z",
       "completedAt": null,
       "lastProcessAt": "2026-09-14T06:27:26.983Z",
-      "tripAt": null,
+      "tripAt": "2026-09-14T06:27:20.970Z",
       "gateInAt": "2026-09-14T06:27:20.970Z",
       "unloadingAt": "2026-09-14T06:27:23.549Z",
       "receivedAt": "2026-09-14T06:27:26.983Z",
@@ -2905,7 +2924,7 @@
       "deliveryCode": "DLV-20260914-014",
       "timeSlot": "09:00 - 11:00",
       "shift": "Flexible date",
-      "tripAt": null,
+      "tripAt": "2026-09-14T06:24:37.332Z",
       "gateInAt": "2026-09-14T06:24:37.332Z",
       "unloadingAt": "2026-09-14T06:24:48.575Z",
       "receivedAt": "2026-09-14T06:24:52.481Z",
@@ -3296,8 +3315,7 @@
           "stillToBeDelivered": null,
           "remarks": null,
           "supplierApprovedAt": "2026-09-14T06:21:35.119Z",
-          "assignedTruckPlate": "HET-5345",
-          "sourceAllocationItemId": 24
+          "assignedTruckPlate": "HET-5345"
         },
         {
           "id": 25,
@@ -3321,8 +3339,7 @@
           "stillToBeDelivered": null,
           "remarks": null,
           "supplierApprovedAt": "2026-09-14T06:21:35.119Z",
-          "assignedTruckPlate": "HET-5345",
-          "sourceAllocationItemId": 25
+          "assignedTruckPlate": "HET-5345"
         }
       ],
       "palletsScanned": 0,
@@ -3350,7 +3367,18 @@
           "actor": "Ajinomoto",
           "role": "supplier"
         }
-      ]
+      ],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     },
     {
       "id": 21,
@@ -3422,8 +3450,7 @@
           "stillToBeDelivered": null,
           "remarks": null,
           "supplierApprovedAt": "2026-09-14T06:23:12.891Z",
-          "assignedTruckPlate": "FEF-5435",
-          "sourceAllocationItemId": 26
+          "assignedTruckPlate": "FEF-5435"
         }
       ],
       "palletsScanned": 0,
@@ -3451,11 +3478,43 @@
           "actor": "Ajinomoto",
           "role": "supplier"
         }
-      ]
+      ],
+      "scheduleDurationSource": "SAVED",
+      "isFollowUp": false,
+      "followUpLabel": null,
+      "companyDecision": null,
+      "companyDecisionReason": null,
+      "companyDecisionAt": null,
+      "companyDecisionBy": null,
+      "gateDecision": null,
+      "gateDecisionAt": null,
+      "gateDecisionBy": null,
+      "gateRejectionReason": null
     }
   ],
   "rdsRequests": [],
   "audit": [
+    {
+      "id": 159,
+      "at": "2026-09-15T01:30:17.357Z",
+      "actor": "analyst",
+      "action": "PASSWORD_CHANGED",
+      "detail": "Account password updated"
+    },
+    {
+      "id": 158,
+      "at": "2026-09-15T01:29:59.133Z",
+      "actor": "analyst",
+      "action": "EMAIL_VERIFIED",
+      "detail": "analyst email verified"
+    },
+    {
+      "id": 157,
+      "at": "2026-09-15T01:29:19.149Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_CREATED",
+      "detail": "sap account @analyst created for dressings"
+    },
     {
       "id": 156,
       "at": "2026-09-14T06:27:26.983Z",

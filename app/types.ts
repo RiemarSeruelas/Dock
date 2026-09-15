@@ -52,8 +52,10 @@ export interface ShipmentItem {
   palletCount: number;
   dnNumber?: string;
   batchNumber?: string;
+  supplierLot?: string;
   productionDate?: string;
   expiryDate?: string;
+  batches?: ShipmentBatch[];
   dnFileName?: string;
   coaFileName?: string;
   sourceSheet?: string | null;
@@ -69,6 +71,15 @@ export interface ShipmentItem {
   assignedTruckPlate?: string | null;
 }
 
+export interface ShipmentBatch {
+  id: number;
+  batchNumber: string;
+  supplierLot: string;
+  quantity: number;
+  productionDate: string;
+  expiryDate: string;
+}
+
 export interface ConfirmedTruckLoad {
   id: number;
   deliveryCode: string;
@@ -77,6 +88,7 @@ export interface ConfirmedTruckLoad {
   driverPhone: string;
   itemIds: number[];
   itemQuantities?: { itemId: number; quantity: number }[];
+  itemBatches?: { itemId: number; batches: ShipmentBatch[] }[];
   confirmedAt: string;
 }
 
@@ -104,9 +116,10 @@ export interface Shipment {
   isFollowUp?: boolean;
   followUpLabel?: string;
   quantityAllocations?: QuantityAllocation[];
-  proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[];itemQuantities?:{itemId:number;quantity:number}[]}[];
+  proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[];itemQuantities?:{itemId:number;quantity:number}[];itemBatches?:{itemId:number;batches:ShipmentBatch[]}[]}[];
   changeReason?: string;
   receipt?: { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; inFull: boolean; onTime: boolean | null; otif: boolean | null; items: { itemId: number; materialCode: string; uom: string; acceptedQuantity: number; remainingQuantity: number; date?: string; time?: string; reason?: string }[] };
+  arrivalClassification?: "ADVANCED" | "ON_TIME" | "LATE" | null;
   gateDecision?: "ACCEPTED" | "REJECTED" | null;
   gateDecisionAt?: string | null;
   gateDecisionBy?: string | null;

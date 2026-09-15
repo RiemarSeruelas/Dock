@@ -1,0 +1,18 @@
+For the My Entries:
+Change it to Delivery Entries
+
+For the Supplier Dressings/Savoury:
+Remove the Separation
+
+For the early system:
+Remove the early system, they can still enter. Just put ADVANCED (30 mins+ early than alloted time), ON TIME (30 mins below time, 15 mins above set time), LATE (15 minutes+ late)
+
+For the suppliers adding details:
+Add lot number, Batch Number. Expiration Date, Production Date. This data will also be connected to the db, meaning if they add these data, the table in the database will be filled.
+
+Also, we have a change for something:
+1 DR can have multiple Materials, if thats the case, each material will have a different clearance, but the same DR
+In 1 Material, there can be Batches. So In the Image I sent, thats what it looks like, so make it so they can add multiple material with multiple batch and such. You can configure the rest.
+
+And in the other image I sent. 
+We'll be posting an SDS right? Sometimes, that SDS can have the overall quantity, but they can split that quantity when delivering. So understand the image and follow what it has. Basically we'll be adopting to their process, so whatever you understood from the image, thats what they will put in the confirm delivery alongside the data they'll already put like the Driver's Name, Plate Number and etc.

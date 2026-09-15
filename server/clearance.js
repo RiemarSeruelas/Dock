@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
 import { fail } from './receiving.js';
+import { batchRecordKey, distributeActualReceived, storedBatchRows } from './delivery-batches.js';
 const template = fileURLToPath(new URL('./assets/inbound-clearance.png', import.meta.url));
 const when = value => value ? new Intl.DateTimeFormat('en-PH',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Manila'}).format(new Date(value)) : '';
 export const clearanceFields = ['helperCount','mode','truckType','palletCount','actualReceived','actualUom','remarks','qaSample','vacuum','qaStart','qaEnd','disposition','receivingController','inventoryController','clearedBy','materialType'];
@@ -10,8 +11,7 @@ export function clearanceData(shipment, item, sapValues = {}, manual = {}) {
 export function makeClearancePdf(shipment, records) {
   const document = new PDFDocument({autoFirstPage:false,margin:0,info:{Title:'Inbound Clearance Form',Author:'DockFlow'}});
   const scale=842.88/1600;
-  const joined = records.length <= 1 ? records : [{...records[0],code:records.map(row=>row.code).filter(Boolean).join(' / '),description:records.map(row=>row.description).filter(Boolean).join(' / '),quantity:records.map(row=>row.quantity).filter(value=>value!==''&&value!=null).join(' / '),uom:records.map(row=>row.uom).filter(Boolean).join(' / '),actualReceived:records.map(row=>row.actualReceived).filter(value=>value!==''&&value!=null).join(' / '),actualUom:records.map(row=>row.actualUom).filter(Boolean).join(' / '),lot:records.map(row=>row.lot).filter(Boolean).join(' / '),batch:records.map(row=>row.batch).filter(Boolean).join(' / ')}];
-  for(const record of joined) {
+  for(const record of records) {
     document.addPage({size:[842.88,595.92],margin:0}); document.image(template,0,0,{width:842.88,height:595.92});
     for(const shift of [0,704]) {
       const text=(value,x,y,width,height=22)=>{
@@ -40,13 +40,20 @@ export function makeClearancePdf(shipment, records) {
   return document;
 }
 export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,supplierSafeShipment,sap}) {
-  const chooseSapRow = (shipment, item, sapData) => {
-    const exact = sapData.find(row => row.key === `${shipment.id}:${item.id}` || (String(row.shipmentId) === String(shipment.id) && row.values?.item === item.materialCode));
-    if (exact) return exact;
+  const chooseSapRows = (shipment, item, sapData) => {
+    const baseKey = `${shipment.id}:${item.id}`;
+    const exact = sapData.filter(row => row.key === baseKey || row.key.startsWith(`${baseKey}:batch:`) || (String(row.shipmentId) === String(shipment.id) && row.values?.item === item.materialCode));
+    if (exact.length) return exact;
     const drValues = [shipment.drNumber, item.dnNumber].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean);
     const poValues = [shipment.poNumber, item.poNumber].flatMap(value => String(value || '').split(',')).map(value => value.trim()).filter(Boolean);
-    return sapData.find(row => row.values?.item === item.materialCode && (drValues.includes(String(row.values?.drNumber || '').trim()) || poValues.includes(String(row.values?.poNumber || '').trim())))
-      || sapData.find(row => row.values?.item === item.materialCode);
+    const matched = sapData.filter(row => row.values?.item === item.materialCode && (drValues.includes(String(row.values?.drNumber || '').trim()) || poValues.includes(String(row.values?.poNumber || '').trim())));
+    return matched.length ? matched : sapData.filter(row => row.values?.item === item.materialCode);
+  };
+  const materialSapValues = (shipment, item, sapData) => {
+    const rows = chooseSapRows(shipment,item,sapData);
+    const values = rows[0]?.values || {};
+    const join = key => [...new Set(rows.map(row=>String(row.values?.[key]||'').trim()).filter(Boolean))].join(' / ');
+    return {...values,quantity:item.quantity,batch:join('batch') || storedBatchRows(item).map(row=>row.batchNumber).filter(Boolean).join(' / '),supplierLot:join('supplierLot') || storedBatchRows(item).map(row=>row.supplierLot).filter(Boolean).join(' / ')};
   };
   const load = async req => {
     const state=await store.read();const shipment=state.shipments.find(row=>row.id===Number(req.params.id));
@@ -54,7 +61,7 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
     if(shipment.bookingStatus!=='APPROVED') fail('Confirm the delivery before preparing clearance',409);
     let sapData=[];
     try { sapData=sap.jsonTrial ? Object.entries(state.sapRows||{}).filter(([key])=>key.startsWith(`${shipment.id}:`)).map(([key,row])=>({key,values:row.values,revision:row.revision||0})) : await sap.forClearance(shipment); } catch {}
-    return {shipment,sapData,records:shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},chooseSapRow(shipment,item,sapData)?.values,shipment.clearance?.[item.id])}))};
+    return {shipment,sapData,records:shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},materialSapValues(shipment,item,sapData),shipment.clearance?.[item.id])}))};
   };
   app.get('/api/clearance',auth,allow('admin','planner','warehouse','sap'),asyncRoute(async(req,res)=>{const state=await store.read();res.json({shipments:state.shipments.filter(row=>row.bookingStatus==='APPROVED'&&canAccessShipment(req.user,row)).map(supplierSafeShipment)});}));
   app.get('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{const {shipment,records}=await load(req);res.json({shipment,records});}));
@@ -72,17 +79,13 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
     let sapUpdated=false;
     if(!sap.jsonTrial) {
       try {
-        const missing=shipment.items.filter(item=>!chooseSapRow(shipment,item,sapData));
-        if(missing.length) await sap.sync(missing.map(item=>({
-          key:`${shipment.id}:${item.id}`,shipmentId:shipment.id,supplier:shipment.supplier,
-          values:{supplierName:shipment.supplier,plateNumber:shipment.truckPlate,driverName:shipment.driverName,gateIn:when(shipment.gateInAt),gateOut:when(shipment.gateOutAt),destination:item.deliverySite||'',deliveryDate:when(shipment.gateInAt)||`${shipment.scheduledDate} ${shipment.scheduledTime}`,item:item.materialCode,description:item.materialName||'',drNumber:shipment.drNumber||item.dnNumber||'',quantity:item.quantity,poNumber:shipment.poNumber||item.poNumber||''},
-        })));
+        const missing=shipment.items.filter(item=>!chooseSapRows(shipment,item,sapData).length);
+        if(missing.length) await sap.sync(missing.flatMap(item=>{const hasStored=Array.isArray(item.batches)&&item.batches.length>0;return storedBatchRows(item).map((batch,index)=>({
+          key:batchRecordKey(shipment.id,item.id,batch,index,hasStored),shipmentId:shipment.id,supplier:shipment.supplier,
+          values:{supplierName:shipment.supplier,plateNumber:shipment.truckPlate,driverName:shipment.driverName,gateIn:when(shipment.gateInAt),gateOut:when(shipment.gateOutAt),destination:item.deliverySite||'',deliveryDate:when(shipment.gateInAt)||`${shipment.scheduledDate} ${shipment.scheduledTime}`,item:item.materialCode,description:item.materialName||'',drNumber:shipment.drNumber||item.dnNumber||'',quantity:batch.quantity,poNumber:shipment.poNumber||item.poNumber||'',batch:batch.batchNumber||'',supplierLot:batch.supplierLot||'',mfgDate:batch.productionDate||'',expDate:batch.expiryDate||''},
+        }))}));
         const current=await sap.forClearance(shipment);
-        const updates=shipment.items.map(item=>{
-          const source=chooseSapRow(shipment,item,current);const manual=sanitized[item.id];
-          if(!source)return null;
-          return {key:source.key,revision:source.revision,values:{inventoryController:manual.inventoryController,receivingController:manual.receivingController,helperCount:manual.helperCount,truckType:manual.truckType,actualReceived:manual.actualReceived,palletCount:manual.palletCount,warehouseRemarks:manual.remarks,qaStart:manual.qaStart,qaEnd:manual.qaEnd,qaDisposition:manual.disposition}};
-        }).filter(Boolean);
+        const updates=shipment.items.flatMap(item=>{const sources=chooseSapRows(shipment,item,current);const manual=sanitized[item.id];const received=distributeActualReceived(sources.map(source=>({quantity:Number(source.values?.quantity||0)})),manual.actualReceived);return sources.map((source,index)=>({key:source.key,revision:source.revision,values:{inventoryController:manual.inventoryController,receivingController:manual.receivingController,helperCount:manual.helperCount,truckType:manual.truckType,actualReceived:received[index],palletCount:manual.palletCount,warehouseRemarks:manual.remarks,qaStart:manual.qaStart,qaEnd:manual.qaEnd,qaDisposition:manual.disposition}}));});
         if(updates.length) await sap.save(updates,req.user.name,'warehouse');
         sapUpdated=true;
       } catch {}
