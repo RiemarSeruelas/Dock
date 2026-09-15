@@ -28,9 +28,12 @@ test('alternative approval preserves split quantities and books distinct QR code
  assert.equal(normalizePhone('+63 (917) 123 4567'),'+639171234567');
  assert.equal(normalizePhone('+63 0917 123 4567'),'+639171234567');
 });
-test('SAP denies unknown networks and ignores forwarded identities from untrusted peers',()=>{
- const saved={allowed:process.env.SAP_ALLOWED_CIDRS,trusted:process.env.SAP_TRUSTED_PROXY_CIDRS};
+test('SAP uses role access by default and can enforce an optional network allowlist',()=>{
+ const saved={enabled:process.env.SAP_NETWORK_RESTRICTION_ENABLED,allowed:process.env.SAP_ALLOWED_CIDRS,trusted:process.env.SAP_TRUSTED_PROXY_CIDRS};
  try {
+  delete process.env.SAP_NETWORK_RESTRICTION_ENABLED;process.env.SAP_ALLOWED_CIDRS='';process.env.SAP_TRUSTED_PROXY_CIDRS='';
+  assert.equal(sapNetworkAllowed({socket:{remoteAddress:'203.0.113.1'},headers:{}}),true);
+  process.env.SAP_NETWORK_RESTRICTION_ENABLED='true';
   process.env.SAP_ALLOWED_CIDRS='10.20.0.0/16';process.env.SAP_TRUSTED_PROXY_CIDRS='192.168.1.10/32';
   assert.equal(sapNetworkAllowed({socket:{remoteAddress:'203.0.113.1'},headers:{'x-forwarded-for':'10.20.1.2'}}),false);
   assert.equal(clientAddress({socket:{remoteAddress:'203.0.113.1'},headers:{'x-forwarded-for':'10.20.1.2'}}),'203.0.113.1');
@@ -38,11 +41,11 @@ test('SAP denies unknown networks and ignores forwarded identities from untruste
   assert.equal(sapNetworkAllowed({socket:{remoteAddress:'192.168.1.10'},headers:{'x-forwarded-for':'10.20.1.2, 203.0.113.1'}}),false);
   assert.equal(sapNetworkAllowed({socket:{remoteAddress:'192.168.1.10'},headers:{'x-forwarded-for':'10.20.1.2'}}),true);
   process.env.SAP_ALLOWED_CIDRS='';assert.equal(sapNetworkAllowed({socket:{remoteAddress:'10.20.1.2'},headers:{}}),false);
- } finally {for(const [key,value] of [['SAP_ALLOWED_CIDRS',saved.allowed],['SAP_TRUSTED_PROXY_CIDRS',saved.trusted]]) if(value===undefined)delete process.env[key];else process.env[key]=value;}
+ } finally {for(const [key,value] of [['SAP_NETWORK_RESTRICTION_ENABLED',saved.enabled],['SAP_ALLOWED_CIDRS',saved.allowed],['SAP_TRUSTED_PROXY_CIDRS',saved.trusted]]) if(value===undefined)delete process.env[key];else process.env[key]=value;}
 });
 test('SAP API pages 25 records, refreshes loaded rows and returns no data outside the allowed network',async()=>{
- const saved=Object.fromEntries(['SAP_STORAGE','SAP_ALLOWED_CIDRS','SAP_TRUSTED_PROXY_CIDRS'].map(key=>[key,process.env[key]]));
- process.env.SAP_STORAGE='json';process.env.SAP_ALLOWED_CIDRS='127.0.0.1/32';process.env.SAP_TRUSTED_PROXY_CIDRS='';
+ const saved=Object.fromEntries(['SAP_STORAGE','SAP_NETWORK_RESTRICTION_ENABLED','SAP_ALLOWED_CIDRS','SAP_TRUSTED_PROXY_CIDRS'].map(key=>[key,process.env[key]]));
+ process.env.SAP_STORAGE='json';process.env.SAP_NETWORK_RESTRICTION_ENABLED='true';process.env.SAP_ALLOWED_CIDRS='127.0.0.1/32';process.env.SAP_TRUSTED_PROXY_CIDRS='';
  const state={shipments:Array.from({length:60},(_,i)=>({...shipment(),id:i+1,bookingStatus:'APPROVED',items:[{id:i+1,materialCode:`MAT-${i}`,quantity:1,uom:'KG'}]}))};
   const app=express();
  const store={read:async()=>state,update:async(fn)=>fn(state)};

@@ -64,7 +64,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   let serverOutput = "";
   const apiProcess = spawn(process.execPath, ["server/index.js"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, NODE_ENV: "test", SAP_STORAGE: "json", SAP_ALLOWED_CIDRS: "127.0.0.1/32", API_RATE_LIMIT_MAX: "2000", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/blocked`, GEOCODING_FALLBACK_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
+    env: { ...process.env, NODE_ENV: "test", SAP_STORAGE: "json", SAP_NETWORK_RESTRICTION_ENABLED: "false", SAP_ALLOWED_CIDRS: "127.0.0.1/32", API_RATE_LIMIT_MAX: "2000", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/blocked`, GEOCODING_FALLBACK_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   apiProcess.stdout.on("data", (chunk) => { serverOutput += chunk; });

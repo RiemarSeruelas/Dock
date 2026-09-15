@@ -81,6 +81,7 @@ const identifier = value => {
 };
 
 export function sapNetworkAllowed(request) {
+  if (String(process.env.SAP_NETWORK_RESTRICTION_ENABLED || 'false').trim().toLowerCase() !== 'true') return true;
   return inNetworks(clientAddress(request, process.env.SAP_TRUSTED_PROXY_CIDRS), process.env.SAP_ALLOWED_CIDRS);
 }
 
