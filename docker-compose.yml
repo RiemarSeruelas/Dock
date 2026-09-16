@@ -8,10 +8,10 @@ services:
       API_INTERNAL_URL: http://api:3001
       WEB_TRUSTED_PROXY_CIDRS: ${WEB_TRUSTED_PROXY_CIDRS:-}
     ports:
-      - "${APP_PORT:-5059}:3000"
+      - "127.0.0.1:${APP_PORT:-5059}:3000"
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   api:
@@ -26,12 +26,13 @@ services:
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-7}
       REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-dockflow_refresh}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-admin123}
-      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5059}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5059}
-      ALLOW_PRIVATE_NETWORK_ORIGINS: ${ALLOW_PRIVATE_NETWORK_ORIGINS:-true}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
+      APP_ORIGIN: ${APP_ORIGIN:-https://dockflow.unileverdigitalhub.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://dockflow.unileverdigitalhub.com}
+      ALLOW_PRIVATE_NETWORK_ORIGINS: ${ALLOW_PRIVATE_NETWORK_ORIGINS:-false}
       API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-1200}
       LOGIN_RATE_LIMIT_WINDOW_MS: ${LOGIN_RATE_LIMIT_WINDOW_MS:-900000}
@@ -48,7 +49,6 @@ services:
       ETA_RATE_LIMIT_WINDOW_MS: ${ETA_RATE_LIMIT_WINDOW_MS:-900000}
       ETA_RATE_LIMIT_MAX: ${ETA_RATE_LIMIT_MAX:-30}
       LOCATION_ENCRYPTION_KEY: ${LOCATION_ENCRYPTION_KEY:-}
-      DB_ENABLED: "false"
       SAP_STORAGE: ${SAP_STORAGE:-postgres}
       POSTGRES_HOST: ${POSTGRES_HOST:-your_postgres_host}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -56,6 +56,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_SCHEMA: ${POSTGRES_SCHEMA:-Analysis}
+      POSTGRES_SAP_DRESSINGS_TABLE: ${POSTGRES_SAP_DRESSINGS_TABLE:-SAPAnalysis}
+      POSTGRES_SAP_SAVOURY_TABLE: ${POSTGRES_SAP_SAVOURY_TABLE:-SAPAnalysisSavoury}
       POSTGRES_SESSION_LOGS_TABLE: ${POSTGRES_SESSION_LOGS_TABLE:-SAPAnalysis}
       POSTGRES_SSL: ${POSTGRES_SSL:-false}
       SAP_NETWORK_RESTRICTION_ENABLED: ${SAP_NETWORK_RESTRICTION_ENABLED:-false}
@@ -68,11 +70,22 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
-      DATA_FILE: /app/data/trial-data.json
+      APP_STORAGE: postgres
+      DB_ENABLED: "true"
+      DB_HOST: ${DB_HOST:-/var/run/postgresql}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-Dockflow}
+      DB_USER: ${DB_USER:-dockflow_app}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DB_SCHEMA: ${DB_SCHEMA:-Dockflow}
+      DB_SSL: ${DB_SSL:-false}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      POSTGRES_IMPORT_FILE: ${POSTGRES_IMPORT_FILE:-/app/data/trial-data.json}
       UPLOAD_DIR: /app/uploads
       TZ: ${TZ:-Asia/Manila}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:ro
+      - /var/run/postgresql:/var/run/postgresql
       - dockflow_uploads:/app/uploads
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]

@@ -45,6 +45,41 @@ export const database = {
   enabled,
   schema,
 
+  tableName(name) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(String(name || ""))) throw new Error("Invalid database table name");
+    return table(String(name));
+  },
+
+  isConnected() {
+    return Boolean(enabled && connected && pool);
+  },
+
+  async withClient(operation) {
+    if (!enabled || !connected || !pool) throw new Error("DockFlow PostgreSQL is not connected");
+    const client = await pool.connect();
+    try {
+      return await operation(client);
+    } finally {
+      client.release();
+    }
+  },
+
+  async transaction(operation, options = {}) {
+    return this.withClient(async (client) => {
+      const isolation = options.isolation === "repeatable-read" ? " ISOLATION LEVEL REPEATABLE READ" : "";
+      const readOnly = options.readOnly ? " READ ONLY" : "";
+      await client.query(`BEGIN${isolation}${readOnly}`);
+      try {
+        const result = await operation(client);
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
+    });
+  },
+
   async initialize() {
     if (!enabled) return { enabled: false, connected: false, schema, storage: "memory" };
     pool = new Pool({ ...poolOptions(), max: Number(process.env.DB_POOL_MAX || 10), idleTimeoutMillis: 30000, connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 5000) });
@@ -153,6 +188,13 @@ export const database = {
       connected = false;
       return { enabled: true, connected: false, schema, storage: "postgresql", error: error.message };
     }
+  },
+
+  async close() {
+    if (!pool) return;
+    await pool.end();
+    pool = null;
+    connected = false;
   },
 
   async saveRefreshToken({ tokenId, tokenHash, userId, expiresAt, ipAddress, userAgent }) {

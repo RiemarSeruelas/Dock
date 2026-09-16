@@ -5,7 +5,7 @@
     "The preview retains the existing accounts and supplier catalog, but all operational delivery data starts empty.",
     "Do not store SMTP passwords, tokens, or other secrets in this file. Keep secrets in .env only."
   ],
-  "version": 11,
+  "version": 12,
   "settings": {
     "siteName": "Cavite Foods Receiving",
     "dockCount": 3,
@@ -23,7 +23,7 @@
       "id": 1,
       "name": "System Administrator",
       "username": "admin",
-      "passwordHash": "$2b$10$0HtIxiTPaXTSro1opYm76euOizNdaZiKOfs/j/s.VVJmBKf8upPcO",
+      "passwordHash": "$2b$10$PwE1s5bYB3n6yov/8zU/SOTkKz1lfjxoEU0gyAYF/FDeH9h9gKue2",
       "role": "admin",
       "supplierId": null,
       "workArea": null,
@@ -32,12 +32,36 @@
         "SAVOURY"
       ],
       "email": "riemar53seruelas@gmail.com",
-      "emailVerifiedAt": "2026-09-16T05:11:49.224Z",
+      "emailVerifiedAt": "2026-09-16T01:50:40.548Z",
       "emailVerificationHash": null,
       "emailVerificationExpiresAt": null,
       "emailVerificationAttempts": 0,
       "verificationCodeSentAt": null,
       "monthlyPerformanceEnabled": false
+    },
+    {
+      "id": 2,
+      "name": "Ajinomoto",
+      "username": "ajinomoto",
+      "email": "riemar53seruelas@gmail.com",
+      "emailVerifiedAt": "2026-09-16T01:52:00.813Z",
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": "2026-09-16T01:51:42.113Z",
+      "passwordHash": "$2b$10$fK4Sf7O.uvYx8UzHXi/S8uk3e88G3a2bJknOW0kK827nTJnqtHtiW",
+      "mustChangePassword": false,
+      "onboardingRequired": false,
+      "monthlyPerformanceEnabled": false,
+      "role": "supplier",
+      "supplierId": 1,
+      "workArea": null,
+      "workAreas": [
+        "DRESSINGS",
+        "SAVOURY"
+      ],
+      "securityScope": null,
+      "passwordChangedAt": "2026-09-16T01:52:13.215Z"
     }
   ],
   "suppliers": [
@@ -70,12 +94,7 @@
       "routeDistanceKm": null,
       "routeDurationMinutes": null,
       "routeCalculatedAt": null,
-      "routeProvider": null,
-      "routeStaticDurationMinutes": null,
-      "routeTrafficDelayMinutes": null,
-      "routeAssumedSpeedKph": null,
-      "routeTrafficAware": false,
-      "routeTrafficModel": "NONE"
+      "routeProvider": null
     }
   ],
   "materials": [
@@ -112,15 +131,7 @@
   ],
   "shipments": [],
   "rdsRequests": [],
-  "audit": [
-    {
-      "id": 1,
-      "at": "2026-09-16T05:14:02.580Z",
-      "actor": "System Administrator",
-      "action": "ACCOUNT_DELETED",
-      "detail": "Account @ajinomoto was deleted; supplier and delivery records were retained"
-    }
-  ],
+  "audit": [],
   "notifications": [],
   "importBatches": [],
   "ecosystemMaterials": [],

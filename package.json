@@ -12,7 +12,8 @@
     "start": "node --env-file-if-exists=.env server/web.js",
     "test": "node --test tests/excel-import.test.mjs tests/workflow.test.mjs tests/receiving.test.mjs tests/september-update.test.mjs && npm run build",
     "lint": "eslint . --ignore-pattern .next",
-    "api": "node --env-file-if-exists=.env server/index.js"
+    "api": "node --env-file-if-exists=.env server/index.js",
+    "db:verify": "node --env-file-if-exists=.env server/verify-postgres.mjs"
   },
   "dependencies": {
     "@types/pdfkit": "^0.17.6",

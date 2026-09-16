@@ -1,5 +1,5 @@
-# DockFlow JSON data
+# DockFlow one-time migration data
 
-Keep your existing `trial-data.json` when updating DockFlow. The downloadable source archive intentionally excludes that live file so an extraction cannot overwrite your accounts, schedules, or receiving records.
+Keep and back up the existing `trial-data.json` while moving an older installation to PostgreSQL. When the PostgreSQL application tables are empty, DockFlow imports this file once and records a database initialization marker.
 
-For a brand-new installation, the API creates `trial-data.json` automatically on first start.
+After a successful import, the application reads and writes PostgreSQL only. The JSON file is not a live database and is not rewritten. A brand-new installation without this file creates the first administrator directly in PostgreSQL from the `BOOTSTRAP_ADMIN_*` settings.

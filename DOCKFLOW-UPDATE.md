@@ -1,13 +1,13 @@
 # DockFlow — workflow and interface update
 
-This ZIP contains the complete DockFlow project source. It includes the earlier receiving/SAP changes and the latest workflow corrections. Existing business data remains in JSON; the SAP worksheet has a separate PostgreSQL connection.
+This ZIP contains the complete DockFlow project source. It includes the earlier receiving/SAP changes and the latest workflow corrections. The current release stores application data in PostgreSQL; the SAP worksheet keeps a separate PostgreSQL connection. Use `UBUNTU-POSTGRES-NGINX-DEPLOYMENT.md` for the authoritative migration and HTTPS steps.
 
 ## Apply the update
 
 1. Stop DockFlow and back up the project, including your private `.env` and `data` folder.
 2. Extract this ZIP into a new folder, or copy its files over the existing project. Do not replace your live `data` folder or private `.env`.
 3. Copy the new SAP/network variables from `.env.example` into your existing `.env`, then configure them as described below. Keep your location-encryption key and existing credentials unchanged.
-4. Docker: `docker compose up -d --build --force-recreate`. The web container starts independently of PostgreSQL availability, and the API continues with JSON business storage/in-memory sessions if the optional general database is offline. npm: `npm.cmd install`, then `npm.cmd run dev`; for production use `npm.cmd run build` followed by `npm.cmd run start` and a separate API process.
+4. Configure the required `DB_*` PostgreSQL values, then run `docker compose up -d --build --force-recreate`. The API fails closed when its application database is unavailable and never falls back to JSON in production.
 5. Sign out and sign in again. No volumes need to be deleted.
 
 The npm web commands now use `server/web.js`. Use these commands rather than invoking `next start` directly: the wrapper verifies the client address before forwarding API requests.
@@ -85,7 +85,7 @@ SAP_TRUSTED_PROXY_CIDRS=
 WEB_TRUSTED_PROXY_CIDRS=
 ```
 
-The values above are placeholders, not credentials. Use `POSTGRES_SSL=true` when the database requires TLS; certificate verification stays enabled. `DB_ENABLED=false` still applies to the separate JSON trial/business storage and does not disable the SAP connection.
+The values above are placeholders, not credentials. Use `POSTGRES_SSL=true` when the SAP database requires TLS; certificate verification stays enabled. These `POSTGRES_*` values are independent from the required DockFlow application database configured with `DB_*`.
 
 The API creates schema `"Analysis"` and table `"SAPAnalysis"` on the first authorized request, if absent. It also adds missing unified-data and formatting columns to an existing importer-created DockFlow table without deleting or replacing its rows. Give the configured database user schema and table privileges. Back up and reconcile an unrelated or incompatible table before starting DockFlow.
 
@@ -97,7 +97,7 @@ The API creates schema `"Analysis"` and table `"SAPAnalysis"` on the first autho
 
 The sidebar labels the PostgreSQL worksheet **Receiving Records**. SAP Analyst and Administrator can add worksheet rows, edit SAP fields—including **Encoded By**—and apply cell formatting. New rows still initialize Encoded By from the current account, while an explicitly edited value is preserved. Planner/Production can view the register and edit Destination. Warehouse can view the register and edit receiving and clearance fields. Supplier booking inputs remain in Scheduling, and suppliers do not receive access to the internal historical register. The API enforces these permissions even if someone manipulates the browser.
 
-The register searches PostgreSQL server-side and loads 50 rows at a time. Scrolling near the bottom automatically requests the next page; 27,000 rows are not fetched in one request. It supports newest-first/oldest-first sorting and returns every SAP row. It refreshes only the newest page every 10 seconds while the tab is visible, preserves the current pagination position, and keeps unsaved edits. The rest of DockFlow refreshes its JSON-backed operational snapshot every 30 seconds. The default general API allowance is 1,200 requests per minute per client, while login and refresh keep separate limits. When the optional network restriction is enabled, clients outside the allowed ranges see no data. When it is disabled, Receiving Records is available to its authorized roles from either company Wi-Fi as long as the API can reach PostgreSQL. A database outage still displays no data.
+The register searches PostgreSQL server-side and loads 50 rows at a time. Scrolling near the bottom automatically requests the next page; 27,000 rows are not fetched in one request. It supports newest-first/oldest-first sorting and returns every SAP row. It refreshes only the newest page every 10 seconds while the tab is visible, preserves the current pagination position, and keeps unsaved edits. The rest of DockFlow refreshes its PostgreSQL-backed operational snapshot every 30 seconds. The default general API allowance is 1,200 requests per minute per client, while login and refresh keep separate limits. When the optional network restriction is enabled, clients outside the allowed ranges see no data. When it is disabled, Receiving Records is available to its authorized roles from either company Wi-Fi as long as the API can reach PostgreSQL. A database outage still displays no data.
 
 The worksheet supports multi-cell, whole-row, and whole-column selection with one continuous outer selection border and the appropriate axis header highlighted; undo, redo, font, emphasis, color, fill, alignment, wrap, indent, borders, row height, and column width. The unused toolbar controls for thousands formatting, delete contents, clear formatting, fill selected, hide rows, and show rows were removed. Copy, cut, paste, copy formatting, paste formatting, and Delete remain available through keyboard shortcuts. Cell formatting and row height are stored in PostgreSQL. Hidden columns and column widths are browser layout preferences. Record cells are deliberately not mergeable because each database row must retain its own field boundaries.
 

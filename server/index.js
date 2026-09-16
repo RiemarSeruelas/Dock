@@ -18,6 +18,7 @@ import { parseDeliveryWorkbook } from "./excel-import.js";
 import { database, hashToken } from "./db.js";
 import { JsonStore } from "./json-store.js";
 import { emailNotifications } from "./mailer.js";
+import { PostgresStore } from "./postgres-store.js";
 
 const PORT = Number(process.env.API_PORT || 3001);
 const JWT_SECRET = process.env.JWT_SECRET || "change-this-secret-before-production";
@@ -29,6 +30,10 @@ const REFRESH_COOKIE = process.env.REFRESH_COOKIE_NAME || "dockflow_refresh";
 const COOKIE_SECURE = String(process.env.COOKIE_SECURE || "false").toLowerCase() === "true";
 const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR || "./uploads");
 const DATA_FILE = resolve(process.env.DATA_FILE || "./data/trial-data.json");
+const APP_STORAGE = String(process.env.APP_STORAGE || (process.env.NODE_ENV === "test" ? "json" : "postgres")).trim().toLowerCase();
+if (!["postgres", "json"].includes(APP_STORAGE)) throw new Error("APP_STORAGE must be postgres or json");
+if (APP_STORAGE === "json" && process.env.NODE_ENV !== "test") throw new Error("JSON application storage is allowed only while running automated tests");
+const POSTGRES_IMPORT_FILE = resolve(process.env.POSTGRES_IMPORT_FILE || DATA_FILE);
 const APP_ORIGIN = process.env.APP_ORIGIN || "http://localhost:5059";
 const ALLOWED_ORIGINS = [...new Set(`${APP_ORIGIN},${process.env.CORS_ORIGINS || ""}`.split(",").map((value) => value.trim()).filter(Boolean))];
 const ALLOW_PRIVATE_NETWORK_ORIGINS = String(process.env.ALLOW_PRIVATE_NETWORK_ORIGINS || "true").toLowerCase() === "true";
@@ -465,7 +470,7 @@ const makeItem = (id, data) => ({
 async function createInitialState() {
   const adminUsername = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim().toLowerCase();
   const adminPassword = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "admin123");
-  const adminEmail = String(process.env.SMTP_USER || "").trim().toLowerCase();
+  const adminEmail = String(process.env.BOOTSTRAP_ADMIN_EMAIL || process.env.SMTP_USER || "").trim().toLowerCase();
   return {
     version: 12,
     settings: { flexibleScheduling: true, dockCount: 3, graceMinutes: 15, deliveryCodeSequence: 0, siteName: "Cavite Foods Receiving", siteAddress: "", siteCoordinates: null, availableDates: [], availableSlots: [], emailNotifications: {} },
@@ -480,14 +485,25 @@ async function createInitialState() {
   };
 }
 
-const store = new JsonStore(DATA_FILE, createInitialState, {
+await mkdir(UPLOAD_DIR, { recursive: true });
+let initialDatabaseStatus;
+try {
+  initialDatabaseStatus = await database.initialize();
+} catch (error) {
+  if (APP_STORAGE === "postgres") throw new Error(`DockFlow cannot start because its PostgreSQL database is unavailable: ${error.message}`, { cause: error });
+  initialDatabaseStatus = { enabled: database.enabled, connected: false, schema: database.schema, storage: "memory", error: error.message };
+  console.warn(`[database] PostgreSQL is unavailable during the automated test run: ${error.message}`);
+}
+const storeTransforms = {
   serialize: (state) => transformStoredLocations(state, true),
   deserialize: (state) => transformStoredLocations(state, false),
-});
-await mkdir(UPLOAD_DIR, { recursive: true });
+};
+const store = APP_STORAGE === "postgres"
+  ? new PostgresStore(database, createInitialState, storeTransforms, { importFile: POSTGRES_IMPORT_FILE })
+  : new JsonStore(DATA_FILE, createInitialState, storeTransforms);
 await store.initialize();
 await store.update(async (state) => {
-  state.version = 11;
+  state.version = 12;
   state.settings ||= {};
   state.shipments = Array.isArray(state.shipments) ? state.shipments : [];
   state.rdsRequests = Array.isArray(state.rdsRequests) ? state.rdsRequests : [];
@@ -501,17 +517,19 @@ await store.update(async (state) => {
   if (!state.users.length) state.users = (await createInitialState()).users;
   const bootstrapAdminUsername = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim().toLowerCase();
   const bootstrapAdminPassword = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "admin123");
-  const bootstrapAdminEmail = String(process.env.SMTP_USER || "").trim().toLowerCase();
+  const bootstrapAdminEmail = String(process.env.BOOTSTRAP_ADMIN_EMAIL || process.env.SMTP_USER || "").trim().toLowerCase();
   const systemAdministrator = state.users.find((user) => Number(user.id) === 1 && user.role === "admin") || state.users.find((user) => user.role === "admin");
   if (systemAdministrator) {
-    systemAdministrator.name = "System Administrator";
-    systemAdministrator.username = bootstrapAdminUsername;
-    systemAdministrator.passwordHash = await bcrypt.hash(bootstrapAdminPassword, 10);
-    systemAdministrator.email = bootstrapAdminEmail;
-    systemAdministrator.emailVerifiedAt = bootstrapAdminEmail ? new Date().toISOString() : null;
-    systemAdministrator.emailVerificationHash = null;
-    systemAdministrator.emailVerificationExpiresAt = null;
-    systemAdministrator.emailVerificationAttempts = 0;
+    systemAdministrator.name ||= "System Administrator";
+    systemAdministrator.username ||= bootstrapAdminUsername;
+    systemAdministrator.passwordHash ||= await bcrypt.hash(bootstrapAdminPassword, 10);
+    if (!systemAdministrator.email && bootstrapAdminEmail) {
+      systemAdministrator.email = bootstrapAdminEmail;
+      systemAdministrator.emailVerifiedAt = new Date().toISOString();
+    }
+    systemAdministrator.emailVerificationHash ||= null;
+    systemAdministrator.emailVerificationExpiresAt ||= null;
+    systemAdministrator.emailVerificationAttempts = Number(systemAdministrator.emailVerificationAttempts || 0);
   }
   let nextUserId = nextId(state.users);
   for (const user of state.users) {
@@ -685,13 +703,6 @@ await store.update(async (state) => {
   syncAvailableDates(state);
 });
 const activeAccountRoles = new Map((await store.read()).users.map((user) => [Number(user.id), user.role]));
-let initialDatabaseStatus;
-try {
-  initialDatabaseStatus = await database.initialize();
-} catch (error) {
-  initialDatabaseStatus = { enabled: database.enabled, connected: false, schema: database.schema, storage: "memory", error: error.message };
-  console.warn(`[database] PostgreSQL is unavailable; DockFlow will continue with JSON and in-memory sessions: ${error.message}`);
-}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -793,7 +804,7 @@ const auth = async (request, response, next) => {
 };
 const allow = (...roles) => (request, response, next) => roles.includes(request.user.role) ? next() : response.status(403).json({ message: "This action is not available for your role" });
 
-app.get("/api/health", asyncRoute(async (_request, response) => response.json({ status: "ok", primaryStorage: "json", database: database.enabled ? await database.health() : initialDatabaseStatus })));
+app.get("/api/health", asyncRoute(async (_request, response) => response.json({ status: "ok", primaryStorage: APP_STORAGE, database: database.enabled ? await database.health() : initialDatabaseStatus })));
 
 app.post("/api/auth/login", loginLimiter, asyncRoute(async (request, response) => {
   const state = await store.read();

@@ -2,7 +2,7 @@
 
 DockFlow manages SDS delivery schedules, supplier truck confirmations, QR scanning, monitoring, history, and reports in Manila time (GMT+8).
 
-See [DOCKFLOW-UPDATE.md](DOCKFLOW-UPDATE.md) for the receiving, OTIF, Ecosystem, SAP and monthly KPI features, update steps, and verification notes.
+See [DOCKFLOW-UPDATE.md](DOCKFLOW-UPDATE.md) for the receiving, OTIF, Ecosystem, SAP and monthly KPI features. For the current Ubuntu database migration, Nginx domain, and HTTPS setup, use [UBUNTU-POSTGRES-NGINX-DEPLOYMENT.md](UBUNTU-POSTGRES-NGINX-DEPLOYMENT.md).
 
 ## First administrator
 
@@ -78,9 +78,11 @@ The notification bell is in the top navigation. Opening an alert marks it read, 
 - Warehouse enters Actual Quantity Received in SAP Analysis. On Time, In Full, and OTIF are calculated there instead of during QR scanning.
 - Over HTTP, use QR photos, hardware scanners or manual codes. Live camera scanning requires HTTPS.
 
-## Trial storage
+## PostgreSQL storage
 
-Business data remains in the JSON trial store; the SAP worksheet uses its own network-restricted PostgreSQL connection. See DOCKFLOW-UPDATE.md for configuration. Business data is stored in `data/trial-data.json`. Stop the API or Docker containers before manually editing the file, and back it up before replacing the project.
+PostgreSQL is the required source of truth for business data. Accounts, suppliers, materials, deliveries, settings, notifications, imports, and audit history are stored under the configured `DB_SCHEMA`. Production startup fails closed if that database is unavailable; it does not fall back to a local JSON file.
+
+For an existing installation, `data/trial-data.json` is used once to initialize empty PostgreSQL application tables. After the import marker is committed, later starts read and write PostgreSQL only. The SAP worksheet keeps its separate `POSTGRES_*` connection and `Analysis` tables.
 
 ## Run with Docker
 
@@ -92,7 +94,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Open `http://localhost:5059`.
+On the Ubuntu deployment, open `https://dockflow.unileverdigitalhub.com` after completing the deployment guide.
 
 To stop DockFlow:
 
