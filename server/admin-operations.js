@@ -9,14 +9,20 @@ export function nextReportSend(schedule = {}, now = new Date()) {
 }
 export function registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt }) {
   const performanceRoles = new Set(['admin','planner','production','supplier','ecosystem','warehouse']);
-  const emailPlan = state => {
+  const adminCanManagePerformance = (administrator, target) => {
+    const area = String(administrator?.workArea || '').toUpperCase();
+    if (!area) return true;
+    if (target.role === 'supplier') return Array.isArray(target.workAreas) ? target.workAreas.includes(area) : true;
+    return String(target.workArea || '').toUpperCase() === area;
+  };
+  const emailPlan = (state, administrator) => {
     const fallback = state.settings.monthlyEmailSchedule || { day: 1, time: '09:00' };
     return {
       configured: Boolean(emailSender),
-      accounts: state.users.filter(user => performanceRoles.has(user.role)).map(user => {
+      accounts: state.users.filter(user => performanceRoles.has(user.role) && adminCanManagePerformance(administrator, user)).map(user => {
         const day = Math.min(28, Math.max(1, Number(user.monthlyPerformanceDay || fallback.day || 1)));
         const time = validClock(user.monthlyPerformanceTime) ? user.monthlyPerformanceTime : validClock(fallback.time) ? fallback.time : '09:00';
-        return { id: user.id, name: user.name, email: user.email || '', verified: Boolean(user.emailVerifiedAt), enabled: user.monthlyPerformanceEnabled !== false, day, time, nextSendAt: nextReportSend({ day, time }), lastSentAt: Object.entries(state.monthlyKpiSent || {}).filter(([key]) => key.includes(`:${user.id}:`)).map(([,at]) => at).sort().at(-1) || null };
+        return { id: user.id, name: user.name, email: user.email || '', verified: Boolean(user.emailVerifiedAt), enabled: user.monthlyPerformanceEnabled === true, day, time, nextSendAt: nextReportSend({ day, time }), lastSentAt: Object.entries(state.monthlyKpiSent || {}).filter(([key]) => key.includes(`:${user.id}:`)).map(([,at]) => at).sort().at(-1) || null };
       }),
     };
   };
@@ -35,8 +41,8 @@ export function registerAdminOperations({ app, auth, allow, asyncRoute, store, c
       return publicUser(user);
     }); res.json({ user, signInAgain: false });
   }));
-  app.get('/api/admin/email-schedule', auth, allow('admin'), asyncRoute(async (_req, res) => {
-    res.json(emailPlan(await store.read()));
+  app.get('/api/admin/email-schedule', auth, allow('admin'), asyncRoute(async (req, res) => {
+    res.json(emailPlan(await store.read(), req.user));
   }));
   app.put('/api/admin/email-schedule', auth, allow('admin'), asyncRoute(async (req, res) => {
     const plans = req.body.accounts;
@@ -44,13 +50,13 @@ export function registerAdminOperations({ app, auth, allow, asyncRoute, store, c
     for (const plan of plans) if (!Number.isInteger(Number(plan.day)) || Number(plan.day) < 1 || Number(plan.day) > 28 || !validClock(String(plan.time || '')) || typeof plan.enabled !== 'boolean') fail('Choose day 1–28, a valid Manila time, and an enabled setting for every account');
     const result = await store.update(state => {
       for (const plan of plans) {
-        const user = state.users.find(user => Number(user.id) === Number(plan.id) && performanceRoles.has(user.role));
+        const user = state.users.find(user => Number(user.id) === Number(plan.id) && performanceRoles.has(user.role) && adminCanManagePerformance(req.user, user));
         if (!user) fail('Monthly performance account not found', 404);
         user.monthlyPerformanceEnabled = plan.enabled;
         user.monthlyPerformanceDay = Number(plan.day);
         user.monthlyPerformanceTime = String(plan.time);
       }
-      return emailPlan(state);
+      return emailPlan(state, req.user);
     });
     res.json(result);
   }));

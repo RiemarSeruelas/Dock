@@ -12,7 +12,7 @@ import express from 'express';
 
 const nextId = rows => Math.max(0,...rows.map(row=>row.id))+1;
 const nextCode = (prefix,id) => `${prefix}-${id}`;
-const shipment = () => ({id:1,supplier:'Sample',supplierId:1,scheduledDate:'2026-09-08',scheduledTime:'09:00',gateInAt:'2026-09-08T01:00:00Z',items:[{id:1,materialCode:'00123',quantity:300,uom:'KG'},{id:2,materialCode:'B',quantity:20,uom:'PC'}]});
+const shipment = () => ({id:1,supplier:'Sample',supplierId:1,scheduledDate:'2026-09-08',scheduledTime:'09:00',gateInAt:'2026-09-08T01:00:00Z',items:[{id:1,materialCode:'00123',quantity:300,uom:'KG',deliverySite:'DRESSINGS'},{id:2,materialCode:'B',quantity:20,uom:'PC',deliverySite:'DRESSINGS'}]});
 test('alternative approval preserves split quantities and books distinct QR codes for each truck and date',()=>{
  const row=shipment(),state={shipments:[row]};
  const trucks=validateProposedTrucks(row,[{truckPlate:'AAA',itemIds:[1]},{truckPlate:'BBB',itemIds:[2]}]);
@@ -46,7 +46,7 @@ test('SAP uses role access by default and can enforce an optional network allowl
 test('SAP API pages 25 records, refreshes loaded rows and returns no data outside the allowed network',async()=>{
  const saved=Object.fromEntries(['SAP_STORAGE','SAP_NETWORK_RESTRICTION_ENABLED','SAP_ALLOWED_CIDRS','SAP_TRUSTED_PROXY_CIDRS'].map(key=>[key,process.env[key]]));
  process.env.SAP_STORAGE='json';process.env.SAP_NETWORK_RESTRICTION_ENABLED='true';process.env.SAP_ALLOWED_CIDRS='127.0.0.1/32';process.env.SAP_TRUSTED_PROXY_CIDRS='';
- const state={shipments:Array.from({length:60},(_,i)=>({...shipment(),id:i+1,bookingStatus:'APPROVED',items:[{id:i+1,materialCode:`MAT-${i}`,quantity:1,uom:'KG'}]}))};
+ const state={shipments:Array.from({length:60},(_,i)=>({...shipment(),id:i+1,bookingStatus:'APPROVED',items:[{id:i+1,materialCode:`MAT-${i}`,quantity:1,uom:'KG',deliverySite:'DRESSINGS'}]}))};
   const app=express();
  const store={read:async()=>state,update:async(fn)=>fn(state)};
  registerExtensions({app,auth:(req,_res,next)=>{req.user={id:1,name:'Jude Wong',role:'sap'};next();},allow:()=> (_req,_res,next)=>next(),asyncRoute:fn=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next),store,emailSender:null});
@@ -91,7 +91,7 @@ test('clearance retains leading zero codes and zero actual receipt; creates both
  assert.equal(data.actualReceived,0);assert.equal(data.code,'00123');assert.equal(data.batch,'000456');
  const doc=makeClearancePdf(row,[data,{...data,itemId:2,code:'B',description:'Second material',quantity:20}]),chunks=[];
  const completed=new Promise((resolve,reject)=>{doc.on('data',chunk=>chunks.push(chunk));doc.on('end',resolve);doc.on('error',reject);});doc.end();await completed;
- const pdf=Buffer.concat(chunks);assert.equal(pdf.subarray(0,4).toString(),'%PDF');assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,1);
+ const pdf=Buffer.concat(chunks);assert.equal(pdf.subarray(0,4).toString(),'%PDF');assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,2);
 });
 test('ecosystem request email includes a formatted material table',()=>{
  const email=buildEcosystemRequestEmail({shipment:{...shipment(),shipmentNumber:'SHP-100',originWorkArea:'DRESSINGS'}});

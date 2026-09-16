@@ -1,0 +1,92 @@
+For the Accounts:
+Make it so they can log in using their email. Either email or their username.
+Just clarifying this part in case it's already not implemented yet. Admin for both can see all, Admin for Dressings can only see Dressings account, Dressings SDS, Dressings Delivery, then savoury for savoury.
+Change this:
+Shared services
+Global administrators, Company/Ecosystem Security, and Ecosystem 
+to
+Cavite Foods, then the others Cavite Foods Dressings, and Cavite Foods Savoury, then the description/paragraph, just remove it.
+
+
+For the confirm delivery: 
+Remove the batches and such,
+
+For the Monthly Performance:
+Can you make it so it's automatically off when the account is create. It will only send once the admins actually enable it. Also remember that for Dressings, they can only see Dressings accounts mkay. Add a system for the Supplier to have a checklist though, like the account creation will have dressings and savoury. So they cna just check which ones, and if both, ofc the account will see both.
+
+For the ETA:
+Can you remove the google maps? Just put the Address. Also, I tried putting my route. It's 19.8km, estimatd 35km/hr, it says 37 mins,  but around this, it takes me 40-50 mins. And thats when Im using a motor so Im faster with the traffic, so can you add a bit for that traffic if possible.
+
+For the monitoring:
+When Im in fullscreen, then I click on a ticket, it should not close the full screen then show the ticket. I should still be in full screen
+Then for the design, can you switch the Plate Number and Suppliers. So the Supplier is much bigger and seen. Then above the tracking form is the material code, is it possible to put the material description instead? They deliberately want me to put it as descriptions instead of the material code.
+Then the class="monitor-delivery-card monitor-tone-blue", it should be colored based. If it's late, it should be red, if it's not inside the company, it's blue, if it's early/on time, it should be green.
+
+For the reading of the SDS:
+Can you add the Description? They want us to put the Description too so read it as well.
+Can we also add an add feature? A button to request directly. So it's for both supplier nad the company. Basically it's a "Request" button without putting an SDS. It's so they can just use the application if needed. So put the necessary details (like the sds), then if it's the company, it'll notify the supplier ofc since there's a new request. Then the same process. If it's the supplier, it'll notify the company that there's a request, so they can approve of it, then it'll be the same process for the supplier.
+
+For the Materials:
+Just learned that it's 1 PO for each Marterial, so in the Confirmation Delivery, they'll add the PO directly there per material. So in the SDS, we can see this right? But sometimes there can be multiple PO per material, so allow the SAP Analyst to be able to change this and add more details in PO if they want.
+So remove the batchmaterials details, the SAP will do that instead.
+
+For the number:
+Can you just fix the +63 design, the box is so big it looks awful.
+
+For the Proposed Alternative:
+Rename it to Proposed Schedule. Then for others option, just make them put the reason, the date and time are gone.
+
+For the delivery schedule: 
+The supplier sees the scheudle and have to approve right? It's way too long for each entry, can you make it smaller in length since it occupies a lot of empty space.
+
+For the Delivery Entries:
+Rename header 1 to My Delivery Entries
+Rename "View entry&QR" to "View Ticket"
+Remove the Delivery Code and SHP-2026. thats for us, for them, they need to see something else important
+Remove Arrival classification
+
+For the Scan Timestamps:
+Add an "SAP Clearance" between Gate in and Unloading. Then the one to scan this is the SAP Analyst. 
+
+For the Scan:
+the scan-stations is too long, taking empty space, make it shorter
+Then remember that once this is hosted online, I need a QR scanner that is autodetect if you put the camera, not the one right now where you need to click the capture photo, then it's not even working haha. I know it'll work onces its https right
+Then at the bottom, it has truck plate and the SHP, but I dont need that. Rather, I want it to have Supplier, then truck plate at the bottom (small) isntead.
+Remove the "Ready to record Scan the QR or confirm this selected delivery." Just put the Confirm Start Trip.
+
+For the Reports:
+It'll look different for the company and for supplier. The supplier will have the Dressings and Savoury. 
+
+For the schedule calendar:
+With the Comapny.Same thing as other, put the supplier's name, then the truck plate and any other details thats very important
+For the Supplier. It'll be the Cavite Foods Dressings/Savoury, then any other details that I would wanna see as a supplier.
+
+For the scroll: 
+Can you add design? It looks very generic and disgusting right now, just make a design for the scroll.
+
+For the excel file:
+Remove the Delivery Report, I dont see it as helpful. 
+We'll keep the deliveries and material code
+If it's for the supplier, just remove the "Ajinomoto  •  Core booking and truck information"
+Rename the Actual entrance date and Actual entrance time as "Entrance Date" "Entrance Time"
+Put the Site time as actual site time, not just in mins. If it's 2 hours and 30 mins, put it as that not (mins)
+For the material code, put the actual received
+Then add the SAP's Breakdown, Manufacturing date, expiration date, material doc, supplier dock
+
+If you can add more to the Deliveries and Material Code, add it. ANYTHING IMPORTANT mkay
+
+In terms of the company, just fix it and add actual useful information
+
+For the Clearance:
+SHP-20260906-007
+Ugec
+AAA-1111
+2026-09-06 · 06:00
+68545097, 65013687, 64324168, 32461054
+98765432
+
+This is what it looks like right now, I cant for the life of me find anything, so can you put this better? Like the Supplier's name is the priority, the material description instead of code and such.
+
+For the Savoury:
+We have a different SAP Analyst Excel, so the original one, can you rename it to SAPAnalyst Dressings, SAPAnalyst Savoury. Then it'll fetch diffent thingys for Savoury and Dressings. i dont have the data for savoury right now, so we'll leave it later
+For the clearance, we also have a different clearance. In the image, thats what they sent me. Ideally we need those details in the SAP Analyst. So for now, add the Type, Foil Weight, Weight, Expire Date, then you know the rest.

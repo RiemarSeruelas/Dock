@@ -72,6 +72,7 @@ function displayValue(value: string | number, format?: CellFormat) {
 }
 
 export function SapPage({ token }: { token: string }) {
+  const [area, setArea] = useState<"DRESSINGS" | "SAVOURY">("DRESSINGS");
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [columns, setColumns] = useState<SheetColumn[]>([]);
   const [editable, setEditable] = useState<string[]>([]);
@@ -159,7 +160,7 @@ export function SapPage({ token }: { token: string }) {
     if (more) setLoadingMore(true);
     const start = more ? offsetRef.current : 0;
     try {
-      const path = "/api/sap/rows?offset=" + start + "&limit=50&search=" + encodeURIComponent(search) + "&sort=" + order;
+      const path = "/api/sap/rows?area=" + area + "&offset=" + start + "&limit=50&search=" + encodeURIComponent(search) + "&sort=" + order;
       const result = await apiRequest<{ rows: SheetRow[]; columns: SheetColumn[]; editableColumns: string[]; canFormat: boolean; hasMore: boolean; available: boolean; message?: string }>(token, path, "GET");
       setColumns(result.columns || []);
       setEditable(result.editableColumns || []);
@@ -206,7 +207,7 @@ export function SapPage({ token }: { token: string }) {
       loadingRef.current = false;
       if (more) setLoadingMore(false);
     }
-  }, [token]);
+  }, [area, token]);
 
   useEffect(() => {
     offsetRef.current = 0;
@@ -355,7 +356,7 @@ export function SapPage({ token }: { token: string }) {
     setMessage("");
     try {
       const changed = rowsRef.current.filter((row) => dirtyRef.current.includes(row.key));
-      const result = await apiRequest<{ saved: { key: string; revision: number }[] }>(token, "/api/sap/rows", "PUT", { rows: changed });
+      const result = await apiRequest<{ saved: { key: string; revision: number }[] }>(token, "/api/sap/rows", "PUT", { area, rows: changed });
       const next = rowsRef.current.map((row) => {
         const saved = result.saved.find((item) => item.key === row.key);
         return saved ? { ...row, revision: saved.revision } : row;
@@ -379,7 +380,7 @@ export function SapPage({ token }: { token: string }) {
     setBusy(true);
     setMessage("");
     try {
-      const result = await apiRequest<{ row: SheetRow }>(token, "/api/sap/rows", "POST", { values: {} });
+      const result = await apiRequest<{ row: SheetRow }>(token, "/api/sap/rows", "POST", { area, values: {} });
       rowsRef.current = [result.row, ...rowsRef.current];
       setRows(rowsRef.current);
       setSelected(new Set());
@@ -392,12 +393,12 @@ export function SapPage({ token }: { token: string }) {
   };
   const download = async () => {
     try {
-      const response = await authenticatedFetch("/api/sap/export.xlsx", {}, token);
+      const response = await authenticatedFetch("/api/sap/export.xlsx?area=" + area, {}, token);
       if (!response.ok) throw new Error("The workbook is unavailable");
       const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "dockflow-sap-receiving.xlsx";
+      anchor.download = "dockflow-sap-" + area.toLowerCase() + ".xlsx";
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -427,12 +428,30 @@ export function SapPage({ token }: { token: string }) {
     whiteSpace: format?.wrap ? "normal" : "nowrap",
     paddingLeft: 6 + (format?.indent || 0) * 12,
   });
+  const changeArea = (nextArea: "DRESSINGS" | "SAVOURY") => {
+    if (nextArea === area || dirtyRef.current.length) return;
+    rowsRef.current = [];
+    dirtyRef.current = [];
+    offsetRef.current = 0;
+    loadedQueryRef.current = "";
+    undoRef.current = [];
+    redoRef.current = [];
+    setRows([]);
+    setDirty([]);
+    setSelected(new Set());
+    setMessage("");
+    setArea(nextArea);
+  };
 
   return <div className="page-stack sap-page">
     {!available && message && <div className="sap-network-alert" role="alert">{message}</div>}
     <div className="hero-row">
-      <div><span className="eyebrow">Receiving Records</span><h1>Unified receiving worksheet</h1></div>
+      <div><span className="eyebrow">Receiving Records</span><h1>SAPAnalyst {area === "DRESSINGS" ? "Dressings" : "Savoury"}</h1></div>
       <div className="sap-actions">
+        <div className="area-toggle" aria-label="SAP database area">
+          <button type="button" className={area === "DRESSINGS" ? "active" : ""} disabled={Boolean(dirty.length)} onClick={() => changeArea("DRESSINGS")}>Dressings</button>
+          <button type="button" className={area === "SAVOURY" ? "active" : ""} disabled={Boolean(dirty.length)} onClick={() => changeArea("SAVOURY")}>Savoury</button>
+        </div>
         {editable.includes("item") && <button className="button primary" disabled={busy || !available} onClick={() => void addRow()}>+ Add row</button>}
         <button className="button secondary" disabled={busy} onClick={() => void fetchRows(false, query)}>Refresh</button>
         <button className="button primary" disabled={busy || !dirty.length || !available} onClick={() => void save()}>Save {dirty.length || ""}</button>

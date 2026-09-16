@@ -10,7 +10,7 @@ import { batchRecordKey, distributeActualReceived, storedBatchRows } from './del
 
 const columns = sapColumns;
 const manila = date => date ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(date)) : '';
-export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus === 'APPROVED').flatMap(s => s.items.flatMap(item => {
+export const sapRows = (state, area = null) => [...state.shipments.filter(s => s.bookingStatus === 'APPROVED' && (!area || s.items.some(item => String(item.deliverySite || '').toUpperCase() === area))).flatMap(s => s.items.filter(item => !area || String(item.deliverySite || '').toUpperCase() === area).flatMap(item => {
   const clearance = s.clearance?.[item.id] || {};
   const accepted = s.receipt?.items?.find(row => Number(row.itemId) === Number(item.id))?.acceptedQuantity;
   const actualTotal = clearance.actualReceived ?? accepted ?? '';
@@ -31,6 +31,7 @@ export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus 
       drNumber: s.drNumber || item.dnNumber || '', gatepassNumber: '', quantity,
       poNumber: s.poNumber || item.poNumber || '', batch: batch.batchNumber || '', breakdown: '',
       mfgDate: batch.productionDate || '', expDate: batch.expiryDate || '', matdoc: '', supplierLot: batch.supplierLot || '', remarks: '',
+      weekNumber: item.deliveryWeek || '', palletType: item.palletType || '', foilWeight: item.foilWeight ?? '', palletWeightKg: item.palletWeightKg ?? '',
       inventoryController: clearance.inventoryController || '', receivingController: clearance.receivingController || '',
       helperCount: clearance.helperCount ?? ([s.helper1Name,s.helper2Name].filter(Boolean).length || ''), truckType: clearance.truckType || '',
       actualReceived, ...calculateOtifValues(onTime, quantity, actualReceived), palletCount: clearance.palletCount || '',
@@ -41,11 +42,14 @@ export const sapRows = state => [...state.shipments.filter(s => s.bookingStatus 
     Object.assign(values, calculateOtifValues(onTime, values.quantity, values.actualReceived));
     return { key, shipmentId: s.id, supplier: s.supplier, revision: saved?.revision || 0, verified: saved?.verified || false, values, formats: saved?.formats || {}, rowHeight: saved?.rowHeight ?? null, rowHidden: saved?.rowHidden || false };
   });
-})), ...(state.sapManualRows || []).map(row=>{const saved=state.sapRows?.[row.key];const merged=saved?{...row,...saved,values:{...row.values,...saved.values}}:row;const values={...merged.values,...calculateOtifValues(merged.values?.onTime,merged.values?.quantity,merged.values?.actualReceived)};return{...merged,values};})];
+  })), ...(state.sapManualRows || []).filter(row => !area || !row.area || row.area === area).map(row=>{const saved=state.sapRows?.[row.key];const merged=saved?{...row,...saved,values:{...row.values,...saved.values}}:row;const values={...merged.values,...calculateOtifValues(merged.values?.onTime,merged.values?.quantity,merged.values?.actualReceived)};return{...merged,values};})];
 export function registerExtensions({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database }) {
   registerAdminOperations({ app, auth, allow, asyncRoute, store, canAccessShipment, supplierSafeShipment, nextId, nextCode, addNotification, addAudit, emailSender, emailNotifications, publicUser, bcrypt, database });
-  const sap = createSapRepository();
-  registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,supplierSafeShipment,sap});
+  const sapDressings = createSapRepository('DRESSINGS');
+  const sapSavoury = createSapRepository('SAVOURY');
+  const sapFromRequest = req => String(req.query.area || req.body?.area || 'DRESSINGS').toUpperCase() === 'SAVOURY' ? sapSavoury : sapDressings;
+  const areaFromRequest = req => String(req.query.area || req.body?.area || 'DRESSINGS').toUpperCase() === 'SAVOURY' ? 'SAVOURY' : 'DRESSINGS';
+  registerClearance({app,auth,allow,asyncRoute,store,canAccessShipment,supplierSafeShipment,sap:sapDressings});
   app.get('/api/shipments/lookup', auth, asyncRoute(async (req, res) => {
     const state = await store.read();
     const raw = String(req.query.code || '').trim();
@@ -57,6 +61,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     res.json({ shipment: supplierSafeShipment(s) });
   }));
   app.get('/api/sap/rows', auth, allow('sap','admin','planner','warehouse'), asyncRoute(async (req,res) => {
+    const sap=sapFromRequest(req), area=areaFromRequest(req);
     const role=req.user?.role||'sap';const access = { editableColumns: sapEditableColumns(role), canFormat: sapCanFormat(role) };
     if (!sapNetworkAllowed(req)) return res.json({ rows: [], columns, ...access, hasMore: false, available: false, message: 'No data. Connect to the authorized SAP network.' });
     const offset = Math.max(0, Math.min(1000000, Math.floor(Number(req.query.offset)||0)));
@@ -66,7 +71,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     const keys = req.query.keys ? String(req.query.keys).split(",") : null;
     if(keys && (keys.length>50 || keys.some(key=>!key || key.length>200 || /[\u0000-\u001f]/.test(key)))) fail("Refresh at most 50 valid rows");
     try {
-      const defaults = sapRows(await store.read());
+      const defaults = sapRows(await store.read(), area);
       if(keys) { if(sap.jsonTrial) return res.json({rows:defaults.filter(row=>keys.includes(row.key)),columns,...access,hasMore:false,available:true}); return res.json({rows:await sap.byKeys(keys),columns,...access,hasMore:false,available:true}); }
       if (sap.jsonTrial) {
         const term=search.toLowerCase();const filtered=term?defaults.filter(row=>Object.values(row.values).some(value=>String(value).toLowerCase().includes(term))):defaults;const sorted=sort==='asc'?[...filtered].reverse():filtered;
@@ -76,18 +81,20 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     } catch { res.json({ rows: [], columns, ...access, hasMore:false, available:false, message:'No data. The SAP database is unavailable on this network.' }); }
   }));
   app.post('/api/sap/rows', auth, allow('sap','admin'), asyncRoute(async (req,res) => {
+    const sap=sapFromRequest(req), area=areaFromRequest(req);
     if (!sapNetworkAllowed(req)) fail('Connect to the authorized SAP network',403);
     const values = req.body?.values && typeof req.body.values === 'object' && !Array.isArray(req.body.values) ? req.body.values : {};
     if (Object.keys(values).some(key=>!columns.some(column=>column[0]===key)) || Object.values(values).some(value=>!['string','number'].includes(typeof value)||String(value).length>2000)) fail('Invalid worksheet cells');
     const encodedBy=encodedByName(req.user?.name);
     let row;
     if(sap.jsonTrial) {
-      row={key:`manual:${randomUUID()}`,revision:0,verified:false,values:Object.fromEntries(columns.map(([key])=>[key,key==='encodedBy'?encodedBy:(values[key]??'')])),formats:{},rowHeight:null,rowHidden:false};
+      row={key:`manual:${area.toLowerCase()}:${randomUUID()}`,area,revision:0,verified:false,values:Object.fromEntries(columns.map(([key])=>[key,key==='encodedBy'?encodedBy:(values[key]??'')])),formats:{},rowHeight:null,rowHidden:false};
       await store.update(state=>{state.sapManualRows ||= [];state.sapManualRows.unshift(row);});
     } else { try { row=await sap.add(values,req.user?.name); } catch { fail('SAP database could not add the worksheet row',503); } }
     res.status(201).json({row});
   }));
   app.put('/api/sap/rows', auth, allow('sap','admin','planner','warehouse'), asyncRoute(async (req,res) => {
+    const sap=sapFromRequest(req), area=areaFromRequest(req);
     if (!sapNetworkAllowed(req)) fail('Connect to the authorized SAP network',403);
     const rows=req.body.rows;
     if(!Array.isArray(rows)||!rows.length||rows.length>1000||new Set(rows.map(row=>row.key)).size!==rows.length) fail('Choose unique worksheet rows');
@@ -101,7 +108,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
       if(row.rowHeight!==undefined&&row.rowHeight!==null&&(!Number.isFinite(Number(row.rowHeight))||Number(row.rowHeight)<20||Number(row.rowHeight)>160)) fail('Row height must be between 20 and 160');
     }
     if(sap.jsonTrial) await store.update(state=>{
-      const current=sapRows(state);
+      const current=sapRows(state, area);
       for(const row of rows) if(current.find(item=>item.key===row.key)?.revision !== Number(row.revision)) fail('Worksheet changed. Reload before saving.',409);
       state.sapRows ||= {};
       for(const row of rows) {const previous=state.sapRows[row.key]||{};const encodedBySupplied=['sap','admin'].includes(role)&&Object.prototype.hasOwnProperty.call(row.values||{},'encodedBy');state.sapRows[row.key]={...previous,values:{...previous.values,...row.values,...(['sap','admin'].includes(role)&&!encodedBySupplied?{encodedBy:encodedByName(req.user?.name)}:{})},formats:row.formats??previous.formats,rowHeight:row.rowHeight??previous.rowHeight,rowHidden:row.rowHidden??previous.rowHidden,revision:Number(row.revision)+1,verified:['sap','admin'].includes(role)?!!row.verified:!!previous.verified,updatedBy:req.user?.id,updatedAt:new Date().toISOString()};}
@@ -110,10 +117,11 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     res.json({saved:rows.map(row=>({key:row.key,revision:Number(row.revision)+1}))});
   }));
   app.get('/api/sap/export.xlsx', auth, allow('sap','admin','planner','warehouse'), asyncRoute(async (req, res) => {
+    const sap=sapFromRequest(req), area=areaFromRequest(req);
     if(!sapNetworkAllowed(req)) fail('Connect to the authorized SAP network',403);
     let exportRows;
-    try { const defaults=sapRows(await store.read()); if(sap.jsonTrial) exportRows=defaults; else {await sap.sync(defaults);exportRows=await sap.all();} } catch {fail('SAP database is unavailable',503);}
-    const workbook = new ExcelJS.Workbook(); const sheet = workbook.addWorksheet('Receiving register', { views: [{ state: 'frozen', ySplit: 1, xSplit: 3 }] });
+    try { const defaults=sapRows(await store.read(), area); if(sap.jsonTrial) exportRows=defaults; else {await sap.sync(defaults);exportRows=await sap.all();} } catch {fail('SAP database is unavailable',503);}
+    const workbook = new ExcelJS.Workbook(); const sheet = workbook.addWorksheet(`SAPAnalyst ${area === 'SAVOURY' ? 'Savoury' : 'Dressings'}`, { views: [{ state: 'frozen', ySplit: 1, xSplit: 3 }] });
     const legacyOrder=['deliveryDate','encodedBy','item','description','drNumber','quantity','poNumber','batch','breakdown','mfgDate','expDate','matdoc','supplierLot','remarks'];
     const exportColumns=[...legacyOrder.map(key=>columns.find(column=>column[0]===key)).filter(Boolean),...columns.filter(column=>!legacyOrder.includes(column[0]))];
     sheet.columns = exportColumns.map(([key, header, width]) => ({ key, header, width }));
@@ -127,7 +135,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
     }));
     sheet.autoFilter = { from: {row:1,column:1}, to: {row:1,column:exportColumns.length} }; sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="dockflow-sap-receiving.xlsx"');
+    res.setHeader('Content-Disposition', `attachment; filename="dockflow-sap-${area.toLowerCase()}.xlsx"`);
     await workbook.xlsx.write(res); res.end();
   }));
   app.get('/api/reports/kpi', auth, allow('admin', 'planner', 'production', 'supplier', 'ecosystem'), asyncRoute(async (req, res) => {
@@ -148,7 +156,7 @@ export function registerExtensions({ app, auth, allow, asyncRoute, store, canAcc
       const state = await store.read();
       const clock = `${String(current.getUTCHours()).padStart(2,'0')}:${String(current.getUTCMinutes()).padStart(2,'0')}`;
       const fallback = state.settings.monthlyEmailSchedule || { day: 1, time: '09:00' };
-      const recipients = state.users.filter(user => ['admin', 'planner', 'production', 'supplier', 'ecosystem', 'warehouse'].includes(user.role) && user.monthlyPerformanceEnabled !== false && user.email && user.emailVerifiedAt);
+      const recipients = state.users.filter(user => ['admin', 'planner', 'production', 'supplier', 'ecosystem', 'warehouse'].includes(user.role) && user.monthlyPerformanceEnabled === true && user.email && user.emailVerifiedAt);
       for (const user of recipients) {
         const schedule = { day: Math.min(28, Math.max(1, Number(user.monthlyPerformanceDay || fallback.day || 1))), time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(user.monthlyPerformanceTime || '')) ? user.monthlyPerformanceTime : fallback.time || '09:00' };
         if(current.getUTCDate()<schedule.day || (current.getUTCDate()===schedule.day && clock<schedule.time)) continue;

@@ -115,7 +115,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
     assert.equal(created.response.status, 201);
     return created.result;
   };
-  const supplierAccount = await createAccount({ name: "Supplier User", username: "supplier", email: "supplier@dockflow.local", password: "supplier123", role: "supplier", supplierName: "Trial Ingredients Supplier" });
+  const supplierAccount = await createAccount({ name: "Supplier User", username: "supplier", email: "supplier@dockflow.local", password: "supplier123", role: "supplier", supplierName: "Trial Ingredients Supplier", workAreas: ["DRESSINGS", "SAVOURY"] });
   assert.equal((await call(`/api/suppliers/${supplierAccount.supplierId}/presets`, { token: admin.token, method: "PATCH", body: { presets: [{ materialCode: "65013575", uom: "KG", defaultAmount: 300 }, { materialCode: "65013507", uom: "KG", defaultAmount: 500 }] } })).response.status, 200);
   await createAccount({ name: "Planner Dressings", username: "planner", email: "planner@dockflow.local", password: "planner123", role: "planner", workArea: "DRESSINGS" });
   const companySecurityAccount = await createAccount({ name: "Company Security", username: "security", email: "security@dockflow.local", password: "security123", role: "security", securityScope: "COMPANY" });
@@ -158,12 +158,13 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.ok(supplierBefore.result.suppliers[0].productPresets.every((preset) => preset.materialCode));
   assert.equal(supplierBefore.result.users.length, 0);
   assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.supplierId === supplier.user.supplierId));
-  assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item) && !("poNumber" in item))));
+  assert.ok(supplierBefore.result.shipments.every((shipment) => shipment.items.every((item) => typeof item.materialName === "string")));
   assert.equal(supplierBefore.result.settings.emailNotifications.configured, true);
   assert.equal(supplierBefore.result.settings.emailNotifications.senderEmail, "");
   assert.equal(JSON.stringify(supplierBefore.result).includes("abcdefghijklmnop"), false);
   assert.equal(JSON.stringify(supplierBefore.result.settings).includes("encryptedAppPassword"), false);
-  assert.equal(supplier.user.workArea, "DRESSINGS");
+  assert.equal(supplier.user.workArea, null);
+  assert.deepEqual(supplier.user.workAreas, ["DRESSINGS", "SAVOURY"]);
   assert.equal(planner.user.workArea, "DRESSINGS");
   assert.equal(warehouse.user.workArea, "DRESSINGS");
   assert.equal((await call("/api/availability", { token: warehouse.token, method: "POST", body: { date: "2026-08-28", startTime: "12:00", endTime: "13:00" } })).response.status, 403);
@@ -245,13 +246,13 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const incompleteAlternative = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "PROPOSE_ALTERNATIVE", alternativeDate: "invalid", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", itemIds: proposal.items.map((item) => item.id) }] } });
   assert.equal(incompleteAlternative.response.status, 400);
 
-  const invalidPhone = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "ACCEPT", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "09170000001", itemIds: [proposal.items[0].id] }] } });
+  const invalidPhone = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "ACCEPT", loadConfirmed: true, trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "123", drNumber: "DR-100", itemIds: [proposal.items[0].id], itemQuantities: [{ itemId: proposal.items[0].id, quantity: proposal.items[0].quantity, poNumber: "PO-100" }] }] } });
   assert.equal(invalidPhone.response.status, 400);
 
   const firstTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
     decision: "ACCEPT",
     loadConfirmed: true,
-    trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "+639170000001", poNumber: "PO-100", drNumber: "DR-100", itemIds: [proposal.items[0].id] }],
+    trucks: [{ truckPlate: "SDS 1001", driverName: "Driver One", driverPhone: "+639170000001", drNumber: "DR-100", itemIds: [proposal.items[0].id], itemQuantities: [{ itemId: proposal.items[0].id, quantity: proposal.items[0].quantity, poNumber: "PO-100" }] }],
   } });
   assert.equal(firstTruckResponse.response.status, 200);
   assert.equal(firstTruckResponse.result.partial, true);
@@ -268,7 +269,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const secondTruckResponse = await call(`/api/shipments/${proposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: {
     decision: "ACCEPT",
     loadConfirmed: true,
-    trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "+639170000002", poNumber: "PO-200", drNumber: "DR-200", itemIds: [proposal.items[1].id] }],
+    trucks: [{ truckPlate: "SDS 1002", driverName: "Driver Two", driverPhone: "+639170000002", drNumber: "DR-200", itemIds: [proposal.items[1].id], itemQuantities: [{ itemId: proposal.items[1].id, quantity: proposal.items[1].quantity, poNumber: "PO-200" }] }],
   } });
   assert.equal(secondTruckResponse.response.status, 200);
   assert.equal(secondTruckResponse.result.partial, false);
@@ -278,7 +279,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.ok(supplierAfterConfirmation.result.notifications.find((notification) => notification.id === pendingScheduleNotification.id).resolvedAt);
 
   const plannerQueue = await call("/api/bootstrap", { token: planner.token });
-  assert.ok(plannerQueue.result.shipments.every((shipment) => shipment.items.every((item) => !("materialName" in item))));
+  assert.ok(plannerQueue.result.shipments.every((shipment) => shipment.items.every((item) => typeof item.materialName === "string")));
   assert.equal(plannerQueue.result.materials.length, 0);
   const group = plannerQueue.result.shipments.filter((shipment) => shipment.sdsProposalId === proposal.id);
   assert.equal(group.length, 2);
@@ -316,8 +317,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(supplierRoute.response.status, 200);
   assert.equal(supplierRoute.result.supplier.routeDistanceKm, 12.3);
   assert.equal(supplierRoute.result.supplier.routeStaticDurationMinutes, 42);
-  assert.ok([30,35,40].includes(supplierRoute.result.supplier.routeAssumedSpeedKph));
-  assert.equal(supplierRoute.result.supplier.routeDurationMinutes, Math.ceil(12.3 / supplierRoute.result.supplier.routeAssumedSpeedKph * 60 + 3));
+  assert.ok([25,32].includes(supplierRoute.result.supplier.routeAssumedSpeedKph));
+  assert.equal(supplierRoute.result.supplier.routeDurationMinutes, Math.ceil(12.3 / supplierRoute.result.supplier.routeAssumedSpeedKph * 60 + 8));
   assert.equal(supplierRoute.result.supplier.routeTrafficDelayMinutes, Math.max(0, supplierRoute.result.supplier.routeDurationMinutes - 42));
   assert.equal(supplierRoute.result.trafficModel, "TIME_OF_DAY");
 
@@ -365,7 +366,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(approvedSchedule.bookingStatus, "PENDING_SUPPLIER");
   assert.equal(approvedSchedule.scheduledEndTime, "10:00", "An alternative without a manual end must retain the default two-hour window");
   assert.equal((await call(`/api/shipments/${approvalProposal.id}/qr.svg`,{token:supplier.token})).response.status,409);
-  const finalAlternative = await call(`/api/shipments/${approvalProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "ACCEPT", loadConfirmed: true, trucks: [{truckPlate:"ALT 1234",driverName:"Driver",driverPhone:"09170000001",poNumber:"PO-ALT",drNumber:"DR-ALT",itemIds:approvedSchedule.items.map(item=>item.id)}] } });
+  const finalAlternative = await call(`/api/shipments/${approvalProposal.id}/supplier-response`, { token: supplier.token, method: "PATCH", body: { decision: "ACCEPT", loadConfirmed: true, trucks: [{truckPlate:"ALT 1234",driverName:"Driver",driverPhone:"09170000001",drNumber:"DR-ALT",itemIds:approvedSchedule.items.map(item=>item.id),itemQuantities:approvedSchedule.items.map(item=>({itemId:item.id,quantity:item.quantity,poNumber:"PO-ALT"}))}] } });
   assert.equal(finalAlternative.response.status, 200, JSON.stringify(finalAlternative.result));
   const approvedAlternative = (await call("/api/bootstrap", { token: supplier.token })).result.shipments.find((shipment) => shipment.id === approvalProposal.id);
   assert.equal(approvedAlternative.bookingStatus, "APPROVED");
@@ -386,6 +387,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(gateInScan.result.shipment.status, "GATE_IN");
   assert.equal(gateInScan.result.shipment.estimatedArrivalAt, null);
   assert.equal(gateInScan.result.shipment.estimatedTravelMinutes, null);
+  const sapClearanceScan = await scan(admin.token, "SAP_CLEARANCE");
+  assert.equal(sapClearanceScan.result.shipment.status, "SAP_CLEARANCE");
   const unloadingScan = await scan(warehouse.token, "UNLOADING");
   assert.equal(unloadingScan.result.shipment.status, "UNLOADING");
   assert.match(unloadingScan.result.shipment.dock, /^Dock [123] - (PM|RM)$/);
@@ -399,7 +402,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(gateOutScan.result.shipment.status, "GATE_OUT");
   assert.equal(gateOutScan.result.shipment.receivedAt, receivedScan.result.shipment.receivedAt);
   assert.equal(gateOutScan.result.shipment.dock, null);
-  assert.deepEqual(gateOutScan.result.shipment.scanHistory.map((record) => record.actor), ["Supplier User", "Company Security", "Warehouse Dressings", "Warehouse Dressings", "Company Security"]);
+  assert.deepEqual(gateOutScan.result.shipment.scanHistory.map((record) => record.actor), ["Supplier User", "Company Security", "System Administrator", "Warehouse Dressings", "Warehouse Dressings", "Company Security"]);
 
 
   // Trip is optional, but Received remains mandatory between Unloading and Gate Out.
@@ -407,6 +410,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const secondScan = (stage) => call('/api/shipments/scan-stage', { token: admin.token, method: 'POST', body: { scanValue: second.shipmentNumber, stage, ...(stage === 'GATE' ? { gateDecision: 'ACCEPT' } : {}) } });
   assert.equal((await secondScan('RECEIVED')).response.status, 409);
   assert.equal((await secondScan('GATE')).response.status, 200);
+  assert.equal((await secondScan('SAP_CLEARANCE')).response.status, 200);
   assert.equal((await secondScan('UNLOADING')).response.status, 200);
   assert.equal((await secondScan('RECEIVED')).response.status, 200);
   assert.equal((await secondScan('GATE')).response.status, 200);
@@ -418,7 +422,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal((await call('/api/sap/rows', { token: supplier.token })).response.status, 403);
   assert.equal((await call('/api/sap/rows', { token: admin.token })).response.status, 200);
   assert.equal((await call('/api/reports/kpi', { token: sap.token })).response.status, 403);
-  assert.equal((await call('/api/bootstrap', { token: sap.token })).result.shipments.length, 0);
+  assert.ok((await call('/api/bootstrap', { token: sap.token })).result.shipments.length > 0);
   const register = await call('/api/sap/rows', { token: sap.token });
   assert.equal(register.response.status, 200);
   assert.ok(register.result.editableColumns.includes('encodedBy'));
@@ -479,8 +483,8 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(ecosystemSecurityShipments.some(s=>s.id===inboundId),true);
   assert.equal(ecosystemSecurityShipments.some(s=>s.id===first.id),false);
   const ecoInbound = (await call('/api/bootstrap', { token: supplier.token })).result.shipments.find(s => s.id === inboundId);
-  assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: eco.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 403);
-  assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: supplier.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', poNumber: 'PO-E', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id) }] } })).response.status, 200);
+  assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: eco.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id), itemQuantities: ecoInbound.items.map(item => ({ itemId: item.id, quantity: item.quantity, poNumber: 'PO-E' })) }] } })).response.status, 403);
+  assert.equal((await call(`/api/shipments/${inboundId}/supplier-response`, { token: supplier.token, method: 'PATCH', body: { decision: 'ACCEPT', loadConfirmed: true, trucks: [{ truckPlate: 'ECO 1001', driverName: 'Test', driverPhone: '+639170000003', drNumber: 'DR-E', itemIds: ecoInbound.items.map(item => item.id), itemQuantities: ecoInbound.items.map(item => ({ itemId: item.id, quantity: item.quantity, poNumber: 'PO-E' })) }] } })).response.status, 200);
   const ecoBootstrap = await call('/api/bootstrap', { token: eco.token });
   const inbound = ecoBootstrap.result.shipments.find(s => s.id === inboundId);
   assert.ok(inbound);
@@ -488,6 +492,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const ecoScan = (token, stage) => call('/api/shipments/scan-stage', { token, method: 'POST', body: { scanValue: inbound.shipmentNumber, stage, ...(stage === 'GATE' ? { gateDecision: 'ACCEPT' } : {}) } });
   assert.equal((await ecoScan(supplier.token, 'TRIP')).response.status, 200);
   assert.equal((await ecoScan(ecosystemSecurity.token, 'GATE')).response.status, 200);
+  assert.equal((await ecoScan(admin.token, 'SAP_CLEARANCE')).response.status, 200);
   assert.equal((await ecoScan(eco.token, 'UNLOADING')).response.status, 200);
   assert.equal((await ecoScan(eco.token, 'RECEIVED')).response.status, 200);
   assert.equal((await ecoScan(ecosystemSecurity.token, 'GATE')).response.status, 200);
@@ -524,6 +529,16 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   assert.equal(savedEmailPlan.accounts.find(account=>account.id===eco.user.id).enabled,false);
   assert.equal((await call('/api/bootstrap', { token: eco.token })).result.shipments.some(s => s.id === first.id), false);
 
+  const companyManualRequest = await call('/api/delivery-requests', { token: admin.token, method: 'POST', body: { supplierId: supplier.user.supplierId, area: 'DRESSINGS', scheduledDate: '2026-09-20', scheduledTime: '09:30', notes: 'Company-created request', items: [{ materialCode: 'MANUAL-100', description: 'Manual ingredient', quantity: 25, uom: 'KG' }] } });
+  assert.equal(companyManualRequest.response.status, 201, JSON.stringify(companyManualRequest.result));
+  assert.equal(companyManualRequest.result.shipment.bookingStatus, 'PENDING_SUPPLIER');
+  assert.equal(companyManualRequest.result.shipment.requestOrigin, 'COMPANY');
+  const supplierManualRequest = await call('/api/delivery-requests', { token: supplier.token, method: 'POST', body: { area: 'SAVOURY', scheduledDate: '2026-09-21', scheduledTime: '10:15', notes: 'Supplier-created request', items: [{ materialCode: 'MANUAL-200', description: 'Supplier requested ingredient', quantity: 40, uom: 'KG' }] } });
+  assert.equal(supplierManualRequest.response.status, 201, JSON.stringify(supplierManualRequest.result));
+  assert.equal(supplierManualRequest.result.shipment.bookingStatus, 'PENDING_COMPANY');
+  assert.equal(supplierManualRequest.result.shipment.requestOrigin, 'SUPPLIER');
+  assert.ok((await call('/api/bootstrap', { token: admin.token })).result.shipments.some(row => row.id === supplierManualRequest.result.shipment.id));
+
   const report = await call("/api/reports/export.xlsx?supplierId=1", { token: admin.token });
   assert.equal(report.response.status, 200);
   if (process.env.DOCKFLOW_REPORT_ARTIFACT) await writeFile(process.env.DOCKFLOW_REPORT_ARTIFACT, report.result);
@@ -535,7 +550,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
 
   const missingEmail = await call("/api/users", { token: admin.token, method: "POST", body: { name: "No Email", username: "noemail", password: "password123", role: "supplier", supplierName: "No Email Supplier" } });
   assert.equal(missingEmail.response.status, 400);
-  const created = await call("/api/users", { token: admin.token, method: "POST", body: { name: "Fresh Farm", username: "freshfarm", email: "fresh@example.com", password: "freshfarm123", role: "supplier", supplierName: "Fresh Farm Supplier" } });
+  const created = await call("/api/users", { token: admin.token, method: "POST", body: { name: "Fresh Farm", username: "freshfarm", email: "fresh@example.com", password: "freshfarm123", role: "supplier", supplierName: "Fresh Farm Supplier", workAreas: ["DRESSINGS"] } });
   assert.equal(created.response.status, 201);
   const presets = await call(`/api/suppliers/${created.result.supplierId}/presets`, { token: admin.token, method: "PATCH", body: { presets: [{ materialCode: "FRESH-001", uom: "KG", defaultAmount: 250 }] } });
   assert.equal(presets.response.status, 200);

@@ -19,6 +19,10 @@ export const sapColumns = [
   ['matdoc', 'MATERIAL DOCUMENT', 22, 'matdoc', 'sap'],
   ['supplierLot', "SUPPLIER'S LOT", 22, 'supplier_lot', 'sap'],
   ['remarks', 'REMARKS', 32, 'remarks', 'sap'],
+  ['weekNumber', 'WEEK NO.', 14, 'week_number', 'sap'],
+  ['palletType', 'TYPE / ALLERGEN', 24, 'pallet_type', 'sap'],
+  ['foilWeight', 'FOIL WEIGHT', 16, 'foil_weight', 'sap'],
+  ['palletWeightKg', 'WEIGHT (KG)', 16, 'pallet_weight_kg', 'sap'],
   ['supplierName', 'SUPPLIER', 24, 'supplier_name', 'scheduling'],
   ['plateNumber', 'PLATE NO.', 16, 'plate_number', 'scheduling'],
   ['driverName', 'DRIVER NAME', 22, 'driver_name', 'scheduling'],
@@ -43,7 +47,7 @@ export const sapColumns = [
   ['qaDisposition', 'QA DISPOSITION', 20, 'qa_disposition', 'warehouse'],
 ];
 
-const sapFields = ['destination', 'encodedBy', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks'];
+const sapFields = ['destination', 'encodedBy', 'item', 'description', 'drNumber', 'gatepassNumber', 'quantity', 'poNumber', 'batch', 'breakdown', 'mfgDate', 'expDate', 'matdoc', 'supplierLot', 'remarks', 'weekNumber', 'palletType', 'foilWeight', 'palletWeightKg'];
 const warehouseFields = ['inventoryController', 'receivingController', 'helperCount', 'truckType', 'actualReceived', 'palletCount', 'warehouseRemarks', 'qaStart', 'qaEnd', 'qaDisposition'];
 const adminFields = [...new Set([...sapFields, ...warehouseFields])];
 
@@ -90,12 +94,14 @@ const cleanFormats = formats => {
   return Object.fromEntries(Object.entries(formats).filter(([key, value]) => sapColumns.some(([column]) => column === key) && value && typeof value === 'object' && !Array.isArray(value)));
 };
 
-export function createSapRepository() {
+export function createSapRepository(area = 'DRESSINGS') {
   const jsonTrial = process.env.SAP_STORAGE === 'json';
   const host = process.env.POSTGRES_HOST || '';
   const configured = !!host && host !== 'your_postgres_host' && !!process.env.POSTGRES_PASSWORD;
   const schemaName = process.env.POSTGRES_SCHEMA || 'Analysis';
-  const tableName = process.env.POSTGRES_SESSION_LOGS_TABLE || 'SAPAnalysis';
+  const tableName = area === 'SAVOURY'
+    ? process.env.POSTGRES_SAP_SAVOURY_TABLE || 'SAPAnalysisSavoury'
+    : process.env.POSTGRES_SAP_DRESSINGS_TABLE || process.env.POSTGRES_SESSION_LOGS_TABLE || 'SAPAnalysis';
   const table = `${identifier(schemaName)}.${identifier(tableName)}`;
   const pool = configured && !jsonTrial ? new pg.Pool({
     host,

@@ -7,13 +7,14 @@ export type ShipmentStatus =
   | "BOOKED"
   | "IN_TRANSIT"
   | "GATE_IN"
+  | "SAP_CLEARANCE"
   | "UNLOADING"
   | "RECEIVED"
   | "GATE_OUT"
   | "REJECTED";
 
 export type BookingStatus = "PENDING_SUPPLIER" | "PENDING_COMPANY" | "SUPPLIER_CONFIRMED" | "SUPPLIER_ALTERNATIVE" | "APPROVED" | "REJECTED";
-export type ScanStage = "LOOKUP" | "TRIP" | "GATE" | "UNLOADING" | "RECEIVED";
+export type ScanStage = "LOOKUP" | "TRIP" | "GATE" | "SAP_CLEARANCE" | "UNLOADING" | "RECEIVED";
 
 export interface AvailabilitySlot {
   id: number;
@@ -32,6 +33,7 @@ export interface SessionUser {
   role: Role;
   supplierId?: number | null;
   workArea?: WorkArea | null;
+  workAreas?: Exclude<WorkArea, "ECOSYSTEM">[];
   securityScope?: SecurityScope | null;
   email?: string;
   emailVerifiedAt?: string | null;
@@ -55,6 +57,13 @@ export interface ShipmentItem {
   supplierLot?: string;
   productionDate?: string;
   expiryDate?: string;
+  actualReceived?: number | string | null;
+  breakdown?: string;
+  matdoc?: string;
+  supplierDock?: string;
+  foilWeight?: number | string | null;
+  palletWeightKg?: number | string | null;
+  palletType?: string;
   batches?: ShipmentBatch[];
   dnFileName?: string;
   coaFileName?: string;
@@ -87,7 +96,7 @@ export interface ConfirmedTruckLoad {
   driverName: string;
   driverPhone: string;
   itemIds: number[];
-  itemQuantities?: { itemId: number; quantity: number }[];
+  itemQuantities?: { itemId: number; quantity: number; poNumber?: string }[];
   itemBatches?: { itemId: number; batches: ShipmentBatch[] }[];
   confirmedAt: string;
 }
@@ -152,6 +161,7 @@ export interface Shipment {
   lastProcessAt?: string | null;
   tripAt?: string | null;
   gateInAt?: string | null;
+  sapClearanceAt?: string | null;
   unloadingAt?: string | null;
   receivedAt?: string | null;
   gateOutAt?: string | null;
@@ -184,6 +194,8 @@ export interface Shipment {
   confirmedTruckLoads?: ConfirmedTruckLoad[];
   sdsImportIdentity?: string | null;
   sdsImportFingerprint?: string | null;
+  requestOrigin?: "COMPANY" | "SUPPLIER" | null;
+  manuallyRequested?: boolean;
   items: ShipmentItem[];
   palletsScanned: number;
   palletsTotal: number;

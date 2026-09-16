@@ -2,14 +2,14 @@
   "_instructions": [
     "This is the clean local JSON data store. DockFlow writes user-created accounts, suppliers, imports, deliveries, scans, and history here.",
     "On API startup, DockFlow ensures one administrator exists using BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD. The private SMTP sender is configured separately in .env.",
-    "Create supplier and staff accounts in Administration, then import an SDS workbook to begin a fresh trial.",
+    "The preview retains the existing accounts and supplier catalog, but all operational delivery data starts empty.",
     "Do not store SMTP passwords, tokens, or other secrets in this file. Keep secrets in .env only."
   ],
   "version": 11,
   "settings": {
     "siteName": "Cavite Foods Receiving",
-    "dockCount": 2,
-    "graceMinutes": 30,
+    "dockCount": 3,
+    "graceMinutes": 15,
     "deliveryCodeSequence": 0,
     "flexibleScheduling": true,
     "availableDates": [],
@@ -18,12 +18,113 @@
     "siteCoordinates": null,
     "emailNotifications": {}
   },
-  "users": [],
-  "suppliers": [],
-  "materials": [],
+  "users": [
+    {
+      "id": 1,
+      "name": "System Administrator",
+      "username": "admin",
+      "passwordHash": "$2b$10$0HtIxiTPaXTSro1opYm76euOizNdaZiKOfs/j/s.VVJmBKf8upPcO",
+      "role": "admin",
+      "supplierId": null,
+      "workArea": null,
+      "workAreas": [
+        "DRESSINGS",
+        "SAVOURY"
+      ],
+      "email": "riemar53seruelas@gmail.com",
+      "emailVerifiedAt": "2026-09-16T05:11:49.224Z",
+      "emailVerificationHash": null,
+      "emailVerificationExpiresAt": null,
+      "emailVerificationAttempts": 0,
+      "verificationCodeSentAt": null,
+      "monthlyPerformanceEnabled": false
+    }
+  ],
+  "suppliers": [
+    {
+      "id": 1,
+      "vendorCode": "SUP-001",
+      "name": "Ajinomoto",
+      "productPresets": [
+        {
+          "id": 1,
+          "materialCode": "65013575",
+          "uom": "KG",
+          "defaultAmount": 300
+        },
+        {
+          "id": 2,
+          "materialCode": "63917239",
+          "uom": "KG",
+          "defaultAmount": 60
+        },
+        {
+          "id": 3,
+          "materialCode": "63917240",
+          "uom": "KG",
+          "defaultAmount": 61
+        }
+      ],
+      "originAddress": "",
+      "originCoordinates": null,
+      "routeDistanceKm": null,
+      "routeDurationMinutes": null,
+      "routeCalculatedAt": null,
+      "routeProvider": null,
+      "routeStaticDurationMinutes": null,
+      "routeTrafficDelayMinutes": null,
+      "routeAssumedSpeedKph": null,
+      "routeTrafficAware": false,
+      "routeTrafficModel": "NONE"
+    }
+  ],
+  "materials": [
+    {
+      "id": 1,
+      "code": "65013575",
+      "name": "Material to review",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 0,
+      "storageZone": "To review"
+    },
+    {
+      "id": 2,
+      "code": "63917239",
+      "name": "Material to review",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 0,
+      "storageZone": "To review"
+    },
+    {
+      "id": 3,
+      "code": "63917240",
+      "name": "Material to review",
+      "type": "RM",
+      "uom": "KG",
+      "shelfLifeDays": 0,
+      "unitsPerPallet": 0,
+      "storageZone": "To review"
+    }
+  ],
   "shipments": [],
   "rdsRequests": [],
-  "audit": [],
+  "audit": [
+    {
+      "id": 1,
+      "at": "2026-09-16T05:14:02.580Z",
+      "actor": "System Administrator",
+      "action": "ACCOUNT_DELETED",
+      "detail": "Account @ajinomoto was deleted; supplier and delivery records were retained"
+    }
+  ],
   "notifications": [],
-  "importBatches": []
+  "importBatches": [],
+  "ecosystemMaterials": [],
+  "monthlyKpiSent": {},
+  "sapRows": {},
+  "sapManualRows": []
 }
