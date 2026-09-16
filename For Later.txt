@@ -21,3 +21,8 @@ he told me he will do that, im all good, i just need to enable the firewall so t
 
 
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDpdoj3/ZLWmNOE25zSVEd6zIGUlowad9y/hbQzA++tn dockflow-ubuntu-server
+
+JvGWXJvJOcpjItpLF6FmEM5aK4cO04deVt+1M8q/UZ/+aGK1
+
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_PASSWORD=mayocube2026!!!!!!
