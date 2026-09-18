@@ -84,8 +84,8 @@ Keep the server's existing secrets and SAP settings, but make sure `/opt/DockFlo
 
 ```env
 APP_PORT=5059
-APP_ORIGIN=https://dockflow.unileverdigitalhub.com
-CORS_ORIGINS=https://dockflow.unileverdigitalhub.com
+APP_ORIGIN=https://dockflow.myvnc.com
+CORS_ORIGINS=https://dockflow.myvnc.com
 ALLOW_PRIVATE_NETWORK_ORIGINS=false
 COOKIE_SECURE=true
 
@@ -129,7 +129,7 @@ The health response must contain `"primaryStorage":"postgres"` and `"connected":
 
 ## 6. Configure Nginx for the domain
 
-First ensure the public DNS `A` record for `dockflow.unileverdigitalhub.com` points to this Ubuntu server's public IPv4. Remove an `AAAA` record unless the server also has working public IPv6.
+First ensure the public DNS `A` record for `dockflow.myvnc.com` points to this Ubuntu server's public IPv4. Remove an `AAAA` record unless the server also has working public IPv6.
 
 Install the included Nginx site:
 
@@ -150,14 +150,14 @@ sudo ufw status
 Test HTTP before requesting the certificate:
 
 ```bash
-curl -I http://dockflow.unileverdigitalhub.com
+curl -I http://dockflow.myvnc.com
 ```
 
 ## 7. Enable HTTPS with Let's Encrypt
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx --redirect -d dockflow.unileverdigitalhub.com
+sudo certbot --nginx --redirect -d dockflow.myvnc.com
 sudo nginx -t
 sudo systemctl reload nginx
 sudo certbot renew --dry-run
@@ -166,8 +166,8 @@ sudo certbot renew --dry-run
 Final checks:
 
 ```bash
-curl -I https://dockflow.unileverdigitalhub.com
-curl -s https://dockflow.unileverdigitalhub.com/api/health
+curl -I https://dockflow.myvnc.com
+curl -s https://dockflow.myvnc.com/api/health
 ```
 
 ## 8. PostgreSQL backups

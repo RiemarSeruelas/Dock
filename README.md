@@ -94,7 +94,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-On the Ubuntu deployment, open `https://dockflow.unileverdigitalhub.com` after completing the deployment guide.
+On the Ubuntu deployment, open `https://dockflow.myvnc.com` after completing the deployment guide.
 
 To stop DockFlow:
 
@@ -115,7 +115,7 @@ Open `http://127.0.0.1:3000`.
 ## Test email notifications
 
 1. Open the private `.env` file and set `EMAIL_NOTIFICATIONS_ENABLED=true`.
-2. Set `SMTP_USER` to the dedicated administrator Gmail and `SMTP_APP_PASSWORD` to its Google App Password. Do not use the normal Gmail password.
+2. The example is prefilled for `cavitefoods.dockflow@unilever.com` through Microsoft 365 (`smtp.office365.com`, port `587`, STARTTLS). Ask the Microsoft 365 administrator to provision/license the mailbox and approve SMTP AUTH, OAuth, or an SMTP relay. Put the issued secret only in `SMTP_APP_PASSWORD`.
 3. Restart DockFlow so the API loads the private sender credentials.
 4. Planner and Supplier account owners set and verify their own recipient email. Supplier accounts see a persistent verification reminder until this is complete.
 5. Security and Warehouse accounts intentionally have no email field. The System Administrator sender uses `SMTP_USER` internally and does not require recipient verification.
@@ -123,9 +123,9 @@ Open `http://127.0.0.1:3000`.
 7. Propose an alternative from the supplier account. Verified Planner and Production emails receive the reason and proposed time.
 8. Approve or reject the alternative from the company Schedule page. The verified supplier receives the decision and reason by email, and all linked supplier users receive an in-app notification.
 
-The sender address and App Password stay in `.env`; they are not saved in trial JSON, returned by the API, or shown in the browser. In an offline trial, the rest of DockFlow still works, but Gmail delivery and public ETA lookup cannot be tested.
+The sender address and credential stay in `.env`; they are not saved in trial JSON, returned by the API, or shown in the browser. In an offline trial, the rest of DockFlow still works, but Microsoft 365 delivery and public ETA lookup cannot be tested.
 
-If sending fails, DockFlow now identifies the safe cause: a trial placeholder recipient, rejected Gmail credentials, or an SMTP network/firewall problem. Leave `MAIL_FROM=` blank unless you are supplying a complete valid sender address.
+If sending fails, DockFlow identifies the safe cause: a trial placeholder recipient, rejected Microsoft 365 credentials/policy, or an SMTP network/firewall problem. The standard setup uses STARTTLS rather than implicit TLS.
 
 ## Login and truck images
 

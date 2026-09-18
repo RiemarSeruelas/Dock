@@ -3,12 +3,12 @@ import nodemailer from "nodemailer";
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 const testMode = process.env.NODE_ENV === "test";
 const uniqueEmails = (recipients) => [...new Set((recipients || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
-const transporterFor = ({ email, appPassword, host = "smtp.gmail.com", port = 465, secure = true }) => nodemailer.createTransport({ host, port, secure, auth: { user: email, pass: appPassword } });
+const transporterFor = ({ email, appPassword, host = "smtp.office365.com", port = 587, secure = false }) => nodemailer.createTransport({ host, port, secure, requireTLS: !secure, tls: { minVersion: "TLSv1.2" }, auth: { user: email, pass: appPassword } });
 const safeFailureMessage = (error) => {
   const code = String(error?.code || "").toUpperCase();
   const responseCode = Number(error?.responseCode || 0);
-  if (code === "EAUTH" || responseCode === 534 || responseCode === 535) return "Gmail rejected the administrator sender. Check SMTP_USER and use a Google App Password in SMTP_APP_PASSWORD.";
-  if (["ETIMEDOUT", "ESOCKET", "ECONNECTION", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "EDNS"].includes(code)) return "DockFlow could not reach Gmail from the API container. Check internet access, DNS, firewall rules, and smtp.gmail.com port 465.";
+  if (code === "EAUTH" || responseCode === 534 || responseCode === 535) return "Microsoft 365 rejected the DockFlow sender. Confirm that the mailbox exists, the credential is valid, and your administrator has enabled an approved SMTP AUTH or relay method.";
+  if (["ETIMEDOUT", "ESOCKET", "ECONNECTION", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "EDNS"].includes(code)) return "DockFlow could not reach Microsoft 365 from the API container. Check internet access, DNS, firewall rules, and smtp.office365.com port 587 with STARTTLS.";
   if ([550, 551, 552, 553, 554].includes(responseCode)) return "The mail server rejected the sender or recipient address. Confirm that both addresses are real email accounts.";
   return "The mail server rejected the verification message. Check the API container logs for the SMTP error code.";
 };

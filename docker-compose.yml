@@ -30,8 +30,8 @@ services:
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-admin123}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
-      APP_ORIGIN: ${APP_ORIGIN:-https://dockflow.unileverdigitalhub.com}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://dockflow.unileverdigitalhub.com}
+      APP_ORIGIN: ${APP_ORIGIN:-https://dockflow.myvnc.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://dockflow.myvnc.com}
       ALLOW_PRIVATE_NETWORK_ORIGINS: ${ALLOW_PRIVATE_NETWORK_ORIGINS:-false}
       API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-1200}
@@ -64,10 +64,10 @@ services:
       SAP_ALLOWED_CIDRS: ${SAP_ALLOWED_CIDRS:-}
       SAP_TRUSTED_PROXY_CIDRS: ${SAP_TRUSTED_PROXY_CIDRS:-}
       EMAIL_NOTIFICATIONS_ENABLED: ${EMAIL_NOTIFICATIONS_ENABLED:-false}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-465}
-      SMTP_SECURE: ${SMTP_SECURE:-true}
-      SMTP_USER: ${SMTP_USER:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.office365.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-cavitefoods.dockflow@unilever.com}
       SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
       APP_STORAGE: postgres
@@ -88,7 +88,7 @@ services:
       - /var/run/postgresql:/var/run/postgresql
       - dockflow_uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
       interval: 10s
       timeout: 4s
       retries: 10

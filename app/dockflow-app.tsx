@@ -25,7 +25,9 @@ import {
   LogOut,
   MapPin,
   MapPinned,
+  Maximize2,
   Menu,
+  Minimize2,
   Moon,
   PackageCheck,
   ChevronsLeft,
@@ -364,10 +366,13 @@ function BarcodeScanner({ stageLabel, onRead }: { stageLabel: string; onRead: (v
   const videoRef = useRef<HTMLVideoElement>(null);
   const manualRef = useRef<HTMLInputElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
+  const scannerRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanFrameRef = useRef(0);
+  const [scannerFullscreen, setScannerFullscreen] = useState(false);
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+  useEffect(() => { const changed = () => setScannerFullscreen(document.fullscreenElement === scannerRef.current); document.addEventListener("fullscreenchange", changed); return () => document.removeEventListener("fullscreenchange", changed); }, []);
   useEffect(() => {
     const timer = window.setTimeout(() => setSecureCamera(window.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia)), 0);
     return () => window.clearTimeout(timer);
@@ -402,6 +407,12 @@ function BarcodeScanner({ stageLabel, onRead }: { stageLabel: string; onRead: (v
       };
       requestAnimationFrame(scan);
     } catch { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); setUnsupported(true); }
+  };
+
+  const toggleScannerFullscreen = async () => {
+    if (document.fullscreenElement) { await document.exitFullscreen().catch(() => undefined); setScannerFullscreen(false); return; }
+    if (scannerRef.current?.requestFullscreen) { await scannerRef.current.requestFullscreen().catch(() => undefined); setScannerFullscreen(document.fullscreenElement === scannerRef.current); return; }
+    setScannerFullscreen((current) => !current);
   };
 
   const scanPhoto = async (file?: File) => {
@@ -459,7 +470,7 @@ function BarcodeScanner({ stageLabel, onRead }: { stageLabel: string; onRead: (v
     }
   };
 
-  return <div className="scanner-box">{camera ? <div className="camera-frame"><video ref={videoRef} playsInline muted /><span><ScanLine size={22} /> Point at shipment QR</span><button onClick={() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); }}>Cancel</button></div> : <><div className="scan-graphic"><span /><QrCode size={58} /><i /></div><h3>Scan for {stageLabel}</h3><div className="scanner-actions"><input ref={photoRef} className="scan-photo-input" type="file" accept="image/*" capture="environment" aria-label="Take or choose a QR photo" onChange={(event) => void scanPhoto(event.target.files?.[0])} /><button className="button primary" onClick={() => photoRef.current?.click()} disabled={reading}>{reading ? <Loader2 className="spin" size={17} /> : <ImageUp size={17} />} Take QR photo</button>{secureCamera && <button className="button secondary" onClick={startCamera} disabled={reading}><ScanLine size={17} /> Live camera</button>}</div>{!secureCamera && <small className="scanner-note">HTTP trial mode: take a QR photo, use a hardware scanner, or enter the shipment number.</small>}{unsupported && <small className="scanner-note">Live camera was unavailable. QR photo scanning still works over HTTP.</small>}{photoError && <small className="scanner-note error">{photoError}</small>}<div className="manual-entry"><input ref={manualRef} aria-label="Scanned QR value or shipment number" autoComplete="off" placeholder="Scan QR or enter SHP-YYYYMMDD-001" value={manual} onChange={(event) => setManual(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void submitScan(manual); } }} /><button disabled={!manual.trim() || reading} onClick={() => void submitScan(manual)} aria-label={`Record ${stageLabel} scan`}>{reading ? <Loader2 className="spin" size={17} /> : <ArrowRight size={17} />}</button></div></>}</div>;
+  return <div ref={scannerRef} className={`scanner-box ${scannerFullscreen ? "scanner-fullscreen" : ""}`}><button type="button" className="scanner-fullscreen-toggle" onClick={() => void toggleScannerFullscreen()} aria-label={scannerFullscreen ? "Exit fullscreen scanner" : "Open fullscreen scanner"} title={scannerFullscreen ? "Exit fullscreen" : "Fullscreen scanner"}>{scannerFullscreen ? <Minimize2 size={19}/> : <Maximize2 size={19}/>}</button>{camera ? <div className="camera-frame"><video ref={videoRef} playsInline muted /><span><ScanLine size={22} /> Point at shipment QR</span><button onClick={() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null; setCamera(false); }}>Cancel</button></div> : <><div className="scan-graphic"><span /><QrCode size={58} /><i /></div><h3>Scan for {stageLabel}</h3><div className="scanner-actions"><input ref={photoRef} className="scan-photo-input" type="file" accept="image/*" capture="environment" aria-label="Take or choose a QR photo" onChange={(event) => void scanPhoto(event.target.files?.[0])} /><button className="button primary" onClick={() => photoRef.current?.click()} disabled={reading}>{reading ? <Loader2 className="spin" size={17} /> : <ImageUp size={17} />} Take QR photo</button>{secureCamera && <button className="button secondary" onClick={startCamera} disabled={reading}><ScanLine size={17} /> Live camera</button>}</div>{!secureCamera && <small className="scanner-note">HTTP trial mode: take a QR photo, use a hardware scanner, or enter the shipment number.</small>}{unsupported && <small className="scanner-note">Live camera was unavailable. QR photo scanning still works over HTTP.</small>}{photoError && <small className="scanner-note error">{photoError}</small>}<div className="manual-entry"><input ref={manualRef} aria-label="Scanned QR value or shipment number" autoComplete="off" placeholder="Scan QR or enter SHP-YYYYMMDD-001" value={manual} onChange={(event) => setManual(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void submitScan(manual); } }} /><button disabled={!manual.trim() || reading} onClick={() => void submitScan(manual)} aria-label={`Record ${stageLabel} scan`}>{reading ? <Loader2 className="spin" size={17} /> : <ArrowRight size={17} />}</button></div></>}</div>;
 }
 
 function OperationsPage({ data, user, onScanStage, onGateReject, onOpenShipment }: { data: AppData; user: SessionUser; onScanStage: (scanValue: string, stage: ScanStage, options?: { gateDecision?: "ACCEPT" }) => Promise<Shipment>; onGateReject: (shipment: Shipment, reasonCode: string, otherReason?: string) => Promise<Shipment>; onOpenShipment: (shipment: Shipment) => void }) {
@@ -500,7 +511,7 @@ function OperationsPage({ data, user, onScanStage, onGateReject, onOpenShipment 
   const gateIsExit = stage === "GATE" && Boolean(selected && ["RECEIVED", "GATE_OUT"].includes(selected.status));
 
   const activeStation = SCAN_STATIONS[stage];
-  return <div className="page-stack">
+  return <div className="page-stack operations-page">
     <section className="hero-row"><div><span className="eyebrow">Role workspace · {accountRoleLabel(user)}</span><h1>{user.role === "supplier" ? "View delivery QR" : "QR receiving stations"}</h1>{user.role === "supplier" && <p>Scan a delivery QR to view its details.</p>}</div><div className="operation-live"><span className="live-dot" /> Scanner online</div></section>
     {availableStages.length > 0 && <section className="scan-stations">{availableStages.map((item) => { const station = SCAN_STATIONS[item]; const StationIcon = station.icon; return <button className={stage === item ? "active" : ""} key={item} onClick={() => { setStage(item); setFeedback(null); setSelected(null); setScanRecorded(false); setGateReason(""); setGateOtherReason(""); }}><span><StationIcon size={19} /></span><span><b>{station.label}</b><small>{station.helper}</small></span></button>; })}</section>}
     {availableStages.length > 0 && <><section className="operations-grid">
@@ -971,6 +982,7 @@ export default function DockFlowApp() {
   const singleSupplierArea = user.role === "supplier" && supplierAreas.length === 1 ? supplierAreas[0] : null;
   const activeReceivingArea: ReceivingArea = user.workArea === "DRESSINGS" || user.workArea === "SAVOURY" ? user.workArea : singleSupplierArea || receivingArea;
   const visibleNav = NAV_ITEMS.filter((item) => ROLE_VIEWS[user.role].includes(item.id));
+  const mobilePrimaryNav = visibleNav.slice(0, 4);
   const RoleIcon = ROLE_ICONS[user.role];
 
   return <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -978,6 +990,7 @@ export default function DockFlowApp() {
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="site-identity"><span className="live-dot" /><span>{data.settings.siteName}</span></div><div className="topbar-actions"><LiveClock className="topbar-clock" /><span className="role-badge"><RoleIcon size={15} /> {accountRoleLabel(user)}</span><button className="icon-button" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><NotificationCenter notifications={data.notifications} onOpen={openNotification} onDismiss={(notification) => void markNotificationRead(notification)} /><span className="user-mini profile-only" aria-label={`${user.name} profile`} title={user.name}><span>{initials(user.name)}</span></span></div></header>
       <div className="page-content">{view === "sap" && <SapPage token={token} />}{view === "clearance" && <ClearancePage token={token} user={user} />}{view === "ecosystem" && <EcosystemPage token={token} data={data} user={user} refresh={refresh} />}{view === "overview" && <OverviewPage data={receivingData} user={user} area={activeReceivingArea} canSwitchArea={canSwitchArea} ecosystemReceiving={user.role === "ecosystem"} onAreaChange={setReceivingArea} onOpenShipment={openShipment} />}{view === "monitoring" && <MonitoringPage data={monitoringData} theme={dark ? "dark" : "light"} area={activeReceivingArea} canSwitchArea={canSwitchArea} ecosystemScope={user.role === "ecosystem" ? ecosystemMonitoringView : ecosystemSecurity ? "receiving" : undefined} onAreaChange={setReceivingArea} onOpenShipment={openShipment} />}{view === "schedule" && <FlexibleSchedulePage data={schedulingData} user={user} area={activeReceivingArea} canSwitchArea={canSwitchArea} ecosystemMode={user.role === "ecosystem"} unfilteredMode={ecosystemSecurity} onAreaChange={setReceivingArea} onOpenShipment={openShipment} onImportSds={() => setExcelImport(true)} onRequestDelivery={() => setManualRequestOpen(true)} onReviewAlternative={setCompanyDecisionShipment} onUpdateSchedule={updateSchedule} onDownloadSds={downloadSds} />}{view === "entries" && <>{user.role === "supplier" && !user.emailVerifiedAt && <section className="verification-reminder"><ShieldCheck size={22} /><div><b>Verify your account email</b><span>This reminder stays here until your email is verified.</span></div><button className="button primary compact" onClick={() => setSelfVerificationOpen(true)}>Verify now</button></section>}<EntriesPage data={outgoingData} onOpenShipment={openShipment} /></>}{view === "operations" && <OperationsPage data={data} user={user} onScanStage={scanShipmentStage} onGateReject={rejectGateEntry} onOpenShipment={openShipment} />}{view === "history" && <HistoryPage data={data} user={user} onOpenShipment={openShipment} />}{view === "reports" && <ReportsPage data={data} user={user} token={token} onOpenShipment={openShipment} />}{view === "admin" && <AdminPage data={data} token={token} currentUser={user} onAddUser={addUser} onDeleteUser={deleteUser} onUnlockSiteAddress={unlockSiteAddress} onSaveSiteAddress={saveSiteAddress} onCalculateSupplierEta={calculateSupplierEta} />}</div>
+      <nav className="mobile-tabbar" aria-label="Primary mobile navigation">{mobilePrimaryNav.map((item) => { const NavIcon = item.icon; return <button type="button" className={view === item.id ? "active" : ""} key={item.id} onClick={() => { setView(item.id); setMobileNav(false); }}><NavIcon size={20}/><span>{item.label}</span></button>; })}<button type="button" className={!mobilePrimaryNav.some((item) => item.id === view) ? "active" : ""} onClick={() => setMobileNav(true)}><Menu size={20}/><span>More</span></button></nav>
     </main>
     {loading && <div className="loading-line" />}{toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
     {supplierResponseShipment && <SupplierSdsModal shipment={supplierResponseShipment} onClose={() => setSupplierResponseShipment(null)} onSubmit={respondToSds} />}

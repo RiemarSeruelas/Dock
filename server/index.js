@@ -51,9 +51,9 @@ const LOCATION_CIPHER_KEY = LOCATION_ENCRYPTION_SECRET ? scryptSync(LOCATION_ENC
 const EMAIL_NOTIFICATIONS_ENABLED = String(process.env.EMAIL_NOTIFICATIONS_ENABLED || "false").toLowerCase() === "true";
 const SMTP_USER = String(process.env.SMTP_USER || "").trim().toLowerCase();
 const SMTP_APP_PASSWORD = String(process.env.SMTP_APP_PASSWORD || "").replace(/\s/g, "");
-const SMTP_HOST = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
-const SMTP_PORT = Math.max(1, Number(process.env.SMTP_PORT || 465));
-const SMTP_SECURE = String(process.env.SMTP_SECURE || "true").toLowerCase() === "true";
+const SMTP_HOST = String(process.env.SMTP_HOST || "smtp.office365.com").trim();
+const SMTP_PORT = Math.max(1, Number(process.env.SMTP_PORT || 587));
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
 const MAIL_FROM = String(process.env.MAIL_FROM || SMTP_USER).trim();
 const app = express();
 const importPreviews = new Map();
@@ -565,7 +565,7 @@ await store.update(async (state) => {
   state.settings.siteName = String(state.settings.siteName || "Cavite Foods Receiving");
   state.settings.siteAddress = String(state.settings.siteAddress || "");
   state.settings.siteCoordinates = validCoordinates(state.settings.siteCoordinates) ? { lat: Number(state.settings.siteCoordinates.lat), lon: Number(state.settings.siteCoordinates.lon) } : null;
-  // Gmail credentials belong only in the server environment. Remove any sender
+  // SMTP credentials belong only in the server environment. Remove any sender
   // secret left by an older trial build from JSON storage during startup.
   state.settings.emailNotifications = {};
   for (const notification of state.notifications) {
