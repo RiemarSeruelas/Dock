@@ -3,9 +3,10 @@
 ## Included fixes
 
 - Moved **Updated SDS** and **Import SDS** to the Schedule header beside **Request**.
-- Enlarged the QR scanning workspace and added a fullscreen scanner control.
-- Added a phone-first layout with a fixed bottom navigation bar, single-column delivery cards, larger tap targets, and horizontally scrollable station/action controls.
-- Added **Dock Control · Live Receiving Lanes** to the left side of fullscreen Delivery Monitoring. Delivery tickets continue on the right.
+- Rebuilt the phone layout with compact headers, readable KPI cards, condensed filters, card-based history/report rows, and controls that no longer overflow the screen.
+- Changed **Scan** on phones into a near-fullscreen sheet over a dark, blurred view of the current page. The sheet keeps station selection, photo scanning, camera scanning, manual entry, and result verification together.
+- Made Schedule open in **Day** view on phones and fit the single-day timeline to the available width.
+- Restored the visual road lanes in fullscreen Delivery Monitoring. Open docks show an empty road; occupied docks show the truck image and live delivery details.
 - Changed the API health check from `localhost` to `127.0.0.1` so the container reports healthy when Node listens on IPv4.
 - Updated the public domain defaults and Nginx template to `dockflow.myvnc.com`.
 - Prepared Microsoft 365 SMTP defaults for `cavitefoods.dockflow@unilever.com` using port 587 and STARTTLS.

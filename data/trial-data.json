@@ -94,7 +94,12 @@
       "routeDistanceKm": null,
       "routeDurationMinutes": null,
       "routeCalculatedAt": null,
-      "routeProvider": null
+      "routeProvider": null,
+      "routeStaticDurationMinutes": null,
+      "routeTrafficDelayMinutes": null,
+      "routeAssumedSpeedKph": null,
+      "routeTrafficAware": false,
+      "routeTrafficModel": "NONE"
     }
   ],
   "materials": [

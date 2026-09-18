@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- The dock board uses a bundled operational truck image. */
 import { supplierHue } from "./company-colors";
 import { Dialog } from "./receiving-ui";
 import { SupplierConfirmation } from "./receiving-ui";
@@ -246,6 +247,12 @@ export function FlexibleSchedulePage({ data, user, area, canSwitchArea, ecosyste
   const [date, setDate] = useState(data.settings.availableDates.find((item) => item >= localDate()) || localDate());
   const [mode, setMode] = useState<"day" | "week">("week");
   const [editing, setEditing] = useState<Shipment | null>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (window.matchMedia("(max-width: 720px)").matches) setMode("day");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const canImport = ["admin", "planner", "production"].includes(user.role);
   const canManage = ["admin", "planner"].includes(user.role);
   const canReviewCompany = ["admin", "planner", "production"].includes(user.role);
@@ -294,8 +301,9 @@ export function MonitoringPage({ data, theme, area, canSwitchArea, ecosystemScop
     {fullscreen && <aside className="monitor-tv-docks" aria-label="Live receiving lanes">
       <div className="monitor-tv-docks-head"><span><MapPin size={16}/> Dock control</span><strong>Live receiving lanes</strong></div>
       <div className="monitor-tv-dock-list">{receivingDocks.map((dock) => { const shipment = dockShipments.find((entry) => entry.dock === dock); return <div className={`monitor-tv-lane ${shipment ? "occupied" : "available"}`} key={dock}>
-        <span className="monitor-tv-lane-head"><b>{dock}</b><em>{shipment ? "Active" : "Available"}</em></span>
-        {shipment ? <button type="button" onClick={() => openMonitoringEntry(shipment)}><span className="truck-tile"><Truck size={18}/></span><span><b>{shipment.truckPlate}</b><small>{shipment.supplier}</small><small>{shipment.shipmentNumber}</small></span><StatusPill status={shipment.status}/></button> : <span className="monitor-tv-open-lane"><CheckCircle2 size={20}/><span><b>Ready</b><small>Waiting for next truck</small></span></span>}
+        <span className="monitor-tv-lane-head"><b>{dock}</b><em>{shipment ? "Occupied" : "Available"}</em></span>
+        <div className="dock-vehicle-visual monitor-tv-road"><span className="dock-lane-line"/>{shipment ? <img className="parked-truck" src="/images/parked-truck.jpg" alt={`${shipment.truckPlate} occupying ${dock}`}/> : <span className="empty-lane"><CheckCircle2 size={28}/><b>Open lane</b><small>Ready for the next truck</small></span>}<i>{shipment ? shipment.status === "UNLOADING" ? "In use · unloading" : "Truck on dock" : "Ready"}</i></div>
+        {shipment ? <button type="button" className="monitor-tv-shipment" onClick={() => openMonitoringEntry(shipment)}><span><b>{shipment.truckPlate}</b><small>{shipment.supplier}</small><small>{shipment.shipmentNumber}</small></span><StatusPill status={shipment.status}/><ArrowRight size={16}/></button> : <span className="monitor-tv-open-lane"><CheckCircle2 size={18}/><span><b>Lane ready</b><small>No truck assigned</small></span></span>}
       </div>; })}</div>
       {waitingAtGate.length > 0 && <div className="monitor-tv-gate-queue"><span className="eyebrow">Waiting at gate</span>{waitingAtGate.slice(0, 4).map((shipment) => <button type="button" key={shipment.id} onClick={() => openMonitoringEntry(shipment)}><Truck size={16}/><span><b>{shipment.truckPlate}</b><small>{shipment.supplier}</small></span><ArrowRight size={15}/></button>)}</div>}
     </aside>}
