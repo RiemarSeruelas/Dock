@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSplits, applySplits, inspectReceipt, createReplacements, calculateKpi } from '../server/receiving.js';
+import { normalizeSplits, applySplits, inspectReceipt, createReplacements, calculateKpi, calculateOtifPercent, calculateShipmentOtif } from '../server/receiving.js';
 import { sapRows } from '../server/extensions.js';
 import { calculateOtifValues, sapColumns } from '../server/sap-postgres.js';
 const proposal = () => ({ id: 1, supplierId: 7, supplier: 'Supplier', scheduledDate: '2026-09-06', scheduledTime: '09:00', gateInAt: '2026-09-06T01:00:00Z', bookingStatus: 'APPROVED', items: [{ id: 1, materialCode: 'A', materialName: 'Internal name', quantity: 60, uom: 'KG' }, { id: 2, materialCode: 'B', quantity: 5, uom: 'PC' }] });
@@ -28,6 +28,7 @@ test('inspection records an on-time partial receipt and creates only shortage qu
   const s = proposal();
   s.receipt = inspectReceipt(s, { outcome: 'NOT_IN_FULL', items: [{ itemId: 1, acceptedQuantity: 40, reason: 'Quality rejected', date: '2026-09-08', time: '11:00' }, { itemId: 2, acceptedQuantity: 5 }] });
   assert.equal(s.receipt.onTime, true); assert.equal(s.receipt.inFull, false); assert.equal(s.receipt.otif, false);
+  assert.equal(s.receipt.items[0].otifPercent, 66.67); assert.equal(s.receipt.otifPercent, 69.23);
   const state = { shipments: [s] }; const replacements = createReplacements(state, s, nextId, nextCode);
   assert.equal(replacements.length, 1); assert.equal(replacements[0].items[0].quantity, 20);
   assert.equal(replacements[0].replacementForId, 1); assert.equal(replacements[0].bookingStatus, 'PENDING_SUPPLIER');
@@ -46,8 +47,18 @@ test('SAP uses DR quantities, leaves actual received blank, and preserves saved 
   const s = proposal(); s.receipt = { items: [{ itemId: 1, acceptedQuantity: 40 }] };
   const state = { shipments: [s], sapRows: { '1:1': { revision: 1, values: { matdoc: '001234' } } } };
   const row = sapRows(state)[0]; assert.equal(row.values.quantity, 60); assert.equal(row.values.matdoc, '001234'); assert.equal(row.values.breakdown, ''); assert.equal(row.values.description, 'Internal name');
-  assert.deepEqual(calculateOtifValues(true, 60, 60), { onTime: 'Yes', inFull: 'Yes', otif: 'Yes' });
-  assert.deepEqual(calculateOtifValues(false, 60, 60), { onTime: 'No', inFull: 'Yes', otif: 'No' });
-  assert.deepEqual(calculateOtifValues(true, 60, ''), { onTime: 'Yes', inFull: '', otif: '' });
+  assert.deepEqual(calculateOtifValues(true, 60, 60), { onTime: 'Yes', inFull: 'Yes', otif: 'Yes', otifPercent: 100 });
+  assert.deepEqual(calculateOtifValues(false, 60, 60), { onTime: 'No', inFull: 'Yes', otif: 'No', otifPercent: 0 });
+  assert.deepEqual(calculateOtifValues(true, 60, ''), { onTime: 'Yes', inFull: '', otif: '', otifPercent: '' });
   assert.deepEqual(sapColumns.filter(column => ['onTime','inFull','otif'].includes(column[0])).map(column => column[1]), ['ON TIME','IN FULL','OTIF']);
+});
+test('OTIF percentage is zero when late and quantity-weighted when on time', () => {
+  assert.equal(calculateOtifPercent(false, 100, 100), 0);
+  assert.equal(calculateOtifPercent(true, 100, 75), 75);
+  assert.equal(calculateOtifPercent(true, 100, 120), 100);
+  assert.equal(calculateOtifPercent(true, 0, 0), null);
+  const shipment = proposal();
+  shipment.items[0].actualReceived = 30;
+  shipment.items[1].actualReceived = 5;
+  assert.deepEqual(calculateShipmentOtif(shipment), { onTime: true, otifPercent: 53.85 });
 });

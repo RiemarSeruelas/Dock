@@ -2240,3 +2240,197 @@ input[type=checkbox],input[type=radio] { width:16px; height:16px; min-height:16p
   .metric-card span,.overview-page .metric-card > div > span { font-size:7.5px; }
   .metric-card strong,.overview-page .metric-card strong { font-size:19px; }
 }
+
+/* Document revision: dense mobile operations without a duplicate bottom nav. */
+.area-label-short,.sap-tools-toggle { display:none; }
+.clearance-otif-preview { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; padding:9px 0; }
+.clearance-otif-preview > span { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:var(--surface-2); font-size:9px; }
+.clearance-otif-preview b { color:var(--blue-600); font-size:11px; }
+
+@media(max-width:720px) {
+  .page-content { padding:10px 9px 18px; }
+  .page-stack { gap:8px; }
+  .hero-row { gap:6px; }
+  .hero-row h1,.overview-page .hero-row h1 { margin:2px 0 0; font-size:clamp(20px,6vw,25px); }
+  .eyebrow { font-size:7px; white-space:nowrap; }
+  .panel { border-radius:12px; }
+
+  /* The left navigation is the sole mobile navigation and remains compact. */
+  .sidebar,.sidebar.collapsed { width:82px; padding:10px 8px 8px; }
+  .sidebar-top,.sidebar.collapsed .sidebar-top { position:static; min-height:45px; justify-content:center; margin:0; padding:0 0 8px; }
+  .sidebar .brand-lockup,.sidebar.collapsed .brand-lockup { display:none; }
+  .sidebar .mobile-close { position:static; width:36px; height:36px; color:#c7d3e1; border-color:rgba(255,255,255,.15); background:rgba(255,255,255,.06); }
+  .sidebar nav,.sidebar.collapsed nav { gap:3px; margin:0; }
+  .sidebar nav button,.sidebar.collapsed nav button { min-height:45px; justify-content:center; padding:5px; border-radius:9px; }
+  .sidebar nav button > span { width:34px; height:34px; }
+  .sidebar nav button div,.sidebar.collapsed nav button div,.sidebar-subnav { display:none!important; }
+  .sidebar-user,.sidebar.collapsed .sidebar-user { justify-content:center; padding:8px 0 0; }
+  .sidebar-user > .user-avatar,.sidebar-user > div { display:none!important; }
+  .sidebar-user button { width:38px; height:38px; border-radius:9px; color:#d4deea; background:rgba(255,255,255,.06); }
+  .nav-scrim { background:rgba(3,13,27,.48); backdrop-filter:blur(3px); }
+
+  .area-label-long { display:none; }
+  .area-label-short { display:inline; }
+  .area-toggle { width:auto!important; min-width:70px; }
+  .area-toggle button { min-width:34px; padding:0 10px!important; }
+
+  /* Overview: one-row KPIs and a smaller live receiving board. */
+  .overview-page .hero-row { grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:6px; }
+  .overview-page .hero-actions { width:auto; display:block; }
+  .overview-page .hero-row h1 { font-size:24px; white-space:normal; }
+  .overview-page .metrics-grid { grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+  .overview-page .metric-card { min-height:58px; display:block; padding:7px 5px; }
+  .overview-page .metric-icon,.overview-page .metric-card p,.overview-page .metric-card em { display:none!important; }
+  .overview-page .metric-card span { min-height:18px; display:block; font-size:6px; line-height:1.05; }
+  .overview-page .metric-card strong { display:block; margin-top:2px; font-size:17px; }
+  .overview-page .dashboard-grid { gap:7px; }
+  .overview-page .panel-head { min-height:42px; padding:8px 9px; }
+  .overview-page .panel-head h2 { font-size:12px; }
+  .overview-page .dock-lanes { grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; padding:6px; }
+  .overview-page .dock-lane { min-width:0; padding:6px; }
+  .overview-page .dock-name { margin-bottom:5px; }
+  .overview-page .dock-name span { overflow:hidden; font-size:7px; text-overflow:ellipsis; white-space:nowrap; }
+  .overview-page .dock-name em { padding:2px 4px; font-size:5px; }
+  .overview-page .dock-vehicle-visual { min-height:70px; margin-bottom:5px; }
+  .overview-page .dock-vehicle-visual .parked-truck { width:55px; height:66px; }
+  .overview-page .dock-vehicle-visual .empty-lane { padding:4px; }
+  .overview-page .dock-vehicle-visual .empty-lane svg { width:15px; }
+  .overview-page .dock-vehicle-visual .empty-lane b { font-size:7px; }
+  .overview-page .dock-vehicle-visual .empty-lane small,.overview-page .dock-vehicle-visual i { display:none; }
+  .overview-page .dock-shipment .truck-tile { display:none; }
+  .overview-page .dock-shipment strong { font-size:7px; }
+  .overview-page .dock-shipment span,.overview-page .dock-shipment small { font-size:6px; }
+
+  /* Monitoring: all statuses and all filter controls fit without side scrolling. */
+  .monitoring-page > .hero-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; }
+  .monitoring-page > .hero-row .hero-actions { width:auto; display:grid; grid-template-columns:auto 27px; gap:4px; }
+  .monitoring-page > .hero-row .area-toggle,.monitoring-page > .hero-row .area-scope-chip { grid-column:1 / -1; width:auto; }
+  .monitoring-page > .hero-row .operation-live { display:none; }
+  .monitoring-page > .hero-row .fullscreen-trigger { width:27px; height:27px; }
+  .monitor-status-strip { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:4px; padding:0; overflow:visible; }
+  .monitor-status-strip > button { min-width:0; min-height:39px; display:grid; justify-items:center; gap:2px; padding:4px 2px; }
+  .monitor-status-strip > button b { font-size:10px; }
+  .monitor-status-strip .status-pill { max-width:100%; gap:2px; padding:2px 3px; overflow:hidden; font-size:5px; text-overflow:ellipsis; white-space:nowrap; }
+  .monitor-status-strip .status-pill > span { display:none; }
+  .monitor-toolbar { grid-template-columns:minmax(0,1fr) minmax(135px,.65fr); gap:5px; padding:6px; }
+  .monitor-toolbar .search-box { min-height:34px; }
+  .monitor-toolbar .search-box input { min-height:32px; font-size:9px; }
+  .monitor-date-system { grid-template-columns:48px minmax(0,1fr); gap:4px; }
+  .monitor-date-system .see-all-button { min-height:34px; padding:0 4px; font-size:7px; }
+  .monitor-grid { gap:5px; padding:6px; }
+  .monitor-delivery-card { padding:7px; }
+  .feature-empty,.empty-state { min-height:110px; padding:14px; }
+
+  /* The fullscreen monitor keeps the road/truck system and shows all docks together. */
+  .monitoring-page.tv-mode .monitor-tv-layout { display:block; padding:0 5px 5px; }
+  .monitor-tv-dock-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; padding:5px; overflow:visible; }
+  .monitor-tv-lane { min-width:0; width:auto; gap:4px; padding:5px; }
+  .monitor-tv-lane-head { display:grid; gap:2px; }
+  .monitor-tv-lane-head b { overflow:hidden; font-size:6px; text-overflow:ellipsis; white-space:nowrap; }
+  .monitor-tv-lane-head em { width:max-content; padding:2px 3px; font-size:5px; }
+  .monitor-tv-road.dock-vehicle-visual { min-height:74px; display:grid; margin:0; }
+  .monitor-tv-road.dock-vehicle-visual .parked-truck { display:block; width:61px; height:70px; }
+  .monitor-tv-road.dock-vehicle-visual .empty-lane { padding:3px; }
+  .monitor-tv-road.dock-vehicle-visual .empty-lane svg { width:16px; }
+  .monitor-tv-road.dock-vehicle-visual .empty-lane b { font-size:6px; }
+  .monitor-tv-road.dock-vehicle-visual .empty-lane small,.monitor-tv-road.dock-vehicle-visual i { display:none; }
+  .monitor-tv-lane > .monitor-tv-shipment { grid-template-columns:minmax(0,1fr); gap:2px; padding:4px; }
+  .monitor-tv-lane > .monitor-tv-shipment .status-pill,.monitor-tv-lane > .monitor-tv-shipment > svg { display:none; }
+  .monitor-tv-open-lane { min-height:27px; flex-direction:row; align-items:center; }
+  .monitor-tv-open-lane svg { width:13px; }
+  .monitor-tv-open-lane b { font-size:6px; }
+  .monitor-tv-open-lane small { display:none; }
+
+  /* Schedule: compact command row and a true seven-day mobile week. */
+  .schedule-page > .hero-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; }
+  .schedule-page > .hero-row .schedule-hero-actions { display:contents; }
+  .schedule-page > .hero-row .schedule-hero-actions .area-toggle,.schedule-page > .hero-row .schedule-hero-actions .area-scope-chip { grid-column:2; grid-row:1; width:auto; align-self:end; }
+  .schedule-page > .hero-row .schedule-hero-actions > .button { grid-row:2; min-height:31px; padding:0 7px; font-size:7px; }
+  .schedule-page > .hero-row .schedule-hero-actions > .button:nth-of-type(1) { grid-column:1; }
+  .schedule-page > .hero-row .schedule-hero-actions > .button:nth-of-type(2) { grid-column:2; }
+  .schedule-page > .hero-row .schedule-hero-actions > .button:nth-of-type(3) { grid-column:3; }
+  .schedule-section-panel > .schedule-board-head { gap:5px; padding:7px; }
+  .schedule-section-panel .schedule-view-controls,.schedule-command-bar { width:100%; display:grid!important; grid-template-columns:minmax(74px,.7fr) minmax(92px,1fr) 62px minmax(122px,1.15fr); gap:4px; }
+  .schedule-command-bar .approved-delivery-count { grid-column:auto; min-height:31px; padding:0 5px; font-size:6px; }
+  .schedule-command-bar > .sds-workflow-panel,.schedule-command-bar > .policy-chip { grid-column:auto; min-width:0; }
+  .view-toggle { width:62px; }
+  .view-toggle button { min-height:31px; padding:0 4px; font-size:7px; }
+  .date-stepper > button { width:25px; height:31px; }
+  .custom-date-trigger { min-height:31px; padding:3px; }
+  .custom-date-trigger b { font-size:7px; }
+  .schedule-timeline-viewport { max-height:370px; margin:0 4px 5px; overflow-x:hidden; }
+  .schedule-timeline-viewport .schedule-timeline.mode-week { width:100%; min-width:0; grid-template-columns:28px repeat(7,minmax(0,1fr)); }
+  .schedule-timeline-viewport .schedule-timeline { grid-template-rows:29px 560px; }
+  .schedule-day-head { min-width:0; padding:3px 0; }
+  .schedule-day-head small { font-size:5px; }
+  .schedule-day-head b { font-size:7px; }
+  .schedule-time-axis span { right:2px; font-size:5px; }
+  .schedule-entry { min-width:0; padding:2px; border-radius:3px; }
+  .schedule-entry b { font-size:5px; }
+  .schedule-entry small,.schedule-entry .schedule-edit-badge { display:none; }
+
+  /* Dense filters: one row on mobile as requested. */
+  .history-filter-panel.compact,.clearance-filter-grid { display:grid; grid-template-columns:minmax(88px,1.4fr) repeat(4,minmax(49px,.72fr)) 42px; gap:3px; padding:5px; }
+  .history-filter-panel.compact .history-search,.clearance-filter-grid .clearance-search { grid-column:auto; min-height:31px; }
+  .history-filter-panel.compact > label:not(.search-box),.clearance-filter-grid > label { gap:2px; font-size:5px; }
+  .history-filter-panel.compact input,.history-filter-panel.compact select,.clearance-filter-grid input,.clearance-filter-grid select,.clearance-filter-grid .search-box { min-height:31px; height:31px; padding:3px 4px; font-size:7px; }
+  .history-filter-panel.compact .button,.clearance-reset { grid-column:auto; width:42px; min-height:31px; height:31px; padding:0; overflow:hidden; font-size:0; }
+  .history-filter-panel.compact .button::after,.clearance-reset::after { content:"Clear"; font-size:6px; }
+  .history-panel .feature-empty { min-height:125px; }
+  .clearance-otif-preview { gap:4px; padding:5px 0; }
+  .clearance-otif-preview > span { padding:5px; font-size:6px; }
+  .clearance-otif-preview b { font-size:7px; }
+
+  /* Reports: controls and all five KPIs stay in single rows. */
+  .reports-page .hero-row { gap:5px; }
+  .reports-page .report-controls { display:grid; grid-template-columns:minmax(78px,.8fr) minmax(68px,.7fr) minmax(92px,1fr) minmax(96px,1fr); gap:3px; padding:0!important; border:0; border-radius:0; background:transparent; box-shadow:none; }
+  .reports-page .report-controls input,.reports-page .report-controls select { min-height:31px; height:31px; padding:3px 5px; font-size:7px; }
+  .reports-page .report-controls label { gap:2px; font-size:5px; }
+  .reports-page .report-controls .button { min-height:31px; padding:0 5px; font-size:6px; }
+  .reports-page .report-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px!important; }
+  .reports-page .report-metrics .metric-card,.reports-page .report-metrics .metric-card:last-child { grid-column:auto; min-height:67px; display:block; padding:6px 4px; }
+  .reports-page .metric-card .metric-icon,.reports-page .metric-card p { display:none!important; }
+  .reports-page .metric-card span { display:block; min-height:20px; font-size:5.5px; line-height:1.05; }
+  .reports-page .metric-card strong { font-size:16px; }
+  .report-performance-panel { margin-inline:4px; }
+  .report-performance-panel .panel-head { min-height:40px; padding:7px; }
+
+  /* SAP analyst: compact one-line controls and a mobile tools dropdown. */
+  .sap-page > .hero-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; }
+  .sap-page > .hero-row .sap-actions { width:auto; display:flex; gap:3px; padding:0; overflow:visible; }
+  .sap-page > .hero-row .sap-actions .button:not(.primary) { display:none; }
+  .sap-page > .hero-row .sap-actions .button { min-height:31px; padding:0 6px; font-size:6px; }
+  .sap-page > .hero-row .area-toggle { min-width:70px; }
+  .sap-search-row { grid-template-columns:minmax(0,1fr) minmax(130px,.65fr); gap:4px; padding:5px; }
+  .sap-search-row .sap-search-field { gap:2px; font-size:5px; }
+  .sap-search-row input { min-height:31px; height:31px; padding:3px 5px; font-size:7px; }
+  .sap-search-meta { grid-template-columns:1fr 1fr; gap:3px; }
+  .sap-sort-button,.sap-column-filter summary { min-height:31px; height:31px; padding:0 4px; font-size:6px; }
+  .sap-tools-toggle { display:flex; width:100%; min-height:32px; justify-content:space-between; }
+  .sap-toolbar { display:none; }
+  .sap-toolbar.mobile-open { display:flex; max-height:190px; overflow:auto; }
+  .sap-scroll { max-height:calc(100dvh - 245px); }
+
+  /* Ecosystem and administration receive phone-safe side padding and compact cards. */
+  .ecosystem-page,.admin-page { padding-inline:3px; }
+  .ecosystem-request-layout { gap:6px; }
+  .catalog-row { padding:7px 8px; }
+  .request-details { gap:6px; padding:9px; }
+  .admin-panel > .toolbar { padding:6px; }
+  .admin-account-group > header { padding:7px 8px 3px; }
+  .admin-role-groups { gap:5px; padding:5px 6px 7px; }
+  .admin-panel .user-cards,.admin-role-group .user-cards { grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; padding:5px 0; }
+  .admin-panel .user-card { min-width:0; grid-template-columns:27px minmax(0,1fr); gap:5px; padding:7px; }
+  .admin-panel .user-card .user-avatar { width:27px; height:27px; }
+  .admin-panel .user-card > div strong { font-size:8px; }
+  .admin-panel .user-card > div small { font-size:6px; }
+  .admin-panel .user-card .role-chip { grid-column:1 / -1; font-size:6px; }
+  .admin-panel .user-card .account-actions { grid-column:1 / -1; grid-row:auto; flex-direction:row; justify-content:flex-end; }
+  .admin-panel .user-card .icon-button { width:25px; height:25px; }
+}
+
+@media(max-width:390px) {
+  .overview-page .metric-card span,.reports-page .metric-card span { font-size:5px; }
+  .monitor-status-strip .status-pill { font-size:4.5px; }
+  .history-filter-panel.compact,.clearance-filter-grid { grid-template-columns:minmax(76px,1.3fr) repeat(4,minmax(43px,.7fr)) 37px; }
+}

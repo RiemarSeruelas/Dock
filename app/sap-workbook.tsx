@@ -96,6 +96,7 @@ export function SapPage({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const rowsRef = useRef(rows);
   const dirtyRef = useRef(dirty);
   const offsetRef = useRef(0);
@@ -449,8 +450,8 @@ export function SapPage({ token }: { token: string }) {
       <div><span className="eyebrow">Receiving Records</span><h1>SAPAnalyst {area === "DRESSINGS" ? "Dressings" : "Savoury"}</h1></div>
       <div className="sap-actions">
         <div className="area-toggle" aria-label="SAP database area">
-          <button type="button" className={area === "DRESSINGS" ? "active" : ""} disabled={Boolean(dirty.length)} onClick={() => changeArea("DRESSINGS")}>Dressings</button>
-          <button type="button" className={area === "SAVOURY" ? "active" : ""} disabled={Boolean(dirty.length)} onClick={() => changeArea("SAVOURY")}>Savoury</button>
+          <button type="button" aria-label="Dressings" className={area === "DRESSINGS" ? "active" : ""} disabled={Boolean(dirty.length)} onClick={() => changeArea("DRESSINGS")}><span className="area-label-long">Dressings</span><span className="area-label-short" aria-hidden="true">D</span></button>
+          <button type="button" aria-label="Savoury" className={area === "SAVOURY" ? "active" : ""} disabled={Boolean(dirty.length)} onClick={() => changeArea("SAVOURY")}><span className="area-label-long">Savoury</span><span className="area-label-short" aria-hidden="true">S</span></button>
         </div>
         {editable.includes("item") && <button className="button primary" disabled={busy || !available} onClick={() => void addRow()}>+ Add row</button>}
         <button className="button secondary" disabled={busy} onClick={() => void fetchRows(false, query)}>Refresh</button>
@@ -468,7 +469,8 @@ export function SapPage({ token }: { token: string }) {
         </details>
       </div>
     </div>
-    <div className="sap-toolbar" aria-label="Worksheet formatting and editing">
+    <button type="button" className="button secondary sap-tools-toggle" aria-expanded={toolsOpen} onClick={() => setToolsOpen((value) => !value)}>Worksheet tools <span aria-hidden="true">{toolsOpen ? "▲" : "▼"}</span></button>
+    <div className={`sap-toolbar ${toolsOpen ? "mobile-open" : ""}`} aria-label="Worksheet formatting and editing">
       <div className="sap-tool-group">
         <button onClick={undo} title="Undo">↶</button><button onClick={redo} title="Redo">↷</button>
       </div>

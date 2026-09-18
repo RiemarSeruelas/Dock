@@ -127,7 +127,7 @@ export interface Shipment {
   quantityAllocations?: QuantityAllocation[];
   proposedTrucks?: {truckPlate:string;driverName:string;driverPhone:string;helper1Name?:string;helper2Name?:string;poNumber:string;drNumber:string;itemIds:number[];itemQuantities?:{itemId:number;quantity:number}[];itemBatches?:{itemId:number;batches:ShipmentBatch[]}[]}[];
   changeReason?: string;
-  receipt?: { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; inFull: boolean; onTime: boolean | null; otif: boolean | null; items: { itemId: number; materialCode: string; uom: string; acceptedQuantity: number; remainingQuantity: number; date?: string; time?: string; reason?: string }[] };
+  receipt?: { outcome: "FULL" | "NOT_IN_FULL" | "NOT_OTIF"; reason?: string; inFull: boolean; onTime: boolean | null; otif: boolean | null; otifPercent?: number | null; items: { itemId: number; materialCode: string; uom: string; expectedQuantity?: number; acceptedQuantity: number; remainingQuantity: number; otifPercent?: number | null; date?: string; time?: string; reason?: string }[] };
   arrivalClassification?: "ADVANCED" | "ON_TIME" | "LATE" | null;
   gateDecision?: "ACCEPTED" | "REJECTED" | null;
   gateDecisionAt?: string | null;

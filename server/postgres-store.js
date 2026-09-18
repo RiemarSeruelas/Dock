@@ -11,6 +11,7 @@ const COLLECTIONS = [
   ["importBatches", "import_batches"],
   ["ecosystemMaterials", "ecosystem_materials"],
   ["sapManualRows", "sap_manual_rows"],
+  ["aiAgentEvents", "ai_agent_events"],
 ];
 
 const SINGLETONS = ["version", "settings", "monthlyKpiSent", "sapRows"];

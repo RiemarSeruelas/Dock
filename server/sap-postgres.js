@@ -2,6 +2,7 @@ import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { clientAddress, inNetworks } from './client-network.js';
 import { fail } from './receiving.js';
+import { calculateOtifPercent } from './receiving.js';
 
 // key, worksheet heading, default width, PostgreSQL column, source section
 export const sapColumns = [
@@ -38,6 +39,7 @@ export const sapColumns = [
   ['onTime', 'ON TIME', 14, 'on_time', 'system'],
   ['inFull', 'IN FULL', 14, 'in_full', 'system'],
   ['otif', 'OTIF', 14, 'otif', 'system'],
+  ['otifPercent', 'OTIF %', 14, 'otif_percent', 'system'],
   ['palletCount', 'NO. OF PALLETS', 17, 'pallet_count', 'warehouse'],
   ['warehouseRemarks', 'WAREHOUSE REMARKS', 30, 'warehouse_remarks', 'warehouse'],
   ['startUnloading', 'START UNLOADING', 22, 'start_unloading', 'system'],
@@ -76,7 +78,8 @@ export function calculateOtifValues(onTime, quantity, actualReceived) {
   const hasQuantities = String(quantity ?? '').trim() !== '' && String(actualReceived ?? '').trim() !== '' && Number.isFinite(expected) && Number.isFinite(actual) && expected >= 0 && actual >= 0;
   const inFull = hasQuantities ? (actual >= expected ? 'Yes' : 'No') : '';
   const otif = scheduledResult && inFull ? (scheduledResult === 'Yes' && inFull === 'Yes' ? 'Yes' : 'No') : '';
-  return { onTime: scheduledResult, inFull, otif };
+  const otifPercent = calculateOtifPercent(onTime, quantity, actualReceived);
+  return { onTime: scheduledResult, inFull, otif, otifPercent: otifPercent === null ? '' : otifPercent };
 }
 
 const identifier = value => {
@@ -121,6 +124,7 @@ export function createSapRepository(area = 'DRESSINGS') {
   const numeric = column => `NULLIF(BTRIM(${identifier(column)}), '') ~ '^[0-9]+(?:\\.[0-9]+)?$'`;
   const inFullSql = `CASE WHEN ${numeric('quantity')} AND ${numeric('actual_received')} THEN CASE WHEN ${identifier('actual_received')}::numeric >= ${identifier('quantity')}::numeric THEN 'Yes' ELSE 'No' END ELSE '' END`;
   const otifSql = `CASE WHEN ${identifier('on_time')} IN ('Yes','No') AND ${numeric('quantity')} AND ${numeric('actual_received')} THEN CASE WHEN ${identifier('on_time')}='Yes' AND ${identifier('actual_received')}::numeric >= ${identifier('quantity')}::numeric THEN 'Yes' ELSE 'No' END ELSE '' END`;
+  const otifPercentSql = `CASE WHEN ${identifier('on_time')}='No' THEN '0' WHEN ${identifier('on_time')}='Yes' AND ${numeric('quantity')} AND ${numeric('actual_received')} AND ${identifier('quantity')}::numeric > 0 THEN ROUND(LEAST(100, ${identifier('actual_received')}::numeric / ${identifier('quantity')}::numeric * 100), 2)::text ELSE '' END`;
 
   const initialize = async () => {
     if (!pool) fail('SAP database is not configured', 503);
@@ -174,7 +178,7 @@ export function createSapRepository(area = 'DRESSINGS') {
           shipment_id=EXCLUDED.shipment_id,
           supplier=EXCLUDED.supplier,
           ${systemSyncFields.map(key => { const db = sapColumns.find(column => column[0] === key)[3]; return `${identifier(db)}=EXCLUDED.${identifier(db)}`; }).join(',\n')}`, [JSON.stringify(records)]);
-      await pool.query(`UPDATE ${table} SET ${identifier('in_full')}=${inFullSql}, ${identifier('otif')}=${otifSql} WHERE record_key=ANY($1::text[])`, [records.map(row => row.record_key)]);
+      await pool.query(`UPDATE ${table} SET ${identifier('in_full')}=${inFullSql}, ${identifier('otif')}=${otifSql}, ${identifier('otif_percent')}=${otifPercentSql} WHERE record_key=ANY($1::text[])`, [records.map(row => row.record_key)]);
       records.forEach(row => synced.set(row.record_key, fingerprints.get(row.record_key)));
     },
     async page(offset, limit, search = '', sort = 'desc') {

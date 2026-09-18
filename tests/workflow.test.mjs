@@ -64,7 +64,7 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   let serverOutput = "";
   const apiProcess = spawn(process.execPath, ["server/index.js"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, NODE_ENV: "test", SAP_STORAGE: "json", SAP_NETWORK_RESTRICTION_ENABLED: "false", SAP_ALLOWED_CIDRS: "127.0.0.1/32", API_RATE_LIMIT_MAX: "2000", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/blocked`, GEOCODING_FALLBACK_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
+    env: { ...process.env, NODE_ENV: "test", SAP_STORAGE: "json", SAP_NETWORK_RESTRICTION_ENABLED: "false", SAP_ALLOWED_CIDRS: "127.0.0.1/32", API_RATE_LIMIT_MAX: "2000", DB_ENABLED: "false", API_PORT: String(port), DATA_FILE: dataFile, UPLOAD_DIR: join(testDirectory, "uploads"), JWT_SECRET: "workflow-test-secret", AI_AGENT_WEBHOOK_SECRET: "workflow-agent-secret", APP_ORIGIN: "http://localhost:3000", TZ: "Asia/Manila", EMAIL_NOTIFICATIONS_ENABLED: "true", SMTP_USER: "dockflow.notifications@gmail.com", SMTP_APP_PASSWORD: "abcdefghijklmnop", GEOCODING_API_URL: `http://127.0.0.1:${etaPort}/blocked`, GEOCODING_FALLBACK_API_URL: `http://127.0.0.1:${etaPort}/search`, ROUTING_API_URL: `http://127.0.0.1:${etaPort}/route/v1/driving` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   apiProcess.stdout.on("data", (chunk) => { serverOutput += chunk; });
@@ -83,6 +83,14 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
     const result = contentType.includes("application/json") ? await response.json() : Buffer.from(await response.arrayBuffer());
     return { response, result };
   };
+  const agentEvent = { eventId: "agent-event-0001", eventType: "AGENT_HEARTBEAT", occurredAt: new Date().toISOString(), message: "Agent is available", data: { version: "1" } };
+  assert.equal((await call("/api/integrations/ai-agent/webhook", { method: "POST", body: agentEvent })).response.status, 401);
+  const acceptedAgentEvent = await call("/api/integrations/ai-agent/webhook", { method: "POST", body: agentEvent, headers: { Authorization: "Bearer workflow-agent-secret" } });
+  assert.equal(acceptedAgentEvent.response.status, 202);
+  assert.equal(acceptedAgentEvent.result.duplicate, false);
+  const duplicateAgentEvent = await call("/api/integrations/ai-agent/webhook", { method: "POST", body: agentEvent, headers: { Authorization: "Bearer workflow-agent-secret" } });
+  assert.equal(duplicateAgentEvent.response.status, 200);
+  assert.equal(duplicateAgentEvent.result.duplicate, true);
   const login = async (username, password) => {
     const { response, result } = await call("/api/auth/login", { method: "POST", body: { username, password } });
     assert.equal(response.status, 200);
@@ -545,7 +553,10 @@ test("SDS import, conflict review, supplier confirmation, and scan journey", asy
   const reportWorkbook = new ExcelJS.Workbook();
   await reportWorkbook.xlsx.load(report.result);
   assert.equal(reportWorkbook.getWorksheet("Deliveries").getCell("I4").value, "Delivery code");
+  assert.equal(reportWorkbook.getWorksheet("Deliveries").getCell("Q4").value, "Final DR OTIF %");
   assert.equal(reportWorkbook.getWorksheet("Material Codes").getCell("G4").value, "Material code");
+  assert.equal(reportWorkbook.getWorksheet("Material Codes").getCell("S4").value, "Material OTIF %");
+  assert.equal(reportWorkbook.getWorksheet("Material Codes").getCell("T4").value, "Final DR OTIF %");
   assert.ok(reportWorkbook.getWorksheet("Material Codes").getColumn("G").values.some((value) => /SDS-/.test(String(value || ""))));
 
   const missingEmail = await call("/api/users", { token: admin.token, method: "POST", body: { name: "No Email", username: "noemail", password: "password123", role: "supplier", supplierName: "No Email Supplier" } });

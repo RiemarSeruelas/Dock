@@ -15,7 +15,7 @@ type ReceivingArea = "DRESSINGS" | "SAVOURY";
 type EcosystemScope = "receiving" | "sending";
 const shipmentArea = (shipment: Shipment): ReceivingArea => shipment.items.some(item => /ecosystem/i.test(String(item.deliverySite || ""))) && shipment.originWorkArea === "SAVOURY" ? "SAVOURY" : shipment.items.some(item => /savou?r/i.test(String(item.deliverySite || ""))) ? "SAVOURY" : "DRESSINGS";
 function AreaToggle({ value, onChange }: { value: ReceivingArea; onChange: (value: ReceivingArea) => void }) {
-  return <div className="area-toggle" aria-label="Receiving area"><button type="button" className={value === "DRESSINGS" ? "active" : ""} onClick={() => onChange("DRESSINGS")}>Dressings</button><button type="button" className={value === "SAVOURY" ? "active" : ""} onClick={() => onChange("SAVOURY")}>Savoury</button></div>;
+  return <div className="area-toggle" aria-label="Receiving area"><button type="button" aria-label="Dressings" className={value === "DRESSINGS" ? "active" : ""} onClick={() => onChange("DRESSINGS")}><span className="area-label-long">Dressings</span><span className="area-label-short" aria-hidden="true">D</span></button><button type="button" aria-label="Savoury" className={value === "SAVOURY" ? "active" : ""} onClick={() => onChange("SAVOURY")}><span className="area-label-long">Savoury</span><span className="area-label-short" aria-hidden="true">S</span></button></div>;
 }
 
 const STATUS_META: Record<ShipmentStatus, { label: string; color: string }> = {
@@ -247,12 +247,6 @@ export function FlexibleSchedulePage({ data, user, area, canSwitchArea, ecosyste
   const [date, setDate] = useState(data.settings.availableDates.find((item) => item >= localDate()) || localDate());
   const [mode, setMode] = useState<"day" | "week">("week");
   const [editing, setEditing] = useState<Shipment | null>(null);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (window.matchMedia("(max-width: 720px)").matches) setMode("day");
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
   const canImport = ["admin", "planner", "production"].includes(user.role);
   const canManage = ["admin", "planner"].includes(user.role);
   const canReviewCompany = ["admin", "planner", "production"].includes(user.role);

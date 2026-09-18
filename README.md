@@ -75,8 +75,33 @@ The notification bell is in the top navigation. Opening an alert marks it read, 
 - Security records Gate in and Gate out. Early Gate In is allowed: more than 30 minutes early is Advanced, 30 minutes early through 15 minutes late is On Time, and anything later is Late.
 - Authorized Warehouse, the receiving Ecosystem, or Administrator records Unloading and Received.
 - Security or the receiving Ecosystem records Gate out only after Received. Gate out releases the dock and completes the journey.
-- Warehouse enters Actual Quantity Received in SAP Analysis. On Time, In Full, and OTIF are calculated there instead of during QR scanning.
+- Warehouse enters Actual Quantity Received in Clearance or SAP Analysis. DockFlow calculates material OTIF and the final delivery/DR OTIF automatically: a late delivery is `0%`; an on-time delivery is `min(100, actual received ÷ scheduled quantity × 100)`. The values are included in the receiving PDF and performance workbook.
 - Over HTTP, use QR photos, hardware scanners or manual codes. Live camera scanning requires HTTPS.
+
+## AI Agent webhook
+
+Set `AI_AGENT_WEBHOOK_SECRET` in the private `.env` file to a separate, long random value. The inbound endpoint is:
+
+```text
+POST /api/integrations/ai-agent/webhook
+Authorization: Bearer <AI_AGENT_WEBHOOK_SECRET>
+Content-Type: application/json
+```
+
+Example payload:
+
+```json
+{
+  "eventId": "agent-event-20260918-0001",
+  "eventType": "ETA_UPDATE",
+  "occurredAt": "2026-09-18T10:30:00Z",
+  "shipmentNumber": "SHP-20260918-001",
+  "message": "Traffic delay detected",
+  "data": { "delayMinutes": 12 }
+}
+```
+
+Allowed event types are `ETA_UPDATE`, `ROUTE_ALERT`, `DELIVERY_NOTE`, and `AGENT_HEARTBEAT`. Requests use constant-time bearer-secret verification, timestamp freshness checks, a 32 KB event-data limit, event-ID deduplication, audit logging, and a dedicated rate limit. The webhook records agent events but cannot directly change delivery workflow status. Administrators and planners can inspect the latest events through `GET /api/integrations/ai-agent/events` with their normal DockFlow access token.
 
 ## PostgreSQL storage
 

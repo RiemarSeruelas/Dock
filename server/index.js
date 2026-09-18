@@ -1,5 +1,5 @@
 import { normalizePhone } from "./booking.js";
-import { normalizeSplits, applySplits, classifyArrival, defaultScheduleEnd } from "./receiving.js";
+import { normalizeSplits, applySplits, calculateOtifPercent, calculateShipmentOtif, classifyArrival, defaultScheduleEnd } from "./receiving.js";
 import { registerExtensions } from "./extensions.js";
 import bcrypt from "bcryptjs";
 import cors from "cors";
@@ -11,7 +11,7 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, randomUUID, scryptSync } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { parseDeliveryWorkbook } from "./excel-import.js";
@@ -482,6 +482,7 @@ async function createInitialState() {
     audit: [],
     notifications: [],
     importBatches: [],
+    aiAgentEvents: [],
   };
 }
 
@@ -512,6 +513,7 @@ await store.update(async (state) => {
   state.audit = Array.isArray(state.audit) ? state.audit : [];
   state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
   state.importBatches = Array.isArray(state.importBatches) ? state.importBatches : [];
+  state.aiAgentEvents = Array.isArray(state.aiAgentEvents) ? state.aiAgentEvents : [];
   state.ecosystemMaterials = Array.isArray(state.ecosystemMaterials) ? state.ecosystemMaterials : [];
   state.users = Array.isArray(state.users) ? state.users : [];
   if (!state.users.length) state.users = (await createInitialState()).users;
@@ -770,7 +772,21 @@ const apiLimiter = rateLimit({ windowMs: Number(process.env.API_RATE_LIMIT_WINDO
 const loginLimiter = rateLimit({ windowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.LOGIN_RATE_LIMIT_MAX || 20), standardHeaders: "draft-8", legacyHeaders: false, keyGenerator: request => `${ipKeyGenerator(request.ip)}:${createHash("sha256").update(String(request.body?.username || "").trim().toLowerCase()).digest("hex").slice(0, 16)}`, skipSuccessfulRequests: true, handler: rateLimitHandler });
 const refreshLimiter = rateLimit({ windowMs: Number(process.env.REFRESH_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.REFRESH_RATE_LIMIT_MAX || 60), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
 const etaLimiter = rateLimit({ windowMs: Number(process.env.ETA_RATE_LIMIT_WINDOW_MS || 15 * 60000), limit: Number(process.env.ETA_RATE_LIMIT_MAX || 30), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
+const aiAgentLimiter = rateLimit({ windowMs: Number(process.env.AI_AGENT_WEBHOOK_RATE_LIMIT_WINDOW_MS || 60000), limit: Number(process.env.AI_AGENT_WEBHOOK_RATE_LIMIT_MAX || 30), standardHeaders: "draft-8", legacyHeaders: false, handler: rateLimitHandler });
 app.use("/api", apiLimiter);
+
+const secureSecretMatches = (provided, configured) => {
+  const expected = Buffer.from(String(configured || ""));
+  const actual = Buffer.from(String(provided || ""));
+  return expected.length > 0 && expected.length === actual.length && timingSafeEqual(expected, actual);
+};
+const aiAgentAuth = (request, response, next) => {
+  const configured = String(process.env.AI_AGENT_WEBHOOK_SECRET || "").trim();
+  if (!configured) return response.status(503).json({ message: "AI Agent webhook is not configured" });
+  const provided = String(request.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  if (!secureSecretMatches(provided, configured)) return response.status(401).json({ message: "Invalid AI Agent webhook credential" });
+  next();
+};
 
 const parseCookies = (request) => Object.fromEntries(String(request.headers.cookie || "").split(";").map((item) => item.trim()).filter(Boolean).map((item) => { const index = item.indexOf("="); return [decodeURIComponent(index >= 0 ? item.slice(0, index) : item), decodeURIComponent(index >= 0 ? item.slice(index + 1) : "")]; }));
 const refreshCookieOptions = { httpOnly: true, sameSite: "strict", secure: COOKIE_SECURE, path: "/api/auth", maxAge: REFRESH_TOKEN_DAYS * 86400000 };
@@ -873,6 +889,40 @@ app.post("/api/auth/logout", asyncRoute(async (request, response) => {
   }
   response.clearCookie(REFRESH_COOKIE, { ...refreshCookieOptions, maxAge: undefined });
   response.json({ ok: true });
+}));
+
+app.post("/api/integrations/ai-agent/webhook", aiAgentLimiter, aiAgentAuth, asyncRoute(async (request, response) => {
+  const body = request.body && typeof request.body === "object" && !Array.isArray(request.body) ? request.body : {};
+  const eventId = String(body.eventId || "").trim();
+  const eventType = String(body.eventType || "").trim().toUpperCase();
+  const occurredAt = String(body.occurredAt || "").trim();
+  const shipmentNumber = String(body.shipmentNumber || "").trim().slice(0, 120);
+  const message = String(body.message || "").trim().slice(0, 1000);
+  const allowedTypes = new Set(["ETA_UPDATE", "ROUTE_ALERT", "DELIVERY_NOTE", "AGENT_HEARTBEAT"]);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{7,119}$/.test(eventId)) return response.status(400).json({ message: "eventId must be 8-120 safe characters" });
+  if (!allowedTypes.has(eventType)) return response.status(400).json({ message: "Unsupported AI Agent event type" });
+  const eventTime = Date.parse(occurredAt);
+  const maxSkew = Math.max(30, Number(process.env.AI_AGENT_WEBHOOK_MAX_SKEW_SECONDS || 300)) * 1000;
+  if (!Number.isFinite(eventTime) || Math.abs(Date.now() - eventTime) > maxSkew) return response.status(400).json({ message: "occurredAt is outside the accepted time window" });
+  const data = body.data && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : {};
+  if (Buffer.byteLength(JSON.stringify(data), "utf8") > 32768) return response.status(413).json({ message: "AI Agent event data is too large" });
+  let duplicate = false;
+  await store.update((state) => {
+    state.aiAgentEvents ||= [];
+    duplicate = state.aiAgentEvents.some((event) => event.eventId === eventId);
+    if (duplicate) return;
+    const shipment = shipmentNumber ? state.shipments.find((row) => row.shipmentNumber === shipmentNumber) : null;
+    const event = { id: nextId(state.aiAgentEvents), eventId, eventType, occurredAt: new Date(eventTime).toISOString(), receivedAt: new Date().toISOString(), shipmentNumber: shipment?.shipmentNumber || shipmentNumber || null, message, data };
+    state.aiAgentEvents.unshift(event);
+    state.aiAgentEvents = state.aiAgentEvents.slice(0, 500);
+    addAudit(state, { name: "AI Agent" }, `AI_AGENT_${eventType}`, message || `Accepted ${eventType.toLowerCase().replaceAll("_", " ")}`, shipment?.shipmentNumber || shipmentNumber || undefined);
+  });
+  response.status(duplicate ? 200 : 202).json({ ok: true, duplicate, eventId });
+}));
+
+app.get("/api/integrations/ai-agent/events", auth, allow("admin", "planner"), asyncRoute(async (_request, response) => {
+  const state = await store.read();
+  response.json({ events: (state.aiAgentEvents || []).slice(0, 100) });
 }));
 
 app.get("/api/bootstrap", auth, asyncRoute(async (_request, response) => {
@@ -2140,30 +2190,32 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   summary.autoFilter = { from: "A7", to: `F${Math.max(7, summary.rowCount)}` };
 
   const details = workbook.addWorksheet("Deliveries", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  details.columns = [18, 18, 26, 16, 14, 16, 20, 18, 18, 17, 22, 20, 20, 22, 22].map((width) => ({ width }));
-  titleSheet(details, "Confirmed Deliveries", request.user.role === "supplier" ? `Generated ${generated}  •  Asia/Manila (GMT+8)` : `${selectedSupplier}  •  Generated ${generated}`, "O", 4);
-  const detailHeaders = ["Booking", "Shipment", "Supplier", "Entrance Date", "Entrance Time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Actual site time", "PO number", "DR number", "Helper 1", "Helper 2"];
+  details.columns = [18, 18, 26, 16, 14, 16, 20, 18, 18, 17, 22, 20, 20, 22, 22, 12, 14].map((width) => ({ width }));
+  titleSheet(details, "Confirmed Deliveries", request.user.role === "supplier" ? `Generated ${generated}  •  Asia/Manila (GMT+8)` : `${selectedSupplier}  •  Generated ${generated}`, "Q", 4);
+  const detailHeaders = ["Booking", "Shipment", "Supplier", "Entrance Date", "Entrance Time", "Truck plate", "Driver", "Phone", "Delivery code", "Current status", "Actual site time", "PO number", "DR number", "Helper 1", "Helper 2", "On time", "Final DR OTIF %"];
   const detailHeader = details.getRow(4);
   detailHeaders.forEach((value, index) => { detailHeader.getCell(index + 1).value = value; });
   detailHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
   detailHeader.height = 28;
   shipments.sort((a, b) => `${a.scheduledDate}${a.scheduledTime}`.localeCompare(`${b.scheduledDate}${b.scheduledTime}`)).forEach((shipment, index) => {
     const entrance = gateParts(shipment.gateInAt);
+    const deliveryOtif = calculateShipmentOtif(shipment);
     const output = details.addRow([
       shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time,
-      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), durationText(duration(shipment.gateInAt, shipment.gateOutAt)), shipment.items.map(item => item.poNumber).filter(Boolean).join(", ") || shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "",
+      shipment.truckPlate, shipment.driverName, shipment.driverPhone || "—", shipment.deliveryCode || "—", shipment.status.replaceAll("_", " "), durationText(duration(shipment.gateInAt, shipment.gateOutAt)), shipment.items.map(item => item.poNumber).filter(Boolean).join(", ") || shipment.poNumber || "", shipment.drNumber || "", shipment.helper1Name || "", shipment.helper2Name || "", deliveryOtif.onTime === null ? "Pending" : deliveryOtif.onTime ? "Yes" : "No", deliveryOtif.otifPercent ?? "",
     ]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 9, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "top", wrapText: true }; if (index % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(10).font = { name: "Aptos", size: 9, bold: true, color: { argb: ["GATE_OUT", "RECEIVED"].includes(shipment.status) ? "08766B" : blue } };
     output.height = 28;
   });
   details.getColumn(8).numFmt = "@";
-  details.autoFilter = { from: "A4", to: `O${Math.max(4, details.rowCount)}` };
+  details.getColumn(17).numFmt = "0.00\"%\"";
+  details.autoFilter = { from: "A4", to: `Q${Math.max(4, details.rowCount)}` };
 
   const materials = workbook.addWorksheet("Material Codes", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .25, right: .25, top: .5, bottom: .5, header: .2, footer: .2 } } });
-  materials.columns = [18, 18, 25, 16, 14, 18, 22, 32, 14, 15, 18, 18, 18, 18, 18, 18, 16].map((width) => ({ width }));
-  titleSheet(materials, "Material Code Allocation", request.user.role === "supplier" ? `Generated ${generated}  •  One row per material` : `${selectedSupplier}  •  One row per material`, "Q", 4);
-  const materialHeaders = ["Booking", "Shipment", "Supplier", "Entrance Date", "Entrance Time", "Truck plate", "Material code", "Description", "Scheduled quantity", "UOM", "Actual received", "PO number", "Breakdown", "Manufacturing date", "Expiration date", "Material doc", "Supplier dock"];
+  materials.columns = [18, 18, 25, 16, 14, 18, 22, 32, 14, 15, 18, 18, 18, 18, 18, 18, 16, 12, 15, 15].map((width) => ({ width }));
+  titleSheet(materials, "Material Code Allocation", request.user.role === "supplier" ? `Generated ${generated}  •  One row per material` : `${selectedSupplier}  •  One row per material`, "T", 4);
+  const materialHeaders = ["Booking", "Shipment", "Supplier", "Entrance Date", "Entrance Time", "Truck plate", "Material code", "Description", "Scheduled quantity", "UOM", "Actual received", "PO number", "Breakdown", "Manufacturing date", "Expiration date", "Material doc", "Supplier dock", "On time", "Material OTIF %", "Final DR OTIF %"];
   const materialHeader = materials.getRow(4);
   materialHeaders.forEach((value, index) => { materialHeader.getCell(index + 1).value = value; });
   materialHeader.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; });
@@ -2173,7 +2225,9 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
     const entrance = gateParts(shipment.gateInAt);
     const need = Number(item.quantity || 0);
     const actualReceived = item.actualReceived ?? shipment.receipt?.items.find(row => Number(row.itemId) === Number(item.id))?.acceptedQuantity ?? "";
-    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time, shipment.truckPlate, item.materialCode, item.materialName || "", need, item.uom || "—", actualReceived, item.poNumber || shipment.poNumber || "", item.breakdown || "", item.productionDate || "", item.expiryDate || "", item.matdoc || "", item.supplierDock || item.deliverySite || ""]);
+    const deliveryOtif = calculateShipmentOtif(shipment);
+    const materialOtif = calculateOtifPercent(deliveryOtif.onTime, need, actualReceived);
+    const output = materials.addRow([shipment.bookingReceipt, shipment.shipmentNumber, shipment.supplier, entrance.date, entrance.time, shipment.truckPlate, item.materialCode, item.materialName || "", need, item.uom || "—", actualReceived, item.poNumber || shipment.poNumber || "", item.breakdown || "", item.productionDate || "", item.expiryDate || "", item.matdoc || "", item.supplierDock || item.deliverySite || "", deliveryOtif.onTime === null ? "Pending" : deliveryOtif.onTime ? "Yes" : "No", materialOtif ?? "", deliveryOtif.otifPercent ?? ""]);
     output.eachCell((cell) => { cell.font = { name: "Aptos", size: 10, color: { argb: ink } }; cell.border = thinBorder; cell.alignment = { vertical: "middle", wrapText: true }; if (materialIndex % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F7F9FC" } }; });
     output.getCell(7).font = { name: "Aptos", size: 10, bold: true, color: { argb: blue } };
     output.height = 25;
@@ -2182,7 +2236,9 @@ app.get("/api/reports/export.xlsx", auth, allow("admin", "planner", "production"
   materials.getColumn(7).numFmt = "@";
   materials.getColumn(9).numFmt = "#,##0.00";
   materials.getColumn(11).numFmt = "#,##0.00";
-  materials.autoFilter = { from: "A4", to: `Q${Math.max(4, materials.rowCount)}` };
+  materials.getColumn(19).numFmt = "0.00\"%\"";
+  materials.getColumn(20).numFmt = "0.00\"%\"";
+  materials.autoFilter = { from: "A4", to: `T${Math.max(4, materials.rowCount)}` };
 
   workbook.removeWorksheet(summary.id);
 

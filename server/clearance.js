@@ -1,10 +1,20 @@
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
-import { fail } from './receiving.js';
+import { calculateOtifPercent, classifyArrival, fail, roundQuantity } from './receiving.js';
 import { batchRecordKey, distributeActualReceived, storedBatchRows } from './delivery-batches.js';
 const template = fileURLToPath(new URL('./assets/inbound-clearance.png', import.meta.url));
 const when = value => value ? new Intl.DateTimeFormat('en-PH',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Manila'}).format(new Date(value)) : '';
 export const clearanceFields = ['helperCount','mode','truckType','palletCount','actualReceived','actualUom','remarks','qaSample','vacuum','qaStart','qaEnd','disposition','receivingController','inventoryController','clearedBy','materialType'];
+const calculateClearanceOtif = (shipment, records) => {
+  const classification = classifyArrival(shipment.scheduledDate, shipment.scheduledTime, shipment.gateInAt);
+  const onTime = classification ? classification !== 'LATE' : null;
+  const decorated = records.map(record => ({ ...record, onTime, otifPercent: calculateOtifPercent(onTime, record.quantity, record.actualReceived) }));
+  const complete = decorated.length > 0 && decorated.every(record => String(record.actualReceived ?? '').trim() !== '' && Number.isFinite(Number(record.actualReceived)) && Number(record.actualReceived) >= 0);
+  const expected = decorated.reduce((sum, record) => sum + Number(record.quantity || 0), 0);
+  const actual = decorated.reduce((sum, record) => sum + Number(record.actualReceived || 0), 0);
+  const finalOtifPercent = onTime === false ? 0 : complete ? calculateOtifPercent(onTime, expected, actual) : null;
+  return { records: decorated.map(record => ({ ...record, finalOtifPercent })), onTime, finalOtifPercent };
+};
 export function clearanceData(shipment, item, sapValues = {}, manual = {}) {
   return { supplier:sapValues.supplierName || shipment.supplier,date:when(shipment.gateInAt).split(',')[0] || shipment.scheduledDate,materialType:item.materialType || '',truckPlate:sapValues.plateNumber || shipment.truckPlate,arrival:sapValues.gateIn || when(shipment.gateInAt),driver:sapValues.driverName || shipment.driverName,dr:sapValues.drNumber || shipment.drNumber || item.dnNumber || '',helperCount:sapValues.helperCount ?? ([shipment.helper1Name,shipment.helper2Name].filter(Boolean).length || ''),code:item.materialCode,description:sapValues.description || item.materialName || '',quantity:sapValues.quantity ?? item.quantity,uom:sapValues.uom || item.uom,actualReceived:sapValues.actualReceived !== undefined && sapValues.actualReceived !== '' ? sapValues.actualReceived : (shipment.receipt?.items.find(row=>row.itemId===item.id)?.acceptedQuantity ?? ''),actualUom:item.uom,po:sapValues.poNumber || shipment.poNumber || item.poNumber || '',lot:sapValues.supplierLot || '',batch:sapValues.batch || item.batchNumber || '',truckType:sapValues.truckType || '',palletCount:sapValues.palletCount || '',remarks:sapValues.warehouseRemarks || '',start:sapValues.startUnloading || when(shipment.unloadingAt),end:sapValues.endUnloading || when(shipment.gateOutAt || shipment.receivedAt),departure:sapValues.gateOut || when(shipment.gateOutAt),qaStart:sapValues.qaStart || '',qaEnd:sapValues.qaEnd || '',disposition:sapValues.qaDisposition || '',receivingController:sapValues.receivingController || '',inventoryController:sapValues.inventoryController || '',...manual };
 }
@@ -28,7 +38,7 @@ export function makeClearancePdf(shipment, records) {
       text(record.code,393,410,405,35);text(record.description,393,464,405,42);
       text(record.quantity,393,530,157);text(record.uom,560,530,82);text(record.palletCount,728,530,75);
       text(record.actualReceived,393,572,155);text(record.actualUom,560,572,70);text(record.po,707,572,136);
-      text(record.lot,285,615,245);text(record.batch,626,615,215);text(record.remarks,201,670,640,20);
+      text(record.lot,285,615,245);text(record.batch,626,615,215);text([record.remarks, `On time: ${record.onTime === null ? 'Pending' : record.onTime ? 'Yes' : 'No'} · Material OTIF: ${record.otifPercent == null ? 'Pending' : `${record.otifPercent}%`} · DR OTIF: ${record.finalOtifPercent == null ? 'Pending' : `${record.finalOtifPercent}%`}`].filter(Boolean).join(' | '),201,670,640,20);
       text(record.qaSample,370,757,156);text(record.vacuum,728,757,95);
       text(record.start,370,806,156);text(record.end,370,857,156);text(record.departure,370,907,156);
       text(record.qaStart,728,830,98);text(record.qaEnd,728,857,98);
@@ -61,7 +71,8 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
     if(shipment.bookingStatus!=='APPROVED') fail('Confirm the delivery before preparing clearance',409);
     let sapData=[];
     try { sapData=sap.jsonTrial ? Object.entries(state.sapRows||{}).filter(([key])=>key.startsWith(`${shipment.id}:`)).map(([key,row])=>({key,values:row.values,revision:row.revision||0})) : await sap.forClearance(shipment); } catch {}
-    return {shipment,sapData,records:shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},materialSapValues(shipment,item,sapData),shipment.clearance?.[item.id])}))};
+    const calculated=calculateClearanceOtif(shipment,shipment.items.map(item=>({itemId:item.id,...clearanceData(shipment,{...item,materialType:item.materialType || state.materials?.find(material=>material.code===item.materialCode)?.type || ""},materialSapValues(shipment,item,sapData),shipment.clearance?.[item.id])})));
+    return {shipment,sapData,...calculated};
   };
   app.get('/api/clearance',auth,allow('admin','planner','warehouse','sap'),asyncRoute(async(req,res)=>{const state=await store.read();res.json({shipments:state.shipments.filter(row=>row.bookingStatus==='APPROVED'&&canAccessShipment(req.user,row)).map(supplierSafeShipment)});}));
   app.get('/api/shipments/:id/clearance',auth,allow('admin','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{const {shipment,records}=await load(req);res.json({shipment,records});}));
@@ -90,7 +101,25 @@ export function registerClearance({app,auth,allow,asyncRoute,store,canAccessShip
         sapUpdated=true;
       } catch {}
     }
-    await store.update(state=>{const row=state.shipments.find(row=>row.id===shipment.id);row.clearance=sanitized;row.clearanceUpdatedBy=req.user.name;row.clearanceUpdatedAt=new Date().toISOString();});res.json({ok:true,sapUpdated});
+    let otifPercent=null;
+    await store.update(state=>{
+      const row=state.shipments.find(row=>row.id===shipment.id);
+      row.clearance=sanitized;row.clearanceUpdatedBy=req.user.name;row.clearanceUpdatedAt=new Date().toISOString();
+      for(const item of row.items) {
+        const value=sanitized[item.id]?.actualReceived;
+        item.actualReceived=value === '' || value == null ? null : Number(value);
+      }
+      const classification=classifyArrival(row.scheduledDate,row.scheduledTime,row.gateInAt);
+      const onTime=classification ? classification !== 'LATE' : null;
+      const complete=row.items.length>0&&row.items.every(item=>item.actualReceived!==null&&Number.isFinite(Number(item.actualReceived))&&Number(item.actualReceived)>=0);
+      if(complete) {
+        const receiptItems=row.items.map(item=>{const acceptedQuantity=Number(item.actualReceived||0);const remainingQuantity=roundQuantity(Math.max(0,Number(item.quantity||0)-acceptedQuantity));return {itemId:item.id,materialCode:item.materialCode,uom:item.uom,expectedQuantity:Number(item.quantity||0),acceptedQuantity,remainingQuantity,otifPercent:calculateOtifPercent(onTime,item.quantity,acceptedQuantity)};});
+        const expected=receiptItems.reduce((sum,item)=>sum+item.expectedQuantity,0),actual=receiptItems.reduce((sum,item)=>sum+item.acceptedQuantity,0);
+        otifPercent=calculateOtifPercent(onTime,expected,actual);
+        const inFull=receiptItems.every(item=>item.remainingQuantity===0);
+        row.receipt={...row.receipt,outcome:inFull?'FULL':'NOT_IN_FULL',reason:row.receipt?.reason||'',inFull,onTime,otifPercent,otif:otifPercent===null?null:otifPercent>=100,items:receiptItems};
+      }
+    });res.json({ok:true,sapUpdated,otifPercent});
   }));
   app.get('/api/shipments/:id/clearance.pdf',auth,allow('admin','planner','warehouse','ecosystem','sap'),asyncRoute(async(req,res)=>{
     const {shipment,records}=await load(req);res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`attachment; filename="inbound-clearance-${shipment.shipmentNumber}.pdf"`);const document=makeClearancePdf(shipment,records);document.pipe(res);document.end();
