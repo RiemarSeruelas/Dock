@@ -4,7 +4,8 @@
 
 - Moved **Updated SDS** and **Import SDS** to the Schedule header beside **Request**.
 - Rebuilt the phone layout with compact headers, readable KPI cards, condensed filters, card-based history/report rows, and controls that no longer overflow the screen.
-- Changed **Scan** on phones into a near-fullscreen sheet over a dark, blurred view of the current page. The sheet keeps station selection, photo scanning, camera scanning, manual entry, and result verification together.
+- Kept **Scan** as a normal phone page. Only **Live camera** opens a near-fullscreen camera over a dark, blurred view of the app; closing the camera returns to the unchanged Scan page.
+- Compacted the mobile overview and supplier-performance KPI tiles, restored their icons, and moved the receiving-area switch below the greeting so neither section is squeezed sideways.
 - Made Schedule open in **Day** view on phones and fit the single-day timeline to the available width.
 - Restored the visual road lanes in fullscreen Delivery Monitoring. Open docks show an empty road; occupied docks show the truck image and live delivery details.
 - Changed the API health check from `localhost` to `127.0.0.1` so the container reports healthy when Node listens on IPv4.

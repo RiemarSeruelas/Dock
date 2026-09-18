@@ -2181,3 +2181,62 @@ input[type=checkbox],input[type=radio] { width:16px; height:16px; min-height:16p
   .metric-card strong,.overview-page .metric-card strong { font-size:21px; }
   .schedule-hero-actions .button { font-size:8px; }
 }
+
+/* Mobile layout v3: compact dashboards and camera-only immersive scanning. */
+.live-camera-backdrop { position:fixed; z-index:1400; inset:0; display:grid; place-items:center; padding:clamp(10px,2vw,24px); background:rgba(2,10,22,.68); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); animation:camera-backdrop-in .18s ease-out; }
+.live-camera-sheet { width:min(100%,1100px); height:min(94dvh,820px); display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden; border:1px solid rgba(255,255,255,.22); border-radius:20px; background:#07111e; box-shadow:0 30px 90px rgba(0,0,0,.48); animation:camera-sheet-in .2s ease-out; }
+.live-camera-sheet > header { min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:9px 12px 9px 16px; color:#fff; background:rgba(7,17,30,.96); }
+.live-camera-sheet > header > span { display:grid; gap:2px; text-align:left; }
+.live-camera-sheet > header small { color:#8fb2d8; font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+.live-camera-sheet > header b { font-size:15px; }
+.live-camera-sheet > header button { width:38px; height:38px; display:grid; place-items:center; padding:0; border:1px solid rgba(255,255,255,.18); border-radius:10px; color:#fff; background:rgba(255,255,255,.08); cursor:pointer; }
+.live-camera-sheet .camera-frame { height:100%; min-height:0; border-radius:0; }
+.live-camera-sheet .camera-frame span { top:-2%; }
+.live-camera-sheet .camera-frame button { min-height:40px; padding:0 18px; font-weight:800; cursor:pointer; }
+@keyframes camera-backdrop-in { from { opacity:0; } }
+@keyframes camera-sheet-in { from { opacity:0; transform:scale(.985) translateY(8px); } }
+
+@media(max-width:720px) {
+  .overview-page .hero-row { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:10px; }
+  .overview-page .hero-row > div:first-child { width:100%; }
+  .overview-page .hero-row h1 { font-size:28px; white-space:nowrap; }
+  .overview-page .hero-row p { max-width:34ch; }
+  .overview-page .hero-actions { width:100%; display:grid; grid-template-columns:minmax(0,1fr) 40px; gap:8px; margin:0; }
+  .overview-page .area-toggle,.overview-page .area-scope-chip { width:100%; }
+  .overview-page .overview-refresh { width:40px; min-height:40px; }
+
+  .metrics-grid,.report-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+  .metric-card,.reports-page .metric-card { min-height:76px; grid-template-columns:29px minmax(0,1fr); align-items:center; gap:8px; padding:9px; border-radius:11px; overflow:hidden; }
+  .metric-icon { width:29px; height:29px; display:grid!important; border-radius:8px; }
+  .metric-icon svg { width:16px; height:16px; }
+  .metric-card > div:nth-child(2) { align-content:center; gap:0; }
+  .metric-card span,.overview-page .metric-card > div > span { font-size:8px; line-height:1.15; }
+  .metric-card strong,.overview-page .metric-card strong { font-size:20px; line-height:1.08; }
+  .metric-card p,.overview-page .metric-card p,.reports-page .metric-card p { margin-top:3px; font-size:7px; line-height:1.2; }
+  .reports-page { gap:10px; }
+  .reports-page .hero-row { align-items:start; text-align:left; }
+  .reports-page .hero-row > div:first-child { width:100%; }
+  .reports-page .hero-row h1 { white-space:nowrap; }
+  .reports-page .report-metrics .metric-card:last-child { grid-column:1 / -1; min-height:68px; }
+
+  .operations-page .scanner-box { min-height:300px!important; padding:16px 12px; }
+  .operations-page .scan-graphic { width:78px; height:78px; margin-bottom:10px; }
+  .operations-page .scan-graphic svg { width:43px; height:43px; }
+  .operations-page .verification-panel.empty-selection .empty-state { min-height:155px; }
+  .scanner-fullscreen-toggle { display:none!important; }
+
+  .live-camera-backdrop { padding:9px; }
+  .live-camera-sheet { width:100%; height:calc(100dvh - 18px); border-radius:18px; }
+  .live-camera-sheet > header { min-height:54px; padding:8px 9px 8px 13px; }
+  .live-camera-sheet > header b { font-size:13px; }
+  .live-camera-sheet .camera-frame { min-height:0!important; }
+  .live-camera-sheet .camera-frame span { max-width:calc(100% - 32px); padding:9px 11px; font-size:11px; }
+  .live-camera-sheet .camera-frame button { bottom:max(18px,env(safe-area-inset-bottom)); }
+}
+
+@media(max-width:380px) {
+  .metric-card,.reports-page .metric-card { grid-template-columns:27px minmax(0,1fr); min-height:72px; padding:8px; text-align:left; justify-items:stretch; }
+  .metric-icon { width:27px; height:27px; }
+  .metric-card span,.overview-page .metric-card > div > span { font-size:7.5px; }
+  .metric-card strong,.overview-page .metric-card strong { font-size:19px; }
+}
